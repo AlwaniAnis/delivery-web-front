@@ -1,0 +1,219 @@
+<div style="width:100%;  height:100%; page-break-after:always; padding:10px; ">
+  <div>
+    <h2>BL N° ${m.qrCodeContent}</h2>
+    <div style="display: flex;">
+      <div
+        style="
+          display: inline-flex;
+          width: 65%;
+          border: 1px solid #7777;
+          padding: 10px;
+          color: #444;
+          justify-content: space-between;
+        "
+      >
+        <div>
+          <strong>${store.name_fr} </strong>
+          <b>Adresse : </b>
+          <b>MF: ${store.taxCode}</b>
+        </div>
+       ${cont.phones.replaceAll("+216", "").replaceAll(",", " / ")}
+      </div>
+
+       
+      <div
+        style="
+          text-align: center;
+          padding: 0px;
+          display: inline-block;
+          flex: 1;
+        "
+      >
+      ${codes}
+      </div>
+    </div>
+    <!-- end flex -->
+    <h2 style="text-align: center;">${c.city}</h2>
+  <div style="border: 1px solid #7777; display: flex; align-items: stretch;">
+    <div
+      style="
+        width: 65%;
+        border-right: 1px solid #7777;
+        padding: 10px;
+        color: #444;
+      "
+    >
+      <div><strong>DESTINATAIRE : </strong> <b>${c.fullName}</b></div>
+      <div>
+        <strong>Adresse : </strong>
+        <address style="display: inline-block;">
+      ${c.address}
+        </address>
+      </div>
+      <div>
+        <strong>Tel: </strong>
+        <span
+          ><a style="text-decoration: none; color: #222;" href="tel:${
+            c.phoneNumber
+          }"
+            >${c.phoneNumber} </a
+          >
+          ${
+            c.phoneNumber2
+              ? ` / <a style="text-decoration: none; color: #222;" href="tel:${c.phoneNumber2}"
+                >${c.phoneNumber2} </a
+              >`
+              : ""
+          }</span >
+      </div>
+    </div> 
+    <div style="flex: 1; font-size: 0.9em;">
+      <div style="border-bottom: 1px solid #777;">
+        <span
+          style="
+            display: inline-block;
+            padding: 10px;
+            border-right: 1px solid #777;
+            text-align: center;
+            width: 55%;
+          "
+          >Poids : -
+        </span>
+        <span style="padding: 10px; text-align: center;">NBP : ${m.coliItems.reduce(
+          (a, b) => a + b.qty,
+          0
+        )} </span>
+      </div>
+      <div
+        style="
+          text-align: center;
+          padding: 10px;
+          min-height: 70px;
+          border-bottom: 1px solid #777;
+        "
+      >
+      ${m.coliItems.reduce((a, b) => a + b.designation + " \n ", "")}
+      </div>
+      <div style="padding: 10px; text-align: center;">
+        <strong>Total ${m.coliItems
+          .reduce((a, b) => a + b.qty * b.unitPrice, 0)
+          .toFixed(3)} TND </strong>
+      </div>
+    </div>
+
+  </div>
+      <!-- mazel 2 parent  -->
+
+  <div
+    style="
+      margin: 20px 0;
+      border: 1px dashed #aaa;
+      padding: 10px;
+      background-color: rgba(0, 0, 0, 0.1);
+    "
+  >
+    <strong>Note : </strong>
+    <i> ${m.remark} </i>
+  </div>
+<!--  -->
+  <div style="display: flex;">
+    <div style="padding: 10px; border: 1px solid #777;">
+      <strong>${store.name_fr}</strong>
+    </div>
+    <div style="padding: 10px 40px;">
+      <strong>Facture N° 2024/${m.id}</strong>
+      <div><i>Date : ${moment(new Date()).format("L")}</i></div>
+    </div>
+  </div>
+  <!--  -->
+  <div style="display: flex; justify-content: flex-end;">
+    <div
+      style="width: 45%; border: 1px solid #7777; padding: 10px; color: #444;"
+    >
+      <div><strong>Client : </strong> <b>${c.fullName}</b></div>
+
+      <div>
+        <strong>Adresse : </strong>
+        <address style="display: inline-block;">
+          ${
+            c.city +
+            (c.deleg ? " - " + c.deleg : "") +
+            (c.ville ? " - " + c.ville : "") +
+            (c.zipCode ? " - " + c.zipCode : "")
+          }
+          <br></br>
+          ${c.address}
+        </address>
+      </div>
+      <div>
+        <strong>Tel: </strong>
+        <span
+          ><a style="text-decoration: none; color: #222;" href="tel:${
+            c.phoneNumber
+          }"
+            >${c.phoneNumber} </a
+          >
+          ${
+            c.phoneNumber2
+              ? ` / <a style="text-decoration: none; color: #222;" href="tel:${c.phoneNumber2}"
+                >${c.phoneNumber2} </a
+              >`
+              : ""
+          }</span
+        >
+      </div>
+    </div>
+  </div>
+  <!--  -->
+  <br />
+  <table>
+    <thead>
+      <tr>
+        <th>Désignation</th>
+        <th>Quantité</th>
+        <th>Prix HT</th>
+        <th>TVA</th>
+        <th>MT TVA</th>
+        <th>TTC</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${m.coliItems
+        .map(
+          (el) => `<tr>
+      <td>${el.designation}</td>
+      <td>${el.qty}</td>
+      <td>${(el.qty * el.unitPrice * 0.81).toFixed(3)}</td>
+      <td>19%</td>
+      <td>${(el.qty * el.unitPrice * 0.19).toFixed(3)}</td>
+      <td>${(el.qty * el.unitPrice).toFixed(3)}</td>
+    </tr>`
+        )
+        .join("")}
+    </tbody>
+  </table>
+  <br />
+  <div
+    style="
+      display: flex;
+      justify-content: space-between;
+      background-color: #eee;
+      padding: 10px;
+    "
+  >
+    <strong>PRIX TOTAL : </strong> <strong>${m.coliItems
+      .reduce((a, b) => a + b.qty * b.unitPrice, 0)
+      .toFixed(3)} DT</strong>
+  </div>
+<!--  -->
+  <br>
+  <hr>
+  <div style="text-align: center;padding: 10px;">
+      <strong>${store.name_fr} </strong>
+      <div>Adresse : ${cont.address}</div>
+      ${cont.phones.replaceAll("+216", "").replaceAll(",", " / ")}
+
+    <div>
+
+  </div>
+</div>

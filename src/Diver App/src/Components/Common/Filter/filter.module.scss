@@ -1,0 +1,26 @@
+.container {
+  padding: 0px;
+  & > div {
+    display: inline-block;
+    vertical-align: top;
+  }
+  background: #fff;
+  & > div:first-child {
+    width: calc(100% - 160px);
+    flex:1
+  }
+  & > div:last-child {
+    padding-top: 40px;
+  }
+}
+@media screen and (max-width: 800px) {
+  .container {
+    & > div:first-child {
+      display: block;
+      width: 100%;
+    }
+    & > div:last-child {
+      padding-top: 0px;
+    }
+  }
+}
