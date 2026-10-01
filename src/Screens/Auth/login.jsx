@@ -8,6 +8,7 @@ import {
   currentUserState,
   activeRoleState,
   currentDriverIdState,
+  normalizeRole,
 } from "../../Atoms/auth.atom";
 import {
   FaBox,
@@ -42,7 +43,8 @@ export default function Login() {
   };
 
   const handleLoginSuccess = (userData) => {
-    const userRole = userData?.role || selectedRole;
+    const rawRole = userData?.role || userData?.user?.role || selectedRole;
+    const userRole = normalizeRole(rawRole);
     const finalizedUser = {
       ...userData,
       role: userRole,

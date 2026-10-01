@@ -9,106 +9,28 @@ import {
   FaCrosshairs,
   FaExternalLinkAlt,
   FaBoxOpen,
+  FaListUl,
+  FaMapMarkedAlt,
+  FaCheckCircle,
+  FaTimesCircle,
+  FaClock,
 } from "react-icons/fa";
 import { useRecoilValue } from "recoil";
 import { APi } from "../../Api";
-import { DeliveryStatus } from "../../Constants/types";
 import { getCoordinatesForDelivery } from "../../Helpers/geocoding";
 import { preparationPlacesState } from "../../Atoms/preparationPlaces.atom";
-import { DriversList } from "../../Atoms/drivers.atom";
 import { activeRoleState, currentDriverIdState } from "../../Atoms/auth.atom";
 import Swal from "sweetalert2";
-
-// Default Seed / Demo deliveries in Grand Tunis if API returns empty
-const SAMPLE_DELIVERIES = [
-  {
-    id: 101,
-    qrCodeContent: "TW-2026-TUN-01",
-    status: 1, // En attente
-    totalPrice: 48.5,
-    preparationPlaceId: 1,
-    customer: {
-      fullName: "Mohamed Ben Ali",
-      phoneNumber: "98123456",
-      address: "14 Rue du Lac Victoria",
-      deleg: "Les Berges du Lac",
-      city: "Tunis",
-    },
-    coliItems: [{ designation: "Colis Électronique & Câbles", qty: 1, unitPrice: 48.5 }],
-  },
-  {
-    id: 102,
-    qrCodeContent: "TW-2026-TUN-02",
-    status: 1,
-    totalPrice: 85.0,
-    preparationPlaceId: 1,
-    customer: {
-      fullName: "Sonia Trabelsi",
-      phoneNumber: "22345678",
-      address: "Avenue Hédi Nouira",
-      deleg: "Ennasr",
-      city: "Ariana",
-    },
-    coliItems: [{ designation: "Vêtements & Chaussures", qty: 2, unitPrice: 42.5 }],
-  },
-  {
-    id: 103,
-    qrCodeContent: "TW-2026-TUN-03",
-    status: 5, // Livré
-    totalPrice: 120.0,
-    preparationPlaceId: 1,
-    customer: {
-      fullName: "Karim Mansour",
-      phoneNumber: "55789012",
-      address: "Rue Habib Bourguiba",
-      deleg: "La Marsa",
-      city: "Tunis",
-    },
-    coliItems: [{ designation: "Montre Connectée Sport", qty: 1, unitPrice: 120.0 }],
-  },
-  {
-    id: 104,
-    qrCodeContent: "TW-2026-TUN-04",
-    status: 1,
-    totalPrice: 62.0,
-    preparationPlaceId: 1,
-    customer: {
-      fullName: "Amira Gharbi",
-      phoneNumber: "94321654",
-      address: "Cité El Mourouj 4",
-      deleg: "El Mourouj",
-      city: "Ben Arous",
-    },
-    coliItems: [{ designation: "Accessoires Beauté & Soin", qty: 1, unitPrice: 62.0 }],
-  },
-  {
-    id: 105,
-    qrCodeContent: "TW-2026-TUN-05",
-    status: 6, // Pas de réponse
-    totalPrice: 35.0,
-    preparationPlaceId: 2,
-    customer: {
-      fullName: "Yassine Dridi",
-      phoneNumber: "21987654",
-      address: "Boulevard 14 Janvier",
-      deleg: "Sousse",
-      city: "Sousse",
-    },
-    coliItems: [{ designation: "Pack Cosmétique Bio", qty: 1, unitPrice: 35.0 }],
-  },
-];
 
 export default function MyMap() {
   const mapContainerRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const markersLayerRef = useRef(null);
   const routeLayerRef = useRef(null);
-  const driverCircleRef = useRef(null);
 
   const activeRole = useRecoilValue(activeRoleState);
   const globalDriverId = useRecoilValue(currentDriverIdState);
   const depots = useRecoilValue(preparationPlacesState);
-  const driversList = useRecoilValue(DriversList);
 
   const [deliveries, setDeliveries] = useState([]);
   const [selectedStop, setSelectedStop] = useState(null);
@@ -118,8 +40,37 @@ export default function MyMap() {
   const [loading, setLoading] = useState(false);
   const [filterStatus, setFilterStatus] = useState("all"); // 'all' | 'pending' | 'delivered'
   const [selectedDepotFilter, setSelectedDepotFilter] = useState("all");
-  const [viewScope, setViewScope] = useState(activeRole === "driver" ? "driver" : "all"); // 'driver' | 'all'
+  const [viewScope, setViewScope] = useState(activeRole === "driver" ? "driver" : "all");
   const [mapReady, setMapReady] = useState(false);
+
+  // Responsive state for mobile driver usage
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== "undefined" ? window.innerWidth < 992 : false
+  );
+  const [mobileTab, setMobileTab] = useState("map"); // 'map' | 'list' | 'detail'
+
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth < 992;
+      setIsMobile(mobile);
+      if (mapInstanceRef.current) {
+        setTimeout(() => {
+          mapInstanceRef.current?.invalidateSize();
+        }, 150);
+      }
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  // When switching tabs on mobile, force Leaflet to recalculate container bounds
+  useEffect(() => {
+    if (mobileTab === "map" && mapInstanceRef.current) {
+      setTimeout(() => {
+        mapInstanceRef.current?.invalidateSize();
+      }, 100);
+    }
+  }, [mobileTab]);
 
   // Initialize Leaflet Map
   useEffect(() => {
@@ -134,7 +85,7 @@ export default function MyMap() {
 
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors',
+        '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a>',
       maxZoom: 19,
     }).addTo(map);
 
@@ -152,7 +103,7 @@ export default function MyMap() {
     };
   }, []);
 
-  // Fetch Deliveries: Try Driver Endpoint first; if empty or if in 'all' mode, fetch all deliveries
+  // Fetch Deliveries from API (Real Data only, no fake fallbacks)
   const fetchDeliveries = () => {
     setLoading(true);
 
@@ -162,37 +113,32 @@ export default function MyMap() {
         .then((res) => {
           setLoading(false);
           const list = res.data?.data || [];
-          if (list.length > 0) {
-            setDeliveries(list);
-            if (!selectedStop) setSelectedStop(list[0]);
-          } else {
-            // Fallback to sample deliveries if database has none
-            setDeliveries(SAMPLE_DELIVERIES);
-            if (!selectedStop) setSelectedStop(SAMPLE_DELIVERIES[0]);
+          setDeliveries(list);
+          if (list.length > 0 && !selectedStop) {
+            setSelectedStop(list[0]);
           }
         })
-        .catch(() => {
+        .catch((err) => {
           setLoading(false);
-          setDeliveries(SAMPLE_DELIVERIES);
-          if (!selectedStop) setSelectedStop(SAMPLE_DELIVERIES[0]);
+          console.warn("Failed to fetch all deliveries:", err);
+          setDeliveries([]);
         });
     };
 
-    if (viewScope === "driver") {
-      const dId = globalDriverId || 1003;
+    if (viewScope === "driver" && globalDriverId) {
       APi.createAPIEndpoint(APi.ENDPOINTS.Delivery + "/getForDriver", {
-        driverId: dId,
+        driverId: globalDriverId,
         take: 50,
       })
         .fetchAll()
         .then((res) => {
+          setLoading(false);
           const list = res.data?.data || [];
           if (list.length > 0) {
-            setLoading(false);
             setDeliveries(list);
             if (!selectedStop) setSelectedStop(list[0]);
           } else {
-            // If driver has no assigned deliveries, fetch all deliveries so map shows colis
+            // Driver has no assigned deliveries, fetch all as fallback for review
             tryFetchAllDeliveries();
           }
         })
@@ -210,12 +156,8 @@ export default function MyMap() {
 
   // Request Current Location Immediately and Set up Continuous Tracking
   useEffect(() => {
-    if (!("geolocation" in navigator)) {
-      console.warn("Geolocation API not available in this browser.");
-      return;
-    }
+    if (!("geolocation" in navigator)) return;
 
-    // 1. Immediate position acquisition
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const coords = {
@@ -227,7 +169,6 @@ export default function MyMap() {
         setGpsActive(true);
         setGpsAccuracy(Math.round(pos.coords.accuracy));
 
-        // Center map immediately to user's real current location!
         if (mapInstanceRef.current) {
           mapInstanceRef.current.flyTo([coords.lat, coords.lng], 14, {
             duration: 1.2,
@@ -235,13 +176,12 @@ export default function MyMap() {
         }
       },
       (err) => {
-        console.warn("Geolocation error:", err.message);
+        console.warn("Geolocation warning:", err.message);
         setGpsActive(false);
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
 
-    // 2. Real-time continuous live tracking as the driver moves
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
         const coords = {
@@ -254,7 +194,7 @@ export default function MyMap() {
         setGpsAccuracy(Math.round(pos.coords.accuracy));
       },
       (err) => {
-        console.warn("Watch position error:", err.message);
+        console.warn("Watch position warning:", err.message);
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
     );
@@ -275,12 +215,14 @@ export default function MyMap() {
 
     const bounds = L.latLngBounds();
 
-    // 1. Add All Dépôts (Storage & Preparation Places)
+    // 1. Add All Dépôts
     depots.forEach((dp) => {
-      // Resolve depot coordinates for Tunis and Sousse
-      let dpCoords = { lat: 36.8431, lng: 10.2033 }; // Dépôt Tunis (Charguia)
-      if (dp.name?.toLowerCase().includes("sousse") || dp.code?.toLowerCase().includes("sousse")) {
-        dpCoords = { lat: 35.8256, lng: 10.6369 }; // Dépôt Sousse (Akouda)
+      let dpCoords = { lat: 36.8431, lng: 10.2033 };
+      if (
+        dp.name?.toLowerCase().includes("sousse") ||
+        dp.code?.toLowerCase().includes("sousse")
+      ) {
+        dpCoords = { lat: 35.8256, lng: 10.6369 };
       }
 
       const depotIcon = L.divIcon({
@@ -289,8 +231,8 @@ export default function MyMap() {
           <div style="
             background: #312e81;
             color: #fff;
-            width: 38px;
-            height: 38px;
+            width: 36px;
+            height: 36px;
             border-radius: 12px;
             display: flex;
             align-items: center;
@@ -302,8 +244,8 @@ export default function MyMap() {
             🏬
           </div>
         `,
-        iconSize: [38, 38],
-        iconAnchor: [19, 19],
+        iconSize: [36, 36],
+        iconAnchor: [18, 18],
       });
 
       L.marker([dpCoords.lat, dpCoords.lng], { icon: depotIcon })
@@ -325,7 +267,6 @@ export default function MyMap() {
 
     // 2. Add Live Driver GPS Location Marker
     if (driverLocation) {
-      // Accuracy radius circle
       if (driverLocation.accuracy) {
         L.circle([driverLocation.lat, driverLocation.lng], {
           radius: Math.min(driverLocation.accuracy, 250),
@@ -341,8 +282,8 @@ export default function MyMap() {
         html: `
           <div style="position: relative;">
             <div style="
-              width: 44px;
-              height: 44px;
+              width: 42px;
+              height: 42px;
               background: #10b981;
               color: white;
               border-radius: 50%;
@@ -351,24 +292,24 @@ export default function MyMap() {
               justify-content: center;
               border: 3px solid white;
               box-shadow: 0 4px 16px rgba(16, 185, 129, 0.6);
-              font-size: 20px;
+              font-size: 19px;
             ">
               🚚
             </div>
             <div style="
               position: absolute;
-              top: -6px;
-              left: -6px;
-              width: 56px;
-              height: 56px;
+              top: -5px;
+              left: -5px;
+              width: 52px;
+              height: 52px;
               border-radius: 50%;
               border: 2px solid #10b981;
               animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
             "></div>
           </div>
         `,
-        iconSize: [44, 44],
-        iconAnchor: [22, 22],
+        iconSize: [42, 42],
+        iconAnchor: [21, 21],
       });
 
       L.marker([driverLocation.lat, driverLocation.lng], { icon: driverIcon })
@@ -387,11 +328,9 @@ export default function MyMap() {
 
     // 3. Filter stops based on status and depot filter
     const visibleStops = deliveries.filter((d) => {
-      // Status filter
       if (filterStatus === "pending" && d.status === 5) return false;
       if (filterStatus === "delivered" && d.status !== 5) return false;
 
-      // Depot filter
       if (selectedDepotFilter !== "all") {
         const pId = d.preparationPlaceId || d.preparationPlace?.id;
         if (Number(selectedDepotFilter) !== Number(pId)) return false;
@@ -415,10 +354,10 @@ export default function MyMap() {
       const isFailed = item.status === 4 || item.status === 7;
       const isPostponed = item.status === 6 || item.status === 8;
 
-      let markerBg = "#2563eb"; // Blue: To deliver
-      if (isDelivered) markerBg = "#10b981"; // Green: Delivered
-      else if (isFailed) markerBg = "#ef4444"; // Red: Canceled/Refused
-      else if (isPostponed) markerBg = "#f59e0b"; // Orange: Postponed
+      let markerBg = "#2563eb";
+      if (isDelivered) markerBg = "#10b981";
+      else if (isFailed) markerBg = "#ef4444";
+      else if (isPostponed) markerBg = "#f59e0b";
 
       const totalAmt = (
         item.coliItems?.reduce((s, it) => s + it.qty * it.unitPrice, 0) ||
@@ -433,11 +372,11 @@ export default function MyMap() {
             position: relative;
             cursor: pointer;
             transition: all 0.2s ease;
-            ${isSelected ? "transform: scale(1.3); z-index: 1000;" : ""}
+            ${isSelected ? "transform: scale(1.25); z-index: 1000;" : ""}
           ">
             <div style="
-              width: ${isSelected ? "38px" : "32px"};
-              height: ${isSelected ? "38px" : "32px"};
+              width: ${isSelected ? "36px" : "30px"};
+              height: ${isSelected ? "36px" : "30px"};
               background: ${markerBg};
               color: white;
               border-radius: 50%;
@@ -451,86 +390,54 @@ export default function MyMap() {
             ">
               ${isDelivered ? "✓" : index + 1}
             </div>
-            ${
-              isSelected
-                ? `<div style="
-                    position: absolute;
-                    top: -4px;
-                    left: -4px;
-                    width: 46px;
-                    height: 46px;
-                    border-radius: 50%;
-                    border: 3px solid #6366f1;
-                    pointer-events: none;
-                  "></div>`
-                : ""
-            }
           </div>
         `,
         iconSize: [36, 36],
         iconAnchor: [18, 18],
       });
 
-      const marker = L.marker([coords.lat, coords.lng], { icon: stopIcon }).addTo(markersLayer);
+      const marker = L.marker([coords.lat, coords.lng], { icon: stopIcon }).addTo(
+        markersLayer
+      );
 
       marker.on("click", () => {
         setSelectedStop(item);
       });
 
-      marker.bindPopup(`
-        <div style="font-weight: 800; color: #0f172a; font-size: 14px; margin-bottom: 4px;">
-          Arrêt #${index + 1} : ${item.customer?.fullName || "Client"}
-        </div>
-        <div style="color: #64748b; font-size: 12px; margin-bottom: 6px;">
-          📍 ${item.customer?.address || ""} ${item.customer?.deleg || ""} ${item.customer?.city || ""}
-        </div>
-        <div style="font-weight: 700; color: #10b981; font-size: 13px; margin-bottom: 8px;">
-          💰 Montant : ${totalAmt} TND
-        </div>
-        ${
-          item.customer?.phoneNumber
-            ? `<a href="tel:${item.customer.phoneNumber}" style="
-                display: inline-block;
-                background: #10b981;
-                color: white;
-                padding: 4px 10px;
-                border-radius: 6px;
-                text-decoration: none;
-                font-size: 12px;
-                font-weight: 600;
-              ">📞 Appeler (${item.customer.phoneNumber})</a>`
-            : ""
-        }
-      `);
-
       bounds.extend([coords.lat, coords.lng]);
     });
 
-    // 5. Draw connecting polyline route
+    // 5. Draw Polyline Route Path
     if (routeCoords.length > 1) {
       L.polyline(routeCoords, {
         color: "#4f46e5",
         weight: 4,
-        opacity: 0.85,
-        dashArray: "6, 8",
+        opacity: 0.8,
+        dashArray: "8, 8",
         lineCap: "round",
       }).addTo(routeLayer);
     }
 
-    // 6. Fit map view bounds
-    if (bounds.isValid()) {
+    if (bounds.isValid() && (!selectedStop || !driverLocation)) {
       map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
     }
-  }, [deliveries, driverLocation, selectedStop?.id, filterStatus, selectedDepotFilter, mapReady, depots]);
+  }, [
+    mapReady,
+    deliveries,
+    driverLocation,
+    filterStatus,
+    selectedDepotFilter,
+    depots,
+    selectedStop,
+  ]);
 
-  // Center on Driver's Live Location
+  // Center on Current GPS Position
   const centerOnCurrentLocation = () => {
     if (driverLocation && mapInstanceRef.current) {
       mapInstanceRef.current.flyTo([driverLocation.lat, driverLocation.lng], 16, {
         duration: 1.2,
       });
     } else {
-      // Request permission again
       if ("geolocation" in navigator) {
         navigator.geolocation.getCurrentPosition(
           (pos) => {
@@ -543,10 +450,12 @@ export default function MyMap() {
             setGpsActive(true);
             setGpsAccuracy(Math.round(pos.coords.accuracy));
             if (mapInstanceRef.current) {
-              mapInstanceRef.current.flyTo([coords.lat, coords.lng], 16, { duration: 1 });
+              mapInstanceRef.current.flyTo([coords.lat, coords.lng], 16, {
+                duration: 1.2,
+              });
             }
           },
-          (err) => {
+          () => {
             Swal.fire({
               icon: "info",
               title: "Activation du GPS",
@@ -560,8 +469,11 @@ export default function MyMap() {
   };
 
   // Center on Selected Stop
-  const centerOnStop = (stop) => {
+  const centerOnStop = (stop, autoSwitchTab = false) => {
     setSelectedStop(stop);
+    if (autoSwitchTab && isMobile) {
+      setMobileTab("map");
+    }
     if (!mapInstanceRef.current) return;
     const coords = getCoordinatesForDelivery(stop);
     mapInstanceRef.current.flyTo([coords.lat, coords.lng], 15, { duration: 1 });
@@ -584,7 +496,6 @@ export default function MyMap() {
         fetchDeliveries();
       })
       .catch(() => {
-        // Fallback local update
         setDeliveries((prev) =>
           prev.map((d) => (d.id === deliveryId ? { ...d, status: newStatus } : d))
         );
@@ -612,7 +523,6 @@ export default function MyMap() {
       return sum + amt;
     }, 0);
 
-  // Selected stop coords & Navigation URLs
   const selectedCoords = selectedStop ? getCoordinatesForDelivery(selectedStop) : null;
   const googleMapsUrl = selectedCoords
     ? `https://www.google.com/maps/dir/?api=1&destination=${selectedCoords.lat},${selectedCoords.lng}`
@@ -621,209 +531,327 @@ export default function MyMap() {
       )}`;
   const wazeUrl = selectedCoords
     ? `https://waze.com/ul?ll=${selectedCoords.lat},${selectedCoords.lng}&navigate=yes`
-    : `https://waze.com/ul?q=${encodeURIComponent(selectedStop?.customer?.address || "Tunis")}`;
+    : `https://waze.com/ul?q=${encodeURIComponent(
+        selectedStop?.customer?.address || "Tunis"
+      )}`;
+
+  const visibleDeliveries = deliveries.filter((d) => {
+    if (filterStatus === "pending") return d.status !== 5;
+    if (filterStatus === "delivered") return d.status === 5;
+    return true;
+  });
 
   return (
-    <div style={{ padding: "16px", maxWidth: "1600px", margin: "0 auto" }}>
-      {/* Top Header Banner */}
+    <div
+      style={{
+        padding: isMobile ? "8px 6px" : "16px",
+        maxWidth: "1600px",
+        margin: "0 auto",
+      }}
+    >
+      {/* Top Header Banner - Mobile Optimized */}
       <div
         style={{
           background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
           color: "#fff",
           borderRadius: "16px",
-          padding: "20px 24px",
-          marginBottom: "16px",
-          display: "flex",
-          flexWrap: "wrap",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: "16px",
+          padding: isMobile ? "14px 16px" : "20px 24px",
+          marginBottom: "12px",
           boxShadow: "0 10px 25px -5px rgba(15, 23, 42, 0.3)",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
-          <div
-            style={{
-              background: "linear-gradient(135deg, #4f46e5 0%, #3730a3 100%)",
-              width: "48px",
-              height: "48px",
-              borderRadius: "12px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: "22px",
-              boxShadow: "0 4px 12px rgba(79, 70, 229, 0.4)",
-            }}
-          >
-            <FaRoute />
-          </div>
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-              <h3 style={{ margin: 0, fontSize: "1.3rem", fontWeight: 800, color: "#fff" }}>
-                Carte & Suivi GPS de Livraison
-              </h3>
-              <span
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: "12px",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <div
+              style={{
+                background: "linear-gradient(135deg, #4f46e5 0%, #3730a3 100%)",
+                width: isMobile ? "40px" : "48px",
+                height: isMobile ? "40px" : "48px",
+                borderRadius: "12px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: isMobile ? "18px" : "22px",
+                boxShadow: "0 4px 12px rgba(79, 70, 229, 0.4)",
+                flexShrink: 0,
+              }}
+            >
+              <FaRoute />
+            </div>
+            <div>
+              <div
                 style={{
-                  background: gpsActive ? "rgba(16, 185, 129, 0.2)" : "rgba(245, 158, 11, 0.2)",
-                  color: gpsActive ? "#34d399" : "#fbbf24",
-                  border: gpsActive
-                    ? "1px solid rgba(16, 185, 129, 0.4)"
-                    : "1px solid rgba(245, 158, 11, 0.4)",
-                  fontSize: "0.72rem",
-                  fontWeight: 700,
-                  padding: "3px 8px",
-                  borderRadius: "20px",
-                  display: "inline-flex",
+                  display: "flex",
                   alignItems: "center",
-                  gap: "4px",
+                  gap: "8px",
+                  flexWrap: "wrap",
                 }}
               >
-                {gpsActive ? "● GPS En Direct (Précision ±" + (gpsAccuracy || 10) + "m)" : "○ En attente du signal GPS"}
-              </span>
-            </div>
-            <p style={{ margin: "4px 0 0", fontSize: "0.85rem", color: "#94a3b8" }}>
-              Visualisez tous vos colis sur la carte interactive avec tracé de l'itinéraire et suivi en direct
-            </p>
-          </div>
-        </div>
-
-        {/* Counter Pills & Actions */}
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", alignItems: "center" }}>
-          <div
-            style={{
-              background: "rgba(255,255,255,0.06)",
-              border: "1px solid rgba(255,255,255,0.12)",
-              padding: "8px 14px",
-              borderRadius: "10px",
-              textAlign: "center",
-            }}
-          >
-            <div style={{ fontSize: "0.72rem", color: "#94a3b8", fontWeight: 600 }}>Total Colis</div>
-            <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "#fff" }}>{totalStops}</div>
-          </div>
-
-          <div
-            style={{
-              background: "rgba(16, 185, 129, 0.12)",
-              border: "1px solid rgba(16, 185, 129, 0.3)",
-              padding: "8px 14px",
-              borderRadius: "10px",
-              textAlign: "center",
-            }}
-          >
-            <div style={{ fontSize: "0.72rem", color: "#34d399", fontWeight: 600 }}>Livrés</div>
-            <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "#10b981" }}>{deliveredCount}</div>
-          </div>
-
-          <div
-            style={{
-              background: "rgba(239, 68, 68, 0.12)",
-              border: "1px solid rgba(239, 68, 68, 0.3)",
-              padding: "8px 14px",
-              borderRadius: "10px",
-              textAlign: "center",
-            }}
-          >
-            <div style={{ fontSize: "0.72rem", color: "#f87171", fontWeight: 600 }}>À Encaisser</div>
-            <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "#fca5a5" }}>
-              {remainingCash.toFixed(3)} <span style={{ fontSize: "0.75rem" }}>TND</span>
+                <h3
+                  style={{
+                    margin: 0,
+                    fontSize: isMobile ? "1.1rem" : "1.3rem",
+                    fontWeight: 800,
+                    color: "#fff",
+                  }}
+                >
+                  Itinéraire & Suivi GPS
+                </h3>
+                <span
+                  style={{
+                    background: gpsActive
+                      ? "rgba(16, 185, 129, 0.2)"
+                      : "rgba(245, 158, 11, 0.2)",
+                    color: gpsActive ? "#34d399" : "#fbbf24",
+                    border: gpsActive
+                      ? "1px solid rgba(16, 185, 129, 0.4)"
+                      : "1px solid rgba(245, 158, 11, 0.4)",
+                    fontSize: "0.7rem",
+                    fontWeight: 700,
+                    padding: "2px 8px",
+                    borderRadius: "20px",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "4px",
+                  }}
+                >
+                  {gpsActive
+                    ? `● GPS En Direct (±${gpsAccuracy || 10}m)`
+                    : "○ En attente signal GPS"}
+                </span>
+              </div>
             </div>
           </div>
 
-          <button
-            onClick={fetchDeliveries}
+          {/* Counter Badges - Thumb Friendly on Mobile */}
+          <div
             style={{
-              background: "rgba(255,255,255,0.12)",
-              border: "1px solid rgba(255,255,255,0.25)",
-              color: "#fff",
-              padding: "10px 16px",
-              borderRadius: "10px",
-              cursor: "pointer",
-              fontSize: "0.85rem",
-              fontWeight: 700,
+              display: "flex",
+              width: isMobile ? "100%" : "auto",
+              gap: "8px",
+              justifyContent: isMobile ? "space-between" : "flex-end",
             }}
           >
-            {loading ? "Chargement..." : "Actualiser"}
-          </button>
+            <div
+              style={{
+                flex: isMobile ? 1 : "auto",
+                background: "rgba(255,255,255,0.06)",
+                border: "1px solid rgba(255,255,255,0.12)",
+                padding: isMobile ? "6px 8px" : "8px 14px",
+                borderRadius: "10px",
+                textAlign: "center",
+              }}
+            >
+              <div style={{ fontSize: "0.68rem", color: "#94a3b8", fontWeight: 600 }}>
+                Colis
+              </div>
+              <div style={{ fontSize: "1rem", fontWeight: 800, color: "#fff" }}>
+                {totalStops}
+              </div>
+            </div>
+
+            <div
+              style={{
+                flex: isMobile ? 1 : "auto",
+                background: "rgba(16, 185, 129, 0.12)",
+                border: "1px solid rgba(16, 185, 129, 0.3)",
+                padding: isMobile ? "6px 8px" : "8px 14px",
+                borderRadius: "10px",
+                textAlign: "center",
+              }}
+            >
+              <div style={{ fontSize: "0.68rem", color: "#34d399", fontWeight: 600 }}>
+                Livrés
+              </div>
+              <div style={{ fontSize: "1rem", fontWeight: 800, color: "#10b981" }}>
+                {deliveredCount}
+              </div>
+            </div>
+
+            <div
+              style={{
+                flex: isMobile ? 1.4 : "auto",
+                background: "rgba(239, 68, 68, 0.12)",
+                border: "1px solid rgba(239, 68, 68, 0.3)",
+                padding: isMobile ? "6px 8px" : "8px 14px",
+                borderRadius: "10px",
+                textAlign: "center",
+              }}
+            >
+              <div style={{ fontSize: "0.68rem", color: "#f87171", fontWeight: 600 }}>
+                À Encaisser
+              </div>
+              <div style={{ fontSize: "1rem", fontWeight: 800, color: "#fca5a5" }}>
+                {remainingCash.toFixed(3)}{" "}
+                <span style={{ fontSize: "0.65rem" }}>TND</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Scope and Depot Filters Bar */}
+      {/* MOBILE TAB BAR SWITCHER (Driver Phone Mode) */}
+      {isMobile && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: "6px",
+            background: "#ffffff",
+            padding: "6px",
+            borderRadius: "12px",
+            marginBottom: "12px",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
+            border: "1px solid #e2e8f0",
+          }}
+        >
+          <button
+            onClick={() => setMobileTab("map")}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "8px",
+              padding: "10px 8px",
+              borderRadius: "10px",
+              border: "none",
+              background:
+                mobileTab === "map"
+                  ? "linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%)"
+                  : "#f8fafc",
+              color: mobileTab === "map" ? "#ffffff" : "#475569",
+              fontWeight: 800,
+              fontSize: "0.85rem",
+              cursor: "pointer",
+              transition: "all 0.15s ease",
+            }}
+          >
+            <FaMapMarkedAlt size={16} /> Carte GPS
+          </button>
+
+          <button
+            onClick={() => setMobileTab("list")}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "8px",
+              padding: "10px 8px",
+              borderRadius: "10px",
+              border: "none",
+              background:
+                mobileTab === "list"
+                  ? "linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%)"
+                  : "#f8fafc",
+              color: mobileTab === "list" ? "#ffffff" : "#475569",
+              fontWeight: 800,
+              fontSize: "0.85rem",
+              cursor: "pointer",
+              transition: "all 0.15s ease",
+            }}
+          >
+            <FaListUl size={14} /> Liste Colis ({deliveries.length})
+          </button>
+        </div>
+      )}
+
+      {/* Scope, Depot & Status Filter Bar */}
       <div
         style={{
           background: "#fff",
           borderRadius: "12px",
           border: "1px solid #e2e8f0",
-          padding: "12px 18px",
-          marginBottom: "16px",
+          padding: isMobile ? "10px 12px" : "12px 18px",
+          marginBottom: "12px",
           display: "flex",
           flexWrap: "wrap",
           justifyContent: "space-between",
           alignItems: "center",
-          gap: "12px",
+          gap: "10px",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-          <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "#475569" }}>
-            Affichage des Colis :
-          </span>
-
-          <div style={{ display: "flex", gap: "4px", background: "#f1f5f9", padding: "3px", borderRadius: "8px" }}>
-            <button
-              onClick={() => setViewScope("all")}
-              style={{
-                background: viewScope === "all" ? "#fff" : "transparent",
-                color: viewScope === "all" ? "#0f172a" : "#64748b",
-                fontWeight: viewScope === "all" ? 700 : 500,
-                border: "none",
-                borderRadius: "6px",
-                padding: "6px 12px",
-                fontSize: "0.8rem",
-                cursor: "pointer",
-                boxShadow: viewScope === "all" ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
-              }}
-            >
-              Tous les Colis ({deliveries.length})
-            </button>
-
-            <button
-              onClick={() => setViewScope("driver")}
-              style={{
-                background: viewScope === "driver" ? "#fff" : "transparent",
-                color: viewScope === "driver" ? "#0f172a" : "#64748b",
-                fontWeight: viewScope === "driver" ? 700 : 500,
-                border: "none",
-                borderRadius: "6px",
-                padding: "6px 12px",
-                fontSize: "0.8rem",
-                cursor: "pointer",
-                boxShadow: viewScope === "driver" ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
-              }}
-            >
-              Mes Livraisons Livreur
-            </button>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            flexWrap: "wrap",
+            width: isMobile ? "100%" : "auto",
+          }}
+        >
+          {/* Status filter chips */}
+          <div
+            style={{
+              display: "flex",
+              gap: "4px",
+              background: "#f1f5f9",
+              padding: "3px",
+              borderRadius: "8px",
+              width: isMobile ? "100%" : "auto",
+              justifyContent: isMobile ? "space-between" : "flex-start",
+            }}
+          >
+            {[
+              { id: "all", label: "Tous" },
+              { id: "pending", label: "En attente" },
+              { id: "delivered", label: "Livrés" },
+            ].map((st) => (
+              <button
+                key={st.id}
+                onClick={() => setFilterStatus(st.id)}
+                style={{
+                  flex: isMobile ? 1 : "auto",
+                  background: filterStatus === st.id ? "#fff" : "transparent",
+                  color: filterStatus === st.id ? "#0f172a" : "#64748b",
+                  fontWeight: filterStatus === st.id ? 700 : 500,
+                  border: "none",
+                  borderRadius: "6px",
+                  padding: "6px 12px",
+                  fontSize: "0.78rem",
+                  cursor: "pointer",
+                  boxShadow:
+                    filterStatus === st.id ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+                }}
+              >
+                {st.label}
+              </button>
+            ))}
           </div>
 
           {/* Depot Filter */}
-          <div style={{ display: "flex", alignItems: "center", gap: "6px", marginLeft: "8px" }}>
-            <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "#475569" }}>
-              🏬 Filtrer par Dépôt :
-            </span>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              width: isMobile ? "100%" : "auto",
+              marginTop: isMobile ? "4px" : "0",
+            }}
+          >
             <select
               value={selectedDepotFilter}
               onChange={(e) => setSelectedDepotFilter(e.target.value)}
               style={{
+                width: isMobile ? "100%" : "auto",
                 padding: "6px 10px",
                 borderRadius: "8px",
                 border: "1px solid #cbd5e1",
-                fontSize: "0.82rem",
+                fontSize: "0.8rem",
                 fontWeight: 600,
                 color: "#1e293b",
                 background: "#f8fafc",
                 outline: "none",
               }}
             >
-              <option value="all">Tous les Dépôts & Hubs</option>
+              <option value="all">🏬 Tous les Dépôts & Hubs</option>
               {depots.map((d) => (
                 <option key={d.id} value={d.id}>
                   {d.name} ({d.code || "DEP"})
@@ -837,6 +865,7 @@ export default function MyMap() {
         <button
           onClick={centerOnCurrentLocation}
           style={{
+            width: isMobile ? "100%" : "auto",
             background: "#10b981",
             color: "#fff",
             border: "none",
@@ -847,93 +876,81 @@ export default function MyMap() {
             cursor: "pointer",
             display: "inline-flex",
             alignItems: "center",
+            justifyContent: "center",
             gap: "6px",
             boxShadow: "0 2px 6px rgba(16, 185, 129, 0.3)",
           }}
         >
-          <FaCrosshairs /> Placer & Suivre Ma Position GPS
+          <FaCrosshairs /> Centrer Sur Ma Position GPS
         </button>
       </div>
 
-      {/* Main Grid: Stops List + Leaflet Map */}
+      {/* MAIN CONTAINER: Responsive Desktop Grid VS Mobile Tabs */}
       <div
         style={{
-          display: "grid",
-          gridTemplateColumns: "minmax(320px, 380px) 1fr",
+          display: isMobile ? "block" : "grid",
+          gridTemplateColumns: isMobile ? "1fr" : "minmax(320px, 380px) 1fr",
           gap: "16px",
           alignItems: "stretch",
         }}
       >
-        {/* Left Column: Stops List */}
-        <div
-          style={{
-            background: "#fff",
-            borderRadius: "16px",
-            border: "1px solid #e2e8f0",
-            display: "flex",
-            flexDirection: "column",
-            overflow: "hidden",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
-            maxHeight: "780px",
-          }}
-        >
-          {/* Header of Stops */}
-          <div style={{ padding: "16px", borderBottom: "1px solid #f1f5f9" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-              <h4 style={{ margin: 0, fontSize: "0.95rem", fontWeight: 800, color: "#0f172a" }}>
-                Arrêts de la Tournée ({deliveries.length})
+        {/* STOPS LIST (Visible on Desktop OR when mobileTab === 'list') */}
+        {(!isMobile || mobileTab === "list") && (
+          <div
+            style={{
+              background: "#fff",
+              borderRadius: "16px",
+              border: "1px solid #e2e8f0",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+              maxHeight: isMobile ? "none" : "780px",
+              marginBottom: isMobile ? "16px" : "0",
+            }}
+          >
+            <div
+              style={{
+                padding: "14px 16px",
+                borderBottom: "1px solid #f1f5f9",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <h4
+                style={{
+                  margin: 0,
+                  fontSize: "0.95rem",
+                  fontWeight: 800,
+                  color: "#0f172a",
+                }}
+              >
+                Arrêts de la Tournée ({visibleDeliveries.length})
               </h4>
-              <span style={{ fontSize: "0.75rem", color: "#64748b" }}>
+              <span
+                style={{
+                  fontSize: "0.75rem",
+                  color: "#64748b",
+                  fontWeight: 600,
+                }}
+              >
                 {pendingCount} en attente
               </span>
             </div>
 
-            {/* Filter Buttons */}
+            {/* List of stops */}
             <div
               style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr 1fr",
-                gap: "4px",
-                background: "#f1f5f9",
-                padding: "3px",
-                borderRadius: "8px",
+                flex: 1,
+                overflowY: "auto",
+                padding: "10px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "10px",
               }}
             >
-              {[
-                { id: "all", label: "Tous" },
-                { id: "pending", label: "En cours" },
-                { id: "delivered", label: "Livrés" },
-              ].map((btn) => (
-                <button
-                  key={btn.id}
-                  onClick={() => setFilterStatus(btn.id)}
-                  style={{
-                    background: filterStatus === btn.id ? "#fff" : "transparent",
-                    color: filterStatus === btn.id ? "#0f172a" : "#64748b",
-                    fontWeight: filterStatus === btn.id ? 700 : 500,
-                    border: "none",
-                    borderRadius: "6px",
-                    padding: "6px 0",
-                    fontSize: "0.78rem",
-                    cursor: "pointer",
-                    boxShadow: filterStatus === btn.id ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
-                  }}
-                >
-                  {btn.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Stops List Scroll */}
-          <div style={{ flex: 1, overflowY: "auto", padding: "12px", display: "flex", flexDirection: "column", gap: "10px" }}>
-            {deliveries
-              .filter((d) => {
-                if (filterStatus === "pending") return d.status !== 5;
-                if (filterStatus === "delivered") return d.status === 5;
-                return true;
-              })
-              .map((item, index) => {
+              {visibleDeliveries.map((item, index) => {
                 const isSelected = selectedStop?.id === item.id;
                 const isDelivered = item.status === 5;
                 const totalAmt = (
@@ -945,9 +962,13 @@ export default function MyMap() {
                 return (
                   <div
                     key={item.id}
-                    onClick={() => centerOnStop(item)}
+                    onClick={() => centerOnStop(item, true)}
                     style={{
-                      background: isSelected ? "#eff6ff" : isDelivered ? "#f8fafc" : "#fff",
+                      background: isSelected
+                        ? "#eff6ff"
+                        : isDelivered
+                        ? "#f8fafc"
+                        : "#fff",
                       borderRadius: "12px",
                       border: isSelected
                         ? "2px solid #3b82f6"
@@ -963,8 +984,8 @@ export default function MyMap() {
                     <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
                       <div
                         style={{
-                          width: "30px",
-                          height: "30px",
+                          width: "32px",
+                          height: "32px",
                           borderRadius: "50%",
                           background: isDelivered
                             ? "#10b981"
@@ -975,7 +996,7 @@ export default function MyMap() {
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
-                          fontSize: "0.82rem",
+                          fontSize: "0.85rem",
                           fontWeight: 800,
                           flexShrink: 0,
                           marginTop: "2px",
@@ -985,8 +1006,20 @@ export default function MyMap() {
                       </div>
 
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                          <span style={{ fontWeight: 700, color: "#0f172a", fontSize: "0.9rem" }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontWeight: 700,
+                              color: "#0f172a",
+                              fontSize: "0.92rem",
+                            }}
+                          >
                             {item.customer?.fullName || "Client"}
                           </span>
                           <span
@@ -1006,14 +1039,15 @@ export default function MyMap() {
                         <div
                           style={{
                             color: "#64748b",
-                            fontSize: "0.78rem",
+                            fontSize: "0.8rem",
                             marginTop: "2px",
                             whiteSpace: "nowrap",
                             overflow: "hidden",
                             textOverflow: "ellipsis",
                           }}
                         >
-                          📍 {item.customer?.address || ""}, {item.customer?.deleg || ""} {item.customer?.city || "Tunis"}
+                          📍 {item.customer?.address || ""},{" "}
+                          {item.customer?.deleg || ""} {item.customer?.city || "Tunis"}
                         </div>
 
                         <div
@@ -1021,16 +1055,49 @@ export default function MyMap() {
                             display: "flex",
                             justifyContent: "space-between",
                             alignItems: "center",
-                            marginTop: "6px",
+                            marginTop: "8px",
                             paddingTop: "6px",
                             borderTop: "1px dashed #e2e8f0",
                           }}
                         >
-                          <span style={{ fontSize: "0.75rem", color: "#475569" }}>
-                            📦 {item.coliItems?.length || 1} article(s)
-                          </span>
-                          <span style={{ fontWeight: 800, color: "#0f172a", fontSize: "0.85rem" }}>
-                            {totalAmt} <span style={{ fontSize: "0.7rem", color: "#64748b" }}>TND</span>
+                          {/* Direct Call Button on Mobile */}
+                          {item.customer?.phoneNumber ? (
+                            <a
+                              href={`tel:${item.customer.phoneNumber}`}
+                              onClick={(e) => e.stopPropagation()}
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "4px",
+                                background: "#ecfdf5",
+                                color: "#059669",
+                                border: "1px solid #a7f3d0",
+                                padding: "4px 8px",
+                                borderRadius: "6px",
+                                fontSize: "0.75rem",
+                                fontWeight: 700,
+                                textDecoration: "none",
+                              }}
+                            >
+                              <FaPhoneAlt size={10} /> Appeler
+                            </a>
+                          ) : (
+                            <span style={{ fontSize: "0.75rem", color: "#64748b" }}>
+                              📦 {item.coliItems?.length || 1} colis
+                            </span>
+                          )}
+
+                          <span
+                            style={{
+                              fontWeight: 800,
+                              color: "#0f172a",
+                              fontSize: "0.9rem",
+                            }}
+                          >
+                            {totalAmt}{" "}
+                            <span style={{ fontSize: "0.7rem", color: "#64748b" }}>
+                              TND
+                            </span>
                           </span>
                         </div>
                       </div>
@@ -1039,209 +1106,292 @@ export default function MyMap() {
                 );
               })}
 
-            {deliveries.length === 0 && (
-              <div style={{ padding: "40px 20px", textAlign: "center", color: "#64748b" }}>
-                <FaBoxOpen size={36} style={{ color: "#cbd5e1", marginBottom: "8px" }} />
-                <div style={{ fontWeight: 600 }}>Aucune livraison trouvée</div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Right Column: Leaflet Map + Active Stop Panel */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-          {/* Map Container */}
-          <div
-            style={{
-              position: "relative",
-              borderRadius: "16px",
-              overflow: "hidden",
-              border: "1px solid #cbd5e1",
-              boxShadow: "0 4px 16px rgba(0,0,0,0.06)",
-              height: "480px",
-              background: "#e2e8f0",
-            }}
-          >
-            <div ref={mapContainerRef} style={{ width: "100%", height: "100%", zIndex: 1 }} />
-
-            {/* Quick GPS Floating Button */}
-            <div
-              style={{
-                position: "absolute",
-                top: "14px",
-                right: "14px",
-                zIndex: 1000,
-              }}
-            >
-              <button
-                onClick={centerOnCurrentLocation}
-                title="Placer et centrer sur ma position GPS"
-                style={{
-                  background: "#fff",
-                  color: "#0f172a",
-                  border: "1px solid #cbd5e1",
-                  borderRadius: "10px",
-                  padding: "10px 14px",
-                  fontSize: "0.82rem",
-                  fontWeight: 700,
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "6px",
-                  boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-                }}
-              >
-                <FaCrosshairs style={{ color: "#10b981" }} /> Ma Position GPS
-              </button>
-            </div>
-
-            {/* Map Legend */}
-            <div
-              style={{
-                position: "absolute",
-                bottom: "14px",
-                left: "14px",
-                zIndex: 1000,
-                background: "rgba(255, 255, 255, 0.95)",
-                backdropFilter: "blur(6px)",
-                border: "1px solid rgba(226, 232, 240, 0.8)",
-                borderRadius: "10px",
-                padding: "8px 14px",
-                fontSize: "0.75rem",
-                display: "flex",
-                gap: "14px",
-                alignItems: "center",
-                boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-              }}
-            >
-              <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
-                <span>🏬</span> Dépôt / Stock
-              </span>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
-                <span>🚚</span> Ma Position GPS
-              </span>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
-                <span style={{ width: "10px", height: "10px", borderRadius: "50%", background: "#2563eb" }}></span>
-                À Livrer
-              </span>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
-                <span style={{ width: "10px", height: "10px", borderRadius: "50%", background: "#10b981" }}></span>
-                Livré
-              </span>
+              {visibleDeliveries.length === 0 && (
+                <div
+                  style={{
+                    padding: "40px 20px",
+                    textAlign: "center",
+                    color: "#64748b",
+                  }}
+                >
+                  <FaBoxOpen
+                    size={36}
+                    style={{ color: "#cbd5e1", marginBottom: "8px" }}
+                  />
+                  <div style={{ fontWeight: 600 }}>Aucune livraison disponible</div>
+                </div>
+              )}
             </div>
           </div>
+        )}
 
-          {/* Active Stop Inspector Card */}
-          {selectedStop && (
+        {/* MAP & ACTIVE STOP CONTAINER (Visible on Desktop OR when mobileTab === 'map') */}
+        {(!isMobile || mobileTab === "map") && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            {/* Map Element */}
             <div
               style={{
-                background: "#fff",
+                position: "relative",
                 borderRadius: "16px",
-                border: "1px solid #e2e8f0",
-                padding: "20px 24px",
-                boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+                overflow: "hidden",
+                border: "1px solid #cbd5e1",
+                boxShadow: "0 4px 16px rgba(0,0,0,0.06)",
+                height: isMobile ? "calc(100vh - 360px)" : "480px",
+                minHeight: isMobile ? "380px" : "480px",
+                background: "#e2e8f0",
               }}
             >
               <div
+                ref={mapContainerRef}
+                style={{ width: "100%", height: "100%", zIndex: 1 }}
+              />
+
+              {/* Floating GPS Target Button */}
+              <div
                 style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  justifyContent: "space-between",
-                  alignItems: "flex-start",
-                  gap: "16px",
-                  marginBottom: "16px",
+                  position: "absolute",
+                  top: "12px",
+                  right: "12px",
+                  zIndex: 1000,
                 }}
               >
-                <div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    <span
+                <button
+                  onClick={centerOnCurrentLocation}
+                  style={{
+                    background: "#ffffff",
+                    color: "#0f172a",
+                    border: "1.5px solid #cbd5e1",
+                    borderRadius: "10px",
+                    padding: "10px 14px",
+                    fontSize: "0.82rem",
+                    fontWeight: 800,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    boxShadow: "0 4px 14px rgba(0,0,0,0.2)",
+                  }}
+                >
+                  <FaCrosshairs style={{ color: "#10b981", fontSize: "15px" }} />
+                  <span>Ma Position</span>
+                </button>
+              </div>
+
+              {/* Map Legend */}
+              <div
+                style={{
+                  position: "absolute",
+                  bottom: "10px",
+                  left: "10px",
+                  zIndex: 1000,
+                  background: "rgba(255, 255, 255, 0.95)",
+                  backdropFilter: "blur(6px)",
+                  border: "1px solid rgba(226, 232, 240, 0.8)",
+                  borderRadius: "8px",
+                  padding: "6px 10px",
+                  fontSize: "0.72rem",
+                  display: "flex",
+                  gap: "10px",
+                  alignItems: "center",
+                  boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+                }}
+              >
+                <span
+                  style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}
+                >
+                  <span>🚚</span> GPS
+                </span>
+                <span
+                  style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}
+                >
+                  <span
+                    style={{
+                      width: "8px",
+                      height: "8px",
+                      borderRadius: "50%",
+                      background: "#2563eb",
+                    }}
+                  ></span>
+                  À Livrer
+                </span>
+                <span
+                  style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}
+                >
+                  <span
+                    style={{
+                      width: "8px",
+                      height: "8px",
+                      borderRadius: "50%",
+                      background: "#10b981",
+                    }}
+                  ></span>
+                  Livré
+                </span>
+              </div>
+            </div>
+
+            {/* Mobile / Desktop Active Stop Card with Big Thumb-Friendly Buttons */}
+            {selectedStop ? (
+              <div
+                style={{
+                  background: "#fff",
+                  borderRadius: "16px",
+                  border: "1px solid #e2e8f0",
+                  padding: isMobile ? "14px 16px" : "20px 24px",
+                  boxShadow: "0 4px 12px rgba(0,0,0,0.06)",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    gap: "12px",
+                    marginBottom: "14px",
+                  }}
+                >
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <span
+                        style={{
+                          background: "#eff6ff",
+                          color: "#2563eb",
+                          border: "1px solid #bfdbfe",
+                          padding: "2px 8px",
+                          borderRadius: "6px",
+                          fontSize: "0.72rem",
+                          fontWeight: 700,
+                        }}
+                      >
+                        Arrêt Sélectionné
+                      </span>
+                      <span
+                        style={{
+                          fontFamily: "monospace",
+                          color: "#64748b",
+                          fontSize: "0.78rem",
+                        }}
+                      >
+                        #{selectedStop.qrCodeContent || selectedStop.id}
+                      </span>
+                    </div>
+
+                    <h3
                       style={{
-                        background: "#eff6ff",
-                        color: "#2563eb",
-                        border: "1px solid #bfdbfe",
-                        padding: "2px 8px",
-                        borderRadius: "6px",
-                        fontSize: "0.75rem",
+                        margin: "6px 0 2px",
+                        fontSize: isMobile ? "1.15rem" : "1.25rem",
+                        fontWeight: 800,
+                        color: "#0f172a",
+                      }}
+                    >
+                      {selectedStop.customer?.fullName || "Client"}
+                    </h3>
+                    <div
+                      style={{
+                        color: "#475569",
+                        fontSize: "0.82rem",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "6px",
+                      }}
+                    >
+                      <FaMapMarkerAlt style={{ color: "#ef4444" }} />
+                      <span>
+                        {selectedStop.customer?.address || ""},{" "}
+                        {selectedStop.customer?.deleg || ""}{" "}
+                        {selectedStop.customer?.city || "Tunis"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Cash to collect badge */}
+                  <div
+                    style={{
+                      background: "#fef2f2",
+                      border: "1px solid #fecaca",
+                      padding: "8px 14px",
+                      borderRadius: "10px",
+                      textAlign: "right",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: "0.68rem",
+                        color: "#991b1b",
                         fontWeight: 700,
                       }}
                     >
-                      Arrêt Sélectionné
-                    </span>
-                    <span
+                      À ENCAISSER
+                    </div>
+                    <div
                       style={{
-                        fontFamily: "monospace",
-                        color: "#64748b",
-                        fontSize: "0.8rem",
+                        fontSize: "1.25rem",
+                        fontWeight: 900,
+                        color: "#b91c1c",
                       }}
                     >
-                      Code : {selectedStop.qrCodeContent || selectedStop.id}
-                    </span>
-                  </div>
-
-                  <h3 style={{ margin: "6px 0 2px", fontSize: "1.25rem", fontWeight: 800, color: "#0f172a" }}>
-                    {selectedStop.customer?.fullName || "Client sans nom"}
-                  </h3>
-                  <div style={{ color: "#475569", fontSize: "0.85rem", display: "flex", alignItems: "center", gap: "6px" }}>
-                    <FaMapMarkerAlt style={{ color: "#ef4444" }} />
-                    <span>
-                      {selectedStop.customer?.address || ""}, {selectedStop.customer?.deleg || ""} {selectedStop.customer?.city || "Tunis"}
-                    </span>
+                      {(
+                        selectedStop.coliItems?.reduce(
+                          (s, it) => s + it.qty * it.unitPrice,
+                          0
+                        ) ||
+                        selectedStop.totalPrice ||
+                        0
+                      ).toFixed(3)}{" "}
+                      <span style={{ fontSize: "0.75rem" }}>TND</span>
+                    </div>
                   </div>
                 </div>
 
-                {/* Amount to collect */}
+                {/* DRIVER ACTION BUTTONS - 1-TAP NAVIGATION & CALL */}
                 <div
                   style={{
-                    background: "#f8fafc",
-                    border: "1px solid #e2e8f0",
-                    padding: "10px 18px",
-                    borderRadius: "12px",
-                    textAlign: "right",
+                    display: "grid",
+                    gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3, 1fr)",
+                    gap: "8px",
+                    marginBottom: "12px",
                   }}
                 >
-                  <div style={{ fontSize: "0.75rem", color: "#64748b", fontWeight: 600 }}>À Encaisser</div>
-                  <div style={{ fontSize: "1.35rem", fontWeight: 900, color: "#b91c1c" }}>
-                    {(
-                      selectedStop.coliItems?.reduce((s, it) => s + it.qty * it.unitPrice, 0) ||
-                      selectedStop.totalPrice ||
-                      0
-                    ).toFixed(3)}{" "}
-                    <span style={{ fontSize: "0.8rem", color: "#64748b" }}>TND</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Action Buttons: Call, GPS, Status update */}
-              <div
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: "12px",
-                  paddingTop: "14px",
-                  borderTop: "1px solid #f1f5f9",
-                }}
-              >
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-                  {selectedStop.customer?.phoneNumber && (
+                  {selectedStop.customer?.phoneNumber ? (
                     <a
                       href={`tel:${selectedStop.customer.phoneNumber}`}
                       style={{
-                        display: "inline-flex",
+                        display: "flex",
                         alignItems: "center",
-                        gap: "6px",
+                        justifyContent: "center",
+                        gap: "8px",
                         background: "#10b981",
                         color: "#fff",
                         textDecoration: "none",
-                        padding: "8px 14px",
-                        borderRadius: "8px",
-                        fontSize: "0.82rem",
-                        fontWeight: 700,
+                        padding: "12px",
+                        borderRadius: "10px",
+                        fontSize: "0.88rem",
+                        fontWeight: 800,
+                        boxShadow: "0 2px 8px rgba(16, 185, 129, 0.3)",
                       }}
                     >
-                      <FaPhoneAlt size={11} /> Appeler Client
+                      <FaPhoneAlt size={13} /> Appeler
                     </a>
+                  ) : (
+                    <button
+                      disabled
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: "6px",
+                        background: "#f1f5f9",
+                        color: "#94a3b8",
+                        border: "none",
+                        padding: "12px",
+                        borderRadius: "10px",
+                        fontSize: "0.85rem",
+                        fontWeight: 600,
+                      }}
+                    >
+                      Pas de téléphone
+                    </button>
                   )}
 
                   <a
@@ -1249,19 +1399,21 @@ export default function MyMap() {
                     target="_blank"
                     rel="noopener noreferrer"
                     style={{
-                      display: "inline-flex",
+                      display: "flex",
                       alignItems: "center",
-                      gap: "6px",
+                      justifyContent: "center",
+                      gap: "8px",
                       background: "#2563eb",
                       color: "#fff",
                       textDecoration: "none",
-                      padding: "8px 14px",
-                      borderRadius: "8px",
-                      fontSize: "0.82rem",
-                      fontWeight: 700,
+                      padding: "12px",
+                      borderRadius: "10px",
+                      fontSize: "0.88rem",
+                      fontWeight: 800,
+                      boxShadow: "0 2px 8px rgba(37, 99, 235, 0.3)",
                     }}
                   >
-                    <FaDirections size={13} /> Lancer Google Maps
+                    <FaDirections size={15} /> Maps GPS
                   </a>
 
                   <a
@@ -1269,78 +1421,115 @@ export default function MyMap() {
                     target="_blank"
                     rel="noopener noreferrer"
                     style={{
-                      display: "inline-flex",
+                      gridColumn: isMobile ? "span 2" : "auto",
+                      display: "flex",
                       alignItems: "center",
-                      gap: "6px",
+                      justifyContent: "center",
+                      gap: "8px",
                       background: "#0891b2",
                       color: "#fff",
                       textDecoration: "none",
-                      padding: "8px 14px",
-                      borderRadius: "8px",
-                      fontSize: "0.82rem",
-                      fontWeight: 700,
+                      padding: "12px",
+                      borderRadius: "10px",
+                      fontSize: "0.88rem",
+                      fontWeight: 800,
+                      boxShadow: "0 2px 8px rgba(8, 145, 178, 0.3)",
                     }}
                   >
-                    <FaExternalLinkAlt size={10} /> Waze GPS
+                    <FaExternalLinkAlt size={12} /> Waze GPS
                   </a>
                 </div>
 
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                {/* STATUS CONFIRMATION BAR */}
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: isMobile ? "1fr 1fr" : "2fr 1fr 1fr",
+                    gap: "8px",
+                    paddingTop: "12px",
+                    borderTop: "1px solid #f1f5f9",
+                  }}
+                >
                   <button
                     onClick={() => updateStopStatus(selectedStop.id, 5)}
                     style={{
+                      gridColumn: isMobile ? "span 2" : "auto",
                       background: "#10b981",
                       color: "#fff",
                       border: "none",
-                      borderRadius: "8px",
-                      padding: "8px 14px",
-                      fontSize: "0.82rem",
-                      fontWeight: 700,
+                      borderRadius: "10px",
+                      padding: "12px",
+                      fontSize: "0.92rem",
+                      fontWeight: 800,
                       cursor: "pointer",
-                      display: "inline-flex",
+                      display: "flex",
                       alignItems: "center",
-                      gap: "5px",
+                      justifyContent: "center",
+                      gap: "8px",
+                      boxShadow: "0 4px 12px rgba(16, 185, 129, 0.3)",
                     }}
                   >
-                    ✓ Marquer Livré
+                    <FaCheckCircle size={15} /> ✓ Marquer Livré & Encaissé
                   </button>
 
                   <button
                     onClick={() => updateStopStatus(selectedStop.id, 6)}
                     style={{
-                      background: "#f59e0b",
-                      color: "#fff",
-                      border: "none",
-                      borderRadius: "8px",
-                      padding: "8px 14px",
+                      background: "#fff",
+                      border: "1.5px solid #f59e0b",
+                      color: "#d97706",
+                      borderRadius: "10px",
+                      padding: "10px",
                       fontSize: "0.82rem",
                       fontWeight: 700,
                       cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "6px",
                     }}
                   >
-                    Pas de Réponse
+                    <FaTimesCircle size={13} /> Pas de Réponse
                   </button>
 
                   <button
                     onClick={() => updateStopStatus(selectedStop.id, 9)}
                     style={{
-                      background: "#64748b",
-                      color: "#fff",
-                      border: "none",
-                      borderRadius: "8px",
-                      padding: "8px 14px",
+                      background: "#fff",
+                      border: "1.5px solid #94a3b8",
+                      color: "#475569",
+                      borderRadius: "10px",
+                      padding: "10px",
                       fontSize: "0.82rem",
                       fontWeight: 700,
                       cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "6px",
                     }}
                   >
-                    Reporté
+                    <FaClock size={13} /> Reporté
                   </button>
                 </div>
               </div>
-            </div>
-          )}
-        </div>
+            ) : (
+              <div
+                style={{
+                  background: "#fff",
+                  borderRadius: "16px",
+                  border: "1px solid #e2e8f0",
+                  padding: "20px",
+                  textAlign: "center",
+                  color: "#64748b",
+                  fontSize: "0.85rem",
+                }}
+              >
+                Sélectionnez un arrêt sur la carte ou dans la liste pour lancer le GPS et appeler le client.
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

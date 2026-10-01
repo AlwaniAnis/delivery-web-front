@@ -32,6 +32,7 @@ import {
   currentUserState,
   activeRoleState,
   currentDriverIdState,
+  normalizeRole,
 } from "./Atoms/auth.atom";
 import { DriversList } from "./Atoms/drivers.atom";
 import { StoresList } from "./Atoms/stores.atom";
@@ -62,7 +63,7 @@ const App = () => {
   const [driversList, setDriversList] = useRecoilState(DriversList);
   const [storesList, setStoresList] = useRecoilState(StoresList);
   const setStore = useSetRecoilState(MyStore);
-  const { isB2B } = useB2B();
+  useB2B();
 
   const location = useLocation();
   const history = useHistory();
@@ -94,7 +95,9 @@ const App = () => {
         const parsed = JSON.parse(rawAuth);
         setCurrentUser(parsed);
         if (parsed.role) {
-          setActiveRole(parsed.role);
+          setActiveRole(normalizeRole(parsed.role));
+        } else {
+          setActiveRole("admin");
         }
         if (parsed.driverId) {
           setCurrentDriverId(parsed.driverId);
@@ -111,6 +114,11 @@ const App = () => {
     setLogged(false);
     history.push("/");
   };
+
+  const currentRole = normalizeRole(activeRole);
+  const isDriver = currentRole === "driver";
+  const isB2B = currentRole === "B2Bclient";
+  const isAdmin = !isDriver && !isB2B;
 
   const currentDriver = driversList.find((d) => d.id === Number(currentDriverId)) || {
     name: currentUser?.fullName || currentUser?.userName || "Livreur",
@@ -161,19 +169,19 @@ const App = () => {
           {/* Active Profile Pill in Sidebar */}
           <div className="sidebar-role-indicator">
             <div className="role-avatar">
-              {activeRole === "driver" ? <FaTruck /> : activeRole === "B2Bclient" ? <FaStore /> : <FaUserShield />}
+              {isDriver ? <FaTruck /> : isB2B ? <FaStore /> : <FaUserShield />}
             </div>
             <div className="role-details">
               <span className="role-name">{currentUser.fullName || currentUser.userName || "Utilisateur"}</span>
               <span className="role-badge-text">
-                {activeRole === "driver" ? "Profil Livreur" : activeRole === "B2Bclient" ? "Espace Boutique B2B" : "Direction / Admin"}
+                {isDriver ? "Profil Livreur" : isB2B ? "Espace Boutique B2B" : "Direction / Admin"}
               </span>
             </div>
           </div>
 
           <div className="sidebar-nav-scroll">
             {/* DRIVER ROLE NAV */}
-            {activeRole === "driver" && (
+            {isDriver && (
               <div className="nav-group">
                 <div className="nav-group-title">ESPACE LIVREUR</div>
                 <Link
@@ -212,7 +220,7 @@ const App = () => {
             )}
 
             {/* B2B CLIENT ROLE NAV */}
-            {activeRole === "B2Bclient" && (
+            {isB2B && (
               <div className="nav-group">
                 <div className="nav-group-title">ESPACE BOUTIQUE B2B</div>
                 <Link
@@ -251,7 +259,7 @@ const App = () => {
             )}
 
             {/* ADMIN ROLE NAV */}
-            {activeRole === "admin" && (
+            {isAdmin && (
               <>
                 <div className="nav-group">
                   <div className="nav-group-title">SUPERVISION & BOUTIQUE PRINCIPALE</div>
@@ -393,7 +401,7 @@ const App = () => {
 
             <div className="header-right-zone">
               {/* Authenticated Role Status Badge */}
-              {activeRole === "admin" && (
+              {isAdmin && (
                 <div
                   style={{
                     display: "flex",
@@ -413,7 +421,7 @@ const App = () => {
                 </div>
               )}
 
-              {activeRole === "driver" && (
+              {isDriver && (
                 <div
                   style={{
                     display: "flex",
@@ -435,7 +443,7 @@ const App = () => {
                 </div>
               )}
 
-              {activeRole === "B2Bclient" && (
+              {isB2B && (
                 <div
                   style={{
                     display: "flex",
@@ -475,16 +483,16 @@ const App = () => {
                       fontSize: "0.72rem",
                       fontWeight: 700,
                       color:
-                        activeRole === "admin"
+                        isAdmin
                           ? "#7c3aed"
-                          : activeRole === "driver"
+                          : isDriver
                           ? "#059669"
                           : "#2563eb",
                     }}
                   >
-                    {activeRole === "admin"
+                    {isAdmin
                       ? "Compte Administrateur / Boutique"
-                      : activeRole === "driver"
+                      : isDriver
                       ? "Chauffeur - Livreur Assigné"
                       : "Boutique Partenaire B2B"}
                   </div>
@@ -500,7 +508,7 @@ const App = () => {
           {/* App Body Content */}
           <Content className="tawsil-body-content">
             <Switch>
-              <Route exact path="/" component={activeRole === "driver" ? Deliveries : Home} />
+              <Route exact path="/" component={isDriver ? Deliveries : Home} />
               <Route path="/deliveries" component={Deliveries} />
               <Route path="/deliveries_not_paid" component={NotPaidDeliveries} />
               <Route path="/delivred" component={Delivred} />
@@ -512,7 +520,7 @@ const App = () => {
               <Route path="/depots" component={PreparationPlaces} />
               <Route path="/our_store" component={OurStore} />
               <Route path="/users" component={Users} />
-              <Route path="/*" component={activeRole === "driver" ? Deliveries : Home} />
+              <Route path="/*" component={isDriver ? Deliveries : Home} />
             </Switch>
           </Content>
         </Container>

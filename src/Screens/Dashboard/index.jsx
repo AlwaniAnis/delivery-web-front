@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { GoPackageDependents } from "react-icons/go";
 import {
   LuPackage,
@@ -18,7 +19,19 @@ import { DeliveryStatus } from "../../Constants/types";
 import format_number from "../../Helpers/number_formatter";
 import Stats, { Stats2, Stats3 } from "./components";
 
-import { FaMapMarker, FaPhoneAlt, FaPhoneSlash } from "react-icons/fa";
+import {
+  FaMapMarker,
+  FaPhoneAlt,
+  FaPhoneSlash,
+  FaRoute,
+  FaTruck,
+  FaBox,
+  FaStore,
+  FaWarehouse,
+  FaUsers,
+  FaUserShield,
+  FaMoneyBillWave,
+} from "react-icons/fa";
 import { useRecoilValue } from "recoil";
 import { MyStore } from "../../Atoms/store.atom";
 import { StoresList } from "../../Atoms/stores.atom";
@@ -343,11 +356,12 @@ function Home() {
         ""
       )}
       {!isB2B && (
-        <div>
-          {" "}
-          <label>Boutique </label>
+        <div style={{ maxWidth: "320px", marginBottom: "16px" }}>
+          <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#475569", marginBottom: "4px", display: "block" }}>
+            Boutique
+          </label>
           <SelectPicker
-            data={[{ label: "Sélectionner", value: 0 }].concat(
+            data={[{ label: "Toutes les boutiques (Boutique Principale)", value: 0 }].concat(
               storesList.map((c) => {
                 return { label: c.name_fr, value: c.id };
               })
