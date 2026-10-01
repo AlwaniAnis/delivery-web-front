@@ -32,12 +32,11 @@
     "xlsx": "^0.18.5"
   },
   "scripts": {
-    "dev": "PORT=3000 HOST=0.0.0.0 react-scripts start",
-    "start": "PORT=3000 HOST=0.0.0.0 react-scripts start",
-    "build": "react-scripts build",
-    "lint": "eslint src",
-    "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "dev": "vite",
+    "start": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint src"
   },
   "eslintConfig": {
     "extends": [
@@ -55,5 +54,9 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.1.1",
+    "vite": "^8.3.1"
   }
 }

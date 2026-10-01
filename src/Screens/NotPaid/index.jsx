@@ -39,7 +39,6 @@ export default function NotPaidDeliveries(props) {
     storeId: 0,
   });
   // --- add edit model ---
-  const [error, setError] = useState("");
   const [drivers, setDriversList] = useRecoilState(DriversList);
   const [checkeds, setcheckeds] = useState([]);
   const { isB2B } = useB2B();

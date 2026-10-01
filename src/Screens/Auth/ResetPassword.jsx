@@ -31,7 +31,9 @@ export default function ResetPassword({ model, setmodel }) {
           timer: 1500,
         });
       })
-      .catch((e) => {});
+      .catch((e) => {
+        seterror(e?.response?.data?.message || e?.message || "Erreur de mise à jour");
+      });
   };
   return (
     <div>
