@@ -189,10 +189,10 @@ export default function Users() {
       ),
     },
     {
-      value: "role",
+      value: "position",
       name: "Rôle & Accès",
       render: (role) => {
-        if (role === "admin") {
+        if (role.toLowerCase() === "admin") {
           return (
             <span
               style={{
@@ -211,7 +211,7 @@ export default function Users() {
             </span>
           );
         }
-        if (role === "driver") {
+        if (role.toLowerCase()   === "driver") {
           return (
             <span
               style={{
@@ -250,12 +250,12 @@ export default function Users() {
       },
     },
     {
-      value: "role",
+      value: "position",
       value2: "driverId",
       value3: "storeId",
       name: "Affectation Profil",
       render: (role, driverId, storeId) => {
-        if (role === "driver") {
+        if (role.toLowerCase() === "driver") {
           const d = drivers.find((el) => el.id === Number(driverId));
           return (
             <span style={{ fontSize: "0.85rem", color: "#334155" }}>
@@ -263,7 +263,7 @@ export default function Users() {
             </span>
           );
         }
-        if (role === "B2Bclient") {
+        if (role.toLowerCase() === "b2bclient") {
           const s = stores.find((el) => el.id === Number(storeId));
           return (
             <span style={{ fontSize: "0.85rem", color: "#334155" }}>
