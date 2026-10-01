@@ -605,7 +605,11 @@ export default function Deliveries(props) {
   ];
   useEffect(() => {
     const iframe = frameRef.current;
-    iframe.contentDocument.write(`<!DOCTYPE html>
+    if (!iframe?.contentWindow?.document) return;
+
+    const printDocument = iframe.contentWindow.document;
+    printDocument.open();
+    printDocument.write(`<!DOCTYPE html>
     <html lang="en">
       <head>
         <meta charset="UTF-8" />
@@ -672,17 +676,18 @@ export default function Deliveries(props) {
           font-weight: 600;
         }
       </style>
-      <body></body></html>`);
+        <body></body></html>`);
+      printDocument.close();
   }, []);
   const handlePrint = (id) => {
     let m = data.find((el) => el.id == id);
     setTimeout(() => {
-      const codes = document.querySelector("#custom-codes").innerHTML;
+      const codesElement = document.querySelector("#custom-codes");
       const iframe = frameRef.current;
-      iframe.contentDocument.body.innerHTML = "";
-      const content = generateHTMLContent(m, codes);
-      iframe.contentDocument.body.innerHTML = content;
+      const printDocument = iframe?.contentWindow?.document;
+      if (!m || !codesElement || !iframe?.contentWindow || !printDocument?.body) return;
 
+      printDocument.body.innerHTML = generateHTMLContent(m, codesElement.innerHTML);
       iframe.contentWindow.print();
     }, 300);
   };
@@ -693,9 +698,11 @@ export default function Deliveries(props) {
     );
     // debugger;
     const iframe = frameRef.current;
-    iframe.contentDocument.body.innerHTML = "";
+    const printDocument = iframe?.contentWindow?.document;
+    if (!iframe?.contentWindow || !printDocument?.body) return;
+    printDocument.body.innerHTML = "";
     // iframe.contentDocument.body.innerHTML = content;
-    iframe.contentDocument.open();
+    printDocument.open();
     let cont = d
       .map((m, i) => {
         return generateHTMLContent(m, _codes[i]);
@@ -774,8 +781,9 @@ export default function Deliveries(props) {
         }
       </style>
       <body>${cont}</body></html>`;
-    iframe.contentDocument.write(cc);
-    iframe.contentDocument.close();
+    printDocument.open();
+    printDocument.write(cc);
+    printDocument.close();
     iframe.contentWindow.print();
   };
   function generateHTMLContent(m, codes) {
