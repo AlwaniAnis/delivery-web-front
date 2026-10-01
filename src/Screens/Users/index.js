@@ -1,163 +1,274 @@
 import React, { useEffect, useState } from "react";
-import { useRecoilState } from "recoil";
-import { Input, SelectPicker, Tag } from "rsuite";
-import Pagination from "rsuite/Pagination";
+import { useRecoilState, useRecoilValue } from "recoil";
+import { Tag } from "rsuite";
 import Swal from "sweetalert2";
 import { APi } from "../../Api/";
 import { exportAddAtom } from "../../Atoms/exportAdd.atom";
+import { DriversList } from "../../Atoms/drivers.atom";
+import { StoresList } from "../../Atoms/stores.atom";
 import ExportAdd from "../../Components/Common/ExportAdd";
 import Grid from "../../Components/Grid";
-import UserModel from "../../Models/UserModel";
 import AddEdit from "./AddEdit.component";
-export default function Users(props) {
-  // STATE
-  const [data, setdata] = useState([]);
-  const [totalCount, settotalCount] = useState(0);
-  const [state, setstate] = useRecoilState(exportAddAtom);
-  const [drivers, setdrivers] = useState([]);
+import { FaUserShield, FaTruck, FaStore } from "react-icons/fa";
 
-  // --- add edit model ---
+export default function Users() {
+  const [data, setData] = useState([]);
+  const [state, setState] = useRecoilState(exportAddAtom);
+  const drivers = useRecoilValue(DriversList);
+  const stores = useRecoilValue(StoresList);
+
   const [error, setError] = useState("");
-  const [model, setmodel] = useState(new UserModel());
+  const [model, setModel] = useState({
+    role: "driver",
+    userName: "",
+    firstName: "",
+    lastName: "",
+    email: "",
+    phoneNumber: "",
+    password: "",
+  });
 
-  // ATOMS
-  // HELPERS
   const reset = () => {
-    setmodel(new UserModel());
+    setModel({
+      role: "driver",
+      userName: "",
+      firstName: "",
+      lastName: "",
+      email: "",
+      phoneNumber: "",
+      password: "",
+    });
     setError("");
   };
-  // API CALLS
-  const fetch = () => {
-    setstate((prev) => {
-      return { ...prev, loading: true };
-    });
+
+  const fetchUsers = () => {
+    setState((prev) => ({ ...prev, loading: true }));
     APi.createAPIEndpoint(APi.ENDPOINTS.Accounts, { page: 1, take: 1000 })
       .fetchAll()
       .then((res) => {
-        setdata(res.data.filter((u) => u.userName != "admin"));
+        setState((prev) => ({ ...prev, loading: false }));
+        setData(res.data || []);
       })
-      .catch((e) => setError(e.Message));
+      .catch((e) => {
+        setState((prev) => ({ ...prev, loading: false }));
+        setError(e.Message || "Erreur de chargement");
+      });
   };
+
   const save = () => {
+    if (!model.userName) {
+      setError("Le nom d'utilisateur est obligatoire.");
+      return;
+    }
+    setState((prev) => ({ ...prev, loading: true }));
     if (model.id) {
       APi.createAPIEndpoint(APi.ENDPOINTS.Accounts)
         .update(model.id, model)
-        .then((res) => {
-          fetch();
-          setstate((prev) => {
-            return { ...prev, open: false, loading: false };
-          });
+        .then(() => {
+          fetchUsers();
+          setState((prev) => ({ ...prev, open: false, loading: false }));
           reset();
           Swal.fire({
             position: "top-end",
             icon: "success",
-            title: "Élément a été bien modifié !",
+            title: "Compte modifié avec succès !",
             showConfirmButton: false,
             timer: 1500,
           });
         })
         .catch((e) => {
+          setState((prev) => ({ ...prev, loading: false }));
           setError(e.Message);
         });
     } else {
       APi.createAPIEndpoint(APi.ENDPOINTS.Accounts)
         .create(model)
-        .then((res) => {
-          fetch();
+        .then(() => {
+          fetchUsers();
           reset();
-          setstate((prev) => {
-            return { ...prev, open: false, loading: false };
-          });
+          setState((prev) => ({ ...prev, open: false, loading: false }));
           Swal.fire({
             position: "top-end",
             icon: "success",
-            title: "Element a été bien ajouté !",
+            title: "Compte utilisateur créé avec succès !",
             showConfirmButton: false,
             timer: 1500,
           });
         })
         .catch((e) => {
+          setState((prev) => ({ ...prev, loading: false }));
           setError(e.Message);
         });
     }
   };
+
   const deleteAction = (id) => {
     APi.createAPIEndpoint(APi.ENDPOINTS.Accounts)
       .delete(id)
-
-      .then((res) => {
-        fetch();
-        Swal.fire("Supprimé !", "", "success");
+      .then(() => {
+        fetchUsers();
+        Swal.fire("Supprimé !", "L'utilisateur a été retiré.", "success");
       })
       .catch((e) => setError(e.Message));
   };
-  const getBYId = (id) => {
-    setError("");
 
-    setmodel(data.find((el) => el.id == id));
+  const getById = (id) => {
+    setError("");
+    const found = data.find((el) => el.id === id);
+    if (found) setModel({ ...found });
   };
-  const fetchDrivers = (q, forFilter = true) => {
-    if (typeof q == "undefined" || q.length > 2) {
-      APi.createAPIEndpoint(APi.ENDPOINTS.Client, { q }, "/autocomplete")
-        .customGet()
-        .then((res) => setdrivers(res.data));
-    }
-  };
-  // LIFE CYCLES
+
   useEffect(() => {
-    fetch();
-    fetchDrivers();
+    fetchUsers();
   }, []);
-  return (
-    <div>
-      <ExportAdd
-        noExport
-        size="md"
-        save={save}
-        AddComponent={
-          <AddEdit
-            drivers={drivers}
-            fetchDrivers={(q) => fetchDrivers(q)}
-            error={error}
-            model={model}
-            _setmodel={setmodel}
-          />
+
+  const columns = [
+    {
+      value: "userName",
+      value2: "firstName",
+      value3: "lastName",
+      name: "Utilisateur",
+      render: (userName, firstName, lastName) => (
+        <div>
+          <div style={{ fontWeight: 700, color: "#0f172a" }}>
+            {firstName || lastName ? `${firstName || ""} ${lastName || ""}` : userName}
+          </div>
+          <div style={{ fontSize: "0.8rem", color: "#64748b", fontFamily: "monospace" }}>
+            @{userName}
+          </div>
+        </div>
+      ),
+    },
+    {
+      value: "role",
+      name: "Rôle & Accès",
+      render: (role) => {
+        if (role === "admin") {
+          return (
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "5px",
+                padding: "3px 10px",
+                borderRadius: "6px",
+                background: "#ede9fe",
+                color: "#6d28d9",
+                fontSize: "0.8rem",
+                fontWeight: 700,
+              }}
+            >
+              <FaUserShield size={12} /> Administrateur
+            </span>
+          );
         }
-      />
-      <Grid
-        editAction={(id) => {
-          getBYId(id);
-          setstate((prev) => {
-            return { ...prev, open: true };
-          });
-        }}
-        deleteAction={deleteAction}
-        actionKey="id"
-        noAdvancedActions // for custom advanced actions
-        columns={columns}
-        rows={data}
-      />
+        if (role === "driver") {
+          return (
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "5px",
+                padding: "3px 10px",
+                borderRadius: "6px",
+                background: "#dcfce7",
+                color: "#15803d",
+                fontSize: "0.8rem",
+                fontWeight: 700,
+              }}
+            >
+              <FaTruck size={12} /> Livreur (Driver)
+            </span>
+          );
+        }
+        return (
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "5px",
+              padding: "3px 10px",
+              borderRadius: "6px",
+              background: "#dbeafe",
+              color: "#1d4ed8",
+              fontSize: "0.8rem",
+              fontWeight: 700,
+            }}
+          >
+            <FaStore size={12} /> Client B2B
+          </span>
+        );
+      },
+    },
+    {
+      value: "role",
+      value2: "driverId",
+      value3: "storeId",
+      name: "Affectation Profil",
+      render: (role, driverId, storeId) => {
+        if (role === "driver") {
+          const d = drivers.find((el) => el.id === Number(driverId));
+          return (
+            <span style={{ fontSize: "0.85rem", color: "#334155" }}>
+              {d ? `${d.name || `${d.firstName} ${d.lastName}`} (${d.carNumber || "Auto"})` : `Livreur #${driverId || "Non assigné"}`}
+            </span>
+          );
+        }
+        if (role === "B2Bclient") {
+          const s = stores.find((el) => el.id === Number(storeId));
+          return (
+            <span style={{ fontSize: "0.85rem", color: "#334155" }}>
+              {s ? s.name_fr : `Boutique #${storeId || "1"}`}
+            </span>
+          );
+        }
+        return <span style={{ fontSize: "0.85rem", color: "#64748b" }}>Direction Centrale</span>;
+      },
+    },
+    {
+      value: "email",
+      name: "Email",
+      render: (v) => <span style={{ fontSize: "0.85rem", color: "#475569" }}>{v || "—"}</span>,
+    },
+    {
+      value: "phoneNumber",
+      name: "Téléphone",
+      render: (v) => <strong style={{ fontSize: "0.85rem", color: "#10b981" }}>{v || "—"}</strong>,
+    },
+  ];
+
+  return (
+    <div style={{ padding: "16px", maxWidth: "1400px", margin: "0 auto" }}>
+      <div style={{ marginBottom: "16px" }}>
+        <ExportAdd
+          noExport
+          size="md"
+          save={save}
+          AddComponent={
+            <AddEdit
+              drivers={drivers}
+              stores={stores}
+              error={error}
+              model={model}
+              _setmodel={setModel}
+            />
+          }
+        />
+      </div>
+
+      <div style={{ background: "#fff", borderRadius: "12px", border: "1px solid #e2e8f0", overflow: "hidden" }}>
+        <Grid
+          editAction={(id) => {
+            getById(id);
+            setState((prev) => ({ ...prev, open: true }));
+          }}
+          deleteAction={deleteAction}
+          actionKey="id"
+          noAdvancedActions
+          columns={columns}
+          rows={data}
+        />
+      </div>
     </div>
   );
 }
-
-const columns = [
-  {
-    value: "firstName",
-    value2: "lastName",
-    name: "Nom",
-    render: (v, v1) => <a>{v + " " + v1}</a>,
-  },
-
-  {
-    value: "email",
-    name: "Email",
-    render: (v) => <b>{v}</b>,
-  },
-
-  {
-    value: "phoneNumber",
-    name: "Tél",
-    render: (v) => <b style={{ color: "green" }}>{v}</b>,
-  },
-];

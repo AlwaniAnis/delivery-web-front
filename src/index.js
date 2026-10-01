@@ -4,6 +4,18 @@ import App from "./App";
 import { RecoilRoot } from "recoil";
 import { BrowserRouter as Router } from "react-router-dom";
 import "rsuite/dist/rsuite.min.css";
+
+// Suppress harmless browser ResizeObserver loop notifications
+window.addEventListener("error", (e) => {
+  if (
+    typeof e?.message === "string" &&
+    (e.message.includes("ResizeObserver loop") ||
+      e.message.includes("ResizeObserver loop completed with undelivered notifications"))
+  ) {
+    e.stopImmediatePropagation();
+  }
+});
+
 ReactDOM.render(
   <RecoilRoot>
     <Router>
@@ -12,7 +24,3 @@ ReactDOM.render(
   </RecoilRoot>,
   document.getElementById("root")
 );
-
-// If you want to start measuring performance in your app, pass a function
-// to log results (for example: reportWebVitals(console.log))
-// or send to an analytics endpoint. Learn more: https://bit.ly/CRA-vitals

@@ -18,12 +18,16 @@ const useB2B = () => {
         createAPIEndpoint(ENDPOINTS.Store)
           .fetchById(user.storeId)
           .then((res) => {
-            setstore(res.data);
-          });
+            if (res && res.data) setstore(res.data);
+          })
+          .catch(() => {});
       else
         createAPIEndpoint(ENDPOINTS.Store + "/getDefault")
           .customGet()
-          .then((res) => setstore(res.data));
+          .then((res) => {
+            if (res && res.data) setstore(res.data);
+          })
+          .catch(() => {});
     }
   }, [logged]);
   return { isB2B };

@@ -1,0 +1,8 @@
+{
+  "name": "Tawsil Delivery",
+  "description": "Delivery management web application for Tawsil",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

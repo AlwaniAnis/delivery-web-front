@@ -69,136 +69,205 @@ export default function NotPaidDeliveries(props) {
       value: "id",
       name: " ",
       render: (id) => (
-        <b style={{ color: "green", display: "flex", alignItems: "center" }}>
-          <Checkbox
-            onChange={(v) => {
-              if (checkeds.find((el) => el == id))
-                setcheckeds((prev) => prev.filter((l) => l != id));
-              else setcheckeds((prev) => [...prev, id]);
-            }}
-            checked={checkeds.find((el) => el == id) != null}
-          ></Checkbox>
-        </b>
+        <Checkbox
+          onChange={(v) => {
+            if (checkeds.find((el) => el == id))
+              setcheckeds((prev) => prev.filter((l) => l != id));
+            else setcheckeds((prev) => [...prev, id]);
+          }}
+          checked={checkeds.find((el) => el == id) != null}
+        />
       ),
     },
     {
       value: "customer",
       value2: "exchangeable",
       value3: "qrCodeContent",
-      name: "Client",
+      name: "Client & Colis",
       render: (v, v2, v3) => (
-        <b style={{ display: "", alignItems: "center" }}>
-          <div style={{ padding: "0 5px" }}>{v && v.fullName}</div>
-          <div>
-            <b style={{ padding: "0 5px", color: "#00a98d" }}>{v3}</b>
+        <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+          <span style={{ fontWeight: 700, color: "#0f172a", fontSize: "0.88rem" }}>
+            {v?.fullName || "Client sans nom"}
+          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <span
+              style={{
+                fontFamily: "monospace",
+                fontSize: "0.74rem",
+                color: "#475569",
+                background: "#f1f5f9",
+                padding: "2px 6px",
+                borderRadius: "4px",
+                fontWeight: 600,
+                border: "1px solid #e2e8f0",
+              }}
+            >
+              {v3 || "—"}
+            </span>
             {v2 && (
-              <Tag size="sm" color="yellow">
-                <b style={{ color: "#222", fontWeight: "400" }}> echangeable</b>
-              </Tag>
+              <span
+                style={{
+                  fontSize: "0.7rem",
+                  fontWeight: 700,
+                  color: "#92400e",
+                  background: "#fef3c7",
+                  padding: "2px 6px",
+                  borderRadius: "4px",
+                  border: "1px solid #fde68a",
+                }}
+              >
+                Échange
+              </span>
             )}
           </div>
-        </b>
+        </div>
       ),
     },
     {
       value: "customer",
-
       name: "Contacts",
       render: (v) => (
-        <b style={{ display: "flex", alignItems: "center" }}>
-          <div style={{ padding: "0 5px" }}>
-            {v && (
-              <div>
-                <a
-                  style={{
-                    textDecoration: "none",
-                    color: "#2f1a4c",
-                    border: "1px solid #ddd",
-                    padding: "5px 5px",
-                    margin: "0 2px",
-                    borderRadius: "5px",
-                  }}
-                  href={`tel:${v.phoneNumber}`}
-                >
-                  <FaPhoneAlt /> {v.phoneNumber}{" "}
-                </a>
+        <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+          {v?.phoneNumber ? (
+            <a
+              style={{
+                textDecoration: "none",
+                color: "#2563eb",
+                background: "#eff6ff",
+                border: "1px solid #bfdbfe",
+                padding: "3px 8px",
+                borderRadius: "6px",
+                fontSize: "0.8rem",
+                fontWeight: 600,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "5px",
+                width: "fit-content",
+              }}
+              href={`tel:${v.phoneNumber}`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <FaPhoneAlt size={10} /> {v.phoneNumber}
+            </a>
+          ) : (
+            <span style={{ color: "#94a3b8", fontSize: "0.8rem" }}>—</span>
+          )}
 
-                {v.phoneNumber2 ? (
-                  <a
-                    st
-                    style={{
-                      textDecoration: "none",
-                      color: "#2f1a4c",
-                      border: "1px solid #ddd",
-                      padding: "5px 5px",
-                      margin: "0 2px",
-                      borderRadius: "5px",
-                    }}
-                    href={`tel:${v.phoneNumber2}`}
-                  >
-                    <FaPhoneAlt /> {v.phoneNumber2}{" "}
-                  </a>
-                ) : (
-                  ""
-                )}
-              </div>
-            )}
-          </div>
-        </b>
-      ),
-    },
-
-    {
-      value: "coliItems",
-      name: "Désignation",
-      render: (coliItems) => (
-        <div
-          style={{
-            maxWidth: "200px",
-            minWidth: "150px",
-            whiteSpace: "pre-line",
-          }}
-        >
-          {coliItems.reduce((a, b) => a + b.designation + "\n", "")}
+          {v?.phoneNumber2 && (
+            <a
+              style={{
+                textDecoration: "none",
+                color: "#475569",
+                background: "#f8fafc",
+                border: "1px solid #e2e8f0",
+                padding: "2px 6px",
+                borderRadius: "5px",
+                fontSize: "0.75rem",
+                fontWeight: 600,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "4px",
+                width: "fit-content",
+              }}
+              href={`tel:${v.phoneNumber2}`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <FaPhoneAlt size={9} /> {v.phoneNumber2}
+            </a>
+          )}
         </div>
       ),
     },
-
     {
       value: "coliItems",
-      name: "Montant",
-      render: (coliItems) => (
-        <b>
-          {coliItems.reduce((a, b) => a + b.qty * b.unitPrice, 0).toFixed(3)}{" "}
-          TND
-        </b>
-      ),
+      name: "Articles",
+      render: (coliItems) => {
+        const items = coliItems || [];
+        return (
+          <div style={{ maxWidth: "200px", minWidth: "120px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "3px" }}>
+              <span
+                style={{
+                  background: "#f1f5f9",
+                  color: "#334155",
+                  fontSize: "0.72rem",
+                  fontWeight: 700,
+                  padding: "1px 6px",
+                  borderRadius: "4px",
+                  border: "1px solid #e2e8f0",
+                }}
+              >
+                {items.length} {items.length > 1 ? "articles" : "article"}
+              </span>
+            </div>
+            <div style={{ fontSize: "0.78rem", color: "#475569", lineHeight: "1.3" }}>
+              {items.slice(0, 2).map((it, idx) => (
+                <div key={idx} style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  • {it.qty}x {it.designation}
+                </div>
+              ))}
+              {items.length > 2 && (
+                <div style={{ fontSize: "0.7rem", color: "#94a3b8" }}>
+                  +{items.length - 2} de plus...
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      },
     },
-
+    {
+      value: "coliItems",
+      name: "Montant à Recouvrer",
+      render: (coliItems) => {
+        const total = (coliItems || []).reduce(
+          (a, b) => a + (Number(b.qty) || 1) * (Number(b.unitPrice) || 0),
+          0
+        );
+        return (
+          <div style={{ display: "inline-flex", alignItems: "baseline", gap: "4px" }}>
+            <span style={{ fontWeight: 800, color: "#b91c1c", fontSize: "0.95rem" }}>
+              {total.toFixed(3)}
+            </span>
+            <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#64748b" }}>
+              TND
+            </span>
+          </div>
+        );
+      },
+    },
     {
       value: "driver",
-
-      name: "Livreur",
+      name: "Livreur Assigné",
       render: (v) => (
-        <b style={{ display: "flex", alignItems: "center" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           <div
             style={{
-              fontSize: "15px",
-              border: "1px dashed #888",
+              fontSize: "12px",
+              fontWeight: 700,
               borderRadius: "50%",
-              width: "43px",
-              height: "43px",
+              width: "32px",
+              height: "32px",
               textAlign: "center",
-              lineHeight: "42px",
+              lineHeight: "32px",
+              background: v ? "#eff6ff" : "#f1f5f9",
+              color: v ? "#2563eb" : "#94a3b8",
+              border: v ? "1px solid #bfdbfe" : "1px solid #e2e8f0",
+              flexShrink: 0,
             }}
           >
-            <ImageIcon color="#3598ff"></ImageIcon>
+            {v ? `${(v.firstName?.[0] || "").toUpperCase()}${(v.lastName?.[0] || "").toUpperCase()}` : "—"}
           </div>
 
-          <div style={{ padding: "0 5px" }}>
-            {v && v.firstName + "  " + v.lastName}
+          <div>
+            <div style={{ fontWeight: 600, color: "#1e293b", fontSize: "0.82rem" }}>
+              {v ? `${v.firstName || ""} ${v.lastName || ""}` : "Non assigné"}
+            </div>
+            {v?.carNumber && (
+              <div style={{ fontSize: "0.7rem", color: "#64748b" }}>{v.carNumber}</div>
+            )}
           </div>
-        </b>
+        </div>
       ),
     },
   ];
@@ -229,7 +298,7 @@ export default function NotPaidDeliveries(props) {
           <SelectPicker
             data={dateTypes}
             block
-            noSearch
+            searchable={false}
             value={filterModel.dateType}
             onSelect={(dateType) => {
               let today = new Date(moment(Date.now()).format("yyyy-MM-DD"));
@@ -321,7 +390,7 @@ export default function NotPaidDeliveries(props) {
               })
             )}
             block
-            noSearch
+            searchable={false}
             value={filterModel.driverId}
             onSelect={(driverId) => {
               setfilterModel((prev) => {
@@ -340,7 +409,7 @@ export default function NotPaidDeliveries(props) {
                 })
               )}
               block
-              noSearch
+              searchable={false}
               value={filterModel.storeId}
               onSelect={(storeId) => {
                 setfilterModel((prev) => {

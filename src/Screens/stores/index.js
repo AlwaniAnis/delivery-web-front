@@ -3,6 +3,7 @@ import { useRecoilState } from "recoil";
 import { Button, Input, Modal } from "rsuite";
 import Pagination from "rsuite/Pagination";
 import Swal from "sweetalert2";
+import { FaStore, FaPhoneAlt, FaEnvelope, FaMapMarkerAlt, FaFileInvoice } from "react-icons/fa";
 import { APi } from "../../Api/";
 import { exportAddAtom } from "../../Atoms/exportAdd.atom";
 import ExportAdd from "../../Components/Common/ExportAdd";
@@ -268,7 +269,162 @@ export default function Stores(props) {
 const columns = [
   {
     value: "name_fr",
-    name: "Nom",
-    render: (v) => <a>{v}</a>,
+    value2: "name_ar",
+    value3: "logo",
+    name: "Boutique Partenaire",
+    render: (fr, ar, logo) => (
+      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+        <div
+          style={{
+            width: "36px",
+            height: "36px",
+            borderRadius: "8px",
+            background: "#f1f5f9",
+            color: "#4f46e5",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontWeight: 700,
+            fontSize: "0.85rem",
+            border: "1px solid #e2e8f0",
+            flexShrink: 0,
+            overflow: "hidden",
+          }}
+        >
+          {logo ? (
+            <img src={logo} alt={fr} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+          ) : (
+            <FaStore size={15} />
+          )}
+        </div>
+        <div>
+          <div style={{ fontWeight: 700, color: "#0f172a", fontSize: "0.9rem" }}>
+            {fr || "Boutique sans nom"}
+          </div>
+          {ar && (
+            <div style={{ fontSize: "0.75rem", color: "#64748b", direction: "rtl" }}>
+              {ar}
+            </div>
+          )}
+        </div>
+      </div>
+    ),
+  },
+  {
+    value: "taxCode",
+    name: "Matricule Fiscal",
+    render: (v) => (
+      <div style={{ display: "inline-flex", alignItems: "center", gap: "5px" }}>
+        {v ? (
+          <span
+            style={{
+              background: "#f8fafc",
+              border: "1px solid #cbd5e1",
+              padding: "2px 8px",
+              borderRadius: "6px",
+              fontFamily: "monospace",
+              fontWeight: 700,
+              fontSize: "0.78rem",
+              color: "#334155",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "4px",
+            }}
+          >
+            <FaFileInvoice size={11} style={{ color: "#6366f1" }} /> {v}
+          </span>
+        ) : (
+          <span style={{ color: "#94a3b8", fontSize: "0.8rem" }}>—</span>
+        )}
+      </div>
+    ),
+  },
+  {
+    value: "contacts",
+    name: "Téléphones",
+    render: (contacts) => {
+      const phones = contacts?.[0]?.phones || "";
+      const phoneList = phones ? phones.split(",").map((p) => p.trim()) : [];
+      return (
+        <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+          {phoneList.length > 0 ? (
+            phoneList.map((p, idx) => (
+              <a
+                key={idx}
+                href={`tel:${p}`}
+                style={{
+                  textDecoration: "none",
+                  color: "#2563eb",
+                  background: "#eff6ff",
+                  border: "1px solid #bfdbfe",
+                  padding: "2px 7px",
+                  borderRadius: "5px",
+                  fontSize: "0.78rem",
+                  fontWeight: 600,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "4px",
+                  width: "fit-content",
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <FaPhoneAlt size={9} /> {p}
+              </a>
+            ))
+          ) : (
+            <span style={{ color: "#94a3b8", fontSize: "0.8rem" }}>—</span>
+          )}
+        </div>
+      );
+    },
+  },
+  {
+    value: "contacts",
+    name: "Adresse",
+    render: (contacts) => {
+      const addr = contacts?.[0]?.address || "";
+      return (
+        <div style={{ display: "flex", alignItems: "center", gap: "5px", color: "#64748b", fontSize: "0.82rem", maxWidth: "240px" }}>
+          {addr ? (
+            <>
+              <FaMapMarkerAlt size={12} style={{ color: "#ef4444", flexShrink: 0 }} />
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{addr}</span>
+            </>
+          ) : (
+            <span>—</span>
+          )}
+        </div>
+      );
+    },
+  },
+  {
+    value: "contacts",
+    name: "Email",
+    render: (contacts) => {
+      const emails = contacts?.[0]?.emails || "";
+      return (
+        <div>
+          {emails ? (
+            <a
+              href={`mailto:${emails}`}
+              style={{
+                color: "#475569",
+                textDecoration: "none",
+                fontSize: "0.82rem",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "5px",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <FaEnvelope size={11} style={{ color: "#94a3b8" }} />
+              <span>{emails}</span>
+            </a>
+          ) : (
+            <span style={{ color: "#94a3b8", fontSize: "0.8rem" }}>—</span>
+          )}
+        </div>
+      );
+    },
   },
 ];

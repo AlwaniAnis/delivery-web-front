@@ -1,6 +1,6 @@
 import ImageIcon from "@rsuite/icons/Image";
 import React, { useEffect, useRef, useState } from "react";
-import { FaMapMarker, FaPhoneAlt } from "react-icons/fa";
+import { FaMapMarker, FaPhoneAlt, FaWarehouse } from "react-icons/fa";
 import { ImPrinter } from "react-icons/im";
 import { useRecoilState, useRecoilValue } from "recoil";
 import {
@@ -36,6 +36,8 @@ import DeliveryModel from "../../Models/deliveryModel";
 import AddEdit from "./addEdit.component";
 import useB2B from "../../hooks/useB2B";
 import { StoresList } from "../../Atoms/stores.atom";
+import { preparationPlacesState } from "../../Atoms/preparationPlaces.atom";
+import { activeRoleState, currentDriverIdState } from "../../Atoms/auth.atom";
 export default function Deliveries(props) {
   // STATE
   const [data, setdata] = useState([]);
@@ -62,6 +64,9 @@ export default function Deliveries(props) {
   const store = useRecoilValue(MyStore);
   const { isB2B } = useB2B();
   const storesList = useRecoilValue(StoresList);
+  const activeRole = useRecoilValue(activeRoleState);
+  const currentDriverId = useRecoilValue(currentDriverIdState);
+  const depotsList = useRecoilValue(preparationPlacesState);
 
   const [changedDriverModel, setchangedDriverModel] = useState({
     driverId: null,
@@ -75,10 +80,17 @@ export default function Deliveries(props) {
     setError("");
   }; // API CALLS
   const fetch = () => {
-    APi.createAPIEndpoint(APi.ENDPOINTS.Delivery, {
+    const isDriver = activeRole === "driver";
+    const driverIdParam = currentDriverId || (localStorage.getItem("auth") ? JSON.parse(localStorage.getItem("auth"))?.driverId : 1003);
+    const endpoint = isDriver ? APi.ENDPOINTS.Delivery + "/getForDriver" : APi.ENDPOINTS.Delivery;
+    const fetchParams = {
       ...filterModel,
       storeId: !store.isDefault ? store.id : filterModel.storeId,
-    })
+    };
+    if (isDriver) {
+      fetchParams.driverId = driverIdParam;
+    }
+    APi.createAPIEndpoint(endpoint, fetchParams)
       .fetchAll()
       .then((res) => {
         setdata(
@@ -198,226 +210,395 @@ export default function Deliveries(props) {
       value: "id",
       name: " ",
       render: (id) => (
-        <b style={{ color: "green", display: "flex", alignItems: "center" }}>
-          <Checkbox
-            onChange={(v) => {
-              if (checkeds.find((el) => el == id))
-                setcheckeds((prev) => prev.filter((l) => l != id));
-              else setcheckeds((prev) => [...prev, id]);
-            }}
-            checked={checkeds.find((el) => el == id) != null}
-          ></Checkbox>
-        </b>
+        <Checkbox
+          onChange={(v) => {
+            if (checkeds.find((el) => el == id))
+              setcheckeds((prev) => prev.filter((l) => l != id));
+            else setcheckeds((prev) => [...prev, id]);
+          }}
+          checked={checkeds.find((el) => el == id) != null}
+        />
       ),
     },
     {
       value: "customer",
       value2: "exchangeable",
       value3: "qrCodeContent",
-      name: "Client",
+      name: "Client & Colis",
       render: (v, v2, v3) => (
-        <b style={{ display: "", alignItems: "center" }}>
-          <div style={{ padding: "0 5px" }}>{v && v.fullName}</div>
-          <div>
-            <b style={{ padding: "0 5px", color: "#00a98d" }}>{v3}</b>
+        <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+          <span style={{ fontWeight: 700, color: "#0f172a", fontSize: "0.88rem" }}>
+            {v?.fullName || "Client sans nom"}
+          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+            <span
+              style={{
+                fontFamily: "monospace",
+                fontSize: "0.74rem",
+                color: "#475569",
+                background: "#f1f5f9",
+                padding: "2px 6px",
+                borderRadius: "4px",
+                fontWeight: 600,
+                border: "1px solid #e2e8f0",
+              }}
+            >
+              {v3 || "—"}
+            </span>
             {v2 && (
-              <Tag size="sm" color="yellow">
-                <b style={{ color: "#222", fontWeight: "400" }}> echangeable</b>
-              </Tag>
+              <span
+                style={{
+                  fontSize: "0.7rem",
+                  fontWeight: 700,
+                  color: "#92400e",
+                  background: "#fef3c7",
+                  padding: "2px 6px",
+                  borderRadius: "4px",
+                  border: "1px solid #fde68a",
+                }}
+              >
+                Échange
+              </span>
             )}
           </div>
-        </b>
+        </div>
       ),
     },
     {
       value: "customer",
-
       name: "Contacts",
       render: (v) => (
-        <b style={{ display: "flex", alignItems: "center" }}>
-          <div style={{ padding: "0 5px" }}>
-            {v && (
-              <div>
-                <a
-                  style={{
-                    textDecoration: "none",
-                    color: "#2f1a4c",
-                    border: "1px solid #ddd",
-                    padding: "5px 5px",
-                    margin: "0 2px",
-                    borderRadius: "5px",
-                  }}
-                  href={`tel:${v.phoneNumber}`}
-                >
-                  <FaPhoneAlt /> {v.phoneNumber}{" "}
-                </a>
+        <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+          {v?.phoneNumber ? (
+            <a
+              style={{
+                textDecoration: "none",
+                color: "#2563eb",
+                background: "#eff6ff",
+                border: "1px solid #bfdbfe",
+                padding: "3px 8px",
+                borderRadius: "6px",
+                fontSize: "0.8rem",
+                fontWeight: 600,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "5px",
+                width: "fit-content",
+              }}
+              href={`tel:${v.phoneNumber}`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <FaPhoneAlt size={10} /> {v.phoneNumber}
+            </a>
+          ) : (
+            <span style={{ color: "#94a3b8", fontSize: "0.8rem" }}>—</span>
+          )}
 
-                {v.phoneNumber2 ? (
-                  <a
-                    st
-                    style={{
-                      textDecoration: "none",
-                      color: "#2f1a4c",
-                      border: "1px solid #ddd",
-                      padding: "5px 5px",
-                      margin: "0 2px",
-                      borderRadius: "5px",
-                    }}
-                    href={`tel:${v.phoneNumber2}`}
-                  >
-                    <FaPhoneAlt /> {v.phoneNumber2}{" "}
-                  </a>
-                ) : (
-                  ""
-                )}
-              </div>
-            )}
-          </div>
-        </b>
+          {v?.phoneNumber2 && (
+            <a
+              style={{
+                textDecoration: "none",
+                color: "#475569",
+                background: "#f8fafc",
+                border: "1px solid #e2e8f0",
+                padding: "2px 6px",
+                borderRadius: "5px",
+                fontSize: "0.75rem",
+                fontWeight: 600,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "4px",
+                width: "fit-content",
+              }}
+              href={`tel:${v.phoneNumber2}`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <FaPhoneAlt size={9} /> {v.phoneNumber2}
+            </a>
+          )}
+        </div>
       ),
     },
     {
       value: "customer",
-
-      name: "Addresse",
+      name: "Destination",
       render: (v) => (
         <div style={{ maxWidth: "220px", minWidth: "150px" }}>
-          <b
-            st
+          <div
             style={{
-              color: "#2f1a4c",
-              wordWrap: "break-word",
-              whiteSpace: "pre-line",
-              margin: "0 2px",
-              borderRadius: "5px",
+              display: "flex",
+              alignItems: "center",
+              gap: "5px",
+              color: "#1e293b",
+              fontWeight: 700,
+              fontSize: "0.82rem",
             }}
           >
-            <FaMapMarker />{" "}
-            {v.city +
-              (v.deleg ? " - " + v.deleg : "") +
-              (v.ville ? " - " + v.ville : "") +
-              (v.zipCode ? " - " + v.zipCode : "")}
-            <br></br>
-            <i>{v.address}</i>
-          </b>
+            <FaMapMarker style={{ color: "#ef4444", fontSize: "11px", flexShrink: 0 }} />
+            <span>
+              {v?.city || ""}{v?.deleg ? ` - ${v.deleg}` : ""}{v?.ville ? ` - ${v.ville}` : ""}{v?.zipCode ? ` (${v.zipCode})` : ""}
+            </span>
+          </div>
+          {v?.address && (
+            <div
+              style={{
+                color: "#64748b",
+                fontSize: "0.75rem",
+                marginTop: "3px",
+                lineHeight: "1.3",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                display: "-webkit-box",
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: "vertical",
+              }}
+            >
+              {v.address}
+            </div>
+          )}
         </div>
       ),
     },
     {
       value: "status",
       name: "Statut",
-      render: (v) => (
-        <>
-          <Tag
-            color={
-              v == 1
-                ? "yellow"
-                : v == 2
-                ? "blue"
-                : v == 3
-                ? "violet"
-                : v == 4
-                ? "blue"
-                : v == 5
-                ? "green"
-                : v == 6
-                ? "red"
-                : "orange"
-            }
+      render: (v) => {
+        const found = DeliveryStatus.find((el) => el.value == v);
+        const label = found ? found.label : (v ? `État #${v}` : "Inconnu");
+        let bg = "#f1f5f9";
+        let color = "#475569";
+        let dot = "#94a3b8";
+
+        if (v == 5) {
+          bg = "#dcfce7";
+          color = "#15803d";
+          dot = "#22c55e";
+        } else if (v == 4) {
+          bg = "#e0e7ff";
+          color = "#4338ca";
+          dot = "#6366f1";
+        } else if (v == 1 || v == 2 || v == 3) {
+          bg = "#e0f2fe";
+          color = "#0369a1";
+          dot = "#0ea5e9";
+        } else if (v == 6 || v == 7) {
+          bg = "#fee2e2";
+          color = "#b91c1c";
+          dot = "#ef4444";
+        }
+
+        return (
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "5px",
+              padding: "3px 10px",
+              borderRadius: "6px",
+              fontSize: "0.78rem",
+              fontWeight: 700,
+              background: bg,
+              color: color,
+              border: `1px solid ${dot}33`,
+            }}
           >
-            {v && DeliveryStatus.find((el) => el.value == v)
-              ? DeliveryStatus.find((el) => el.value == v).label
-              : ""}
-          </Tag>
-        </>
-      ),
+            <span
+              style={{
+                width: "6px",
+                height: "6px",
+                borderRadius: "50%",
+                background: dot,
+              }}
+            />
+            {label}
+          </span>
+        );
+      },
     },
     {
       value: "coliItems",
-      name: "Désignation",
-      render: (coliItems) => (
-        <div
-          style={{
-            maxWidth: "200px",
-            minWidth: "150px",
-            whiteSpace: "pre-line",
-          }}
-        >
-          {coliItems.reduce((a, b) => a + b.designation + "\n", "")}
-        </div>
-      ),
+      name: "Articles",
+      render: (coliItems) => {
+        const items = coliItems || [];
+        return (
+          <div style={{ maxWidth: "200px", minWidth: "120px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "3px" }}>
+              <span
+                style={{
+                  background: "#f1f5f9",
+                  color: "#334155",
+                  fontSize: "0.72rem",
+                  fontWeight: 700,
+                  padding: "1px 6px",
+                  borderRadius: "4px",
+                  border: "1px solid #e2e8f0",
+                }}
+              >
+                {items.length} {items.length > 1 ? "articles" : "article"}
+              </span>
+            </div>
+            <div style={{ fontSize: "0.78rem", color: "#475569", lineHeight: "1.3" }}>
+              {items.slice(0, 2).map((it, idx) => (
+                <div key={idx} style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  • {it.qty}x {it.designation}
+                </div>
+              ))}
+              {items.length > 2 && (
+                <div style={{ fontSize: "0.7rem", color: "#94a3b8" }}>
+                  +{items.length - 2} de plus...
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      },
     },
     {
       value: "isPaid",
-      name: "Payé",
+      name: "Paiement",
       render: (isPaid) => (
-        <Tag color={isPaid ? "green" : "red"}>
-          {isPaid ? "payé" : "non payé"}
-        </Tag>
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "5px",
+            padding: "3px 8px",
+            borderRadius: "6px",
+            fontSize: "0.76rem",
+            fontWeight: 700,
+            background: isPaid ? "#dcfce7" : "#fee2e2",
+            color: isPaid ? "#15803d" : "#b91c1c",
+            border: isPaid ? "1px solid #bbf7d0" : "1px solid #fecaca",
+          }}
+        >
+          <span
+            style={{
+              width: "6px",
+              height: "6px",
+              borderRadius: "50%",
+              background: isPaid ? "#22c55e" : "#ef4444",
+            }}
+          />
+          {isPaid ? "Payé" : "Non payé"}
+        </span>
       ),
     },
     {
       value: "coliItems",
       name: "Montant",
-      render: (coliItems) => (
-        <b>
-          {coliItems.reduce((a, b) => a + b.qty * b.unitPrice, 0).toFixed(3)}{" "}
-          TND
-        </b>
-      ),
+      render: (coliItems) => {
+        const total = (coliItems || []).reduce(
+          (a, b) => a + (Number(b.qty) || 1) * (Number(b.unitPrice) || 0),
+          0
+        );
+        return (
+          <div style={{ display: "inline-flex", alignItems: "baseline", gap: "4px" }}>
+            <span style={{ fontWeight: 800, color: "#0f172a", fontSize: "0.95rem" }}>
+              {total.toFixed(3)}
+            </span>
+            <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#64748b" }}>
+              TND
+            </span>
+          </div>
+        );
+      },
     },
-
     {
       value: "driver",
-
       name: "Livreur",
       render: (v) => (
-        <b style={{ display: "flex", alignItems: "center" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           <div
             style={{
-              fontSize: "15px",
-              border: "1px dashed #888",
+              fontSize: "12px",
+              fontWeight: 700,
               borderRadius: "50%",
-              width: "43px",
-              height: "43px",
+              width: "32px",
+              height: "32px",
               textAlign: "center",
-              lineHeight: "42px",
+              lineHeight: "32px",
+              background: v ? "#eff6ff" : "#f1f5f9",
+              color: v ? "#2563eb" : "#94a3b8",
+              border: v ? "1px solid #bfdbfe" : "1px solid #e2e8f0",
+              flexShrink: 0,
             }}
           >
-            <ImageIcon color="#3598ff"></ImageIcon>
+            {v ? `${(v.firstName?.[0] || "").toUpperCase()}${(v.lastName?.[0] || "").toUpperCase()}` : "—"}
           </div>
 
-          <div style={{ padding: "0 5px" }}>
-            {v && v.firstName + "  " + v.lastName}
+          <div>
+            <div style={{ fontWeight: 600, color: "#1e293b", fontSize: "0.82rem" }}>
+              {v ? `${v.firstName || ""} ${v.lastName || ""}` : "Non assigné"}
+            </div>
+            {v?.carNumber && (
+              <div style={{ fontSize: "0.7rem", color: "#64748b" }}>{v.carNumber}</div>
+            )}
           </div>
-        </b>
+        </div>
       ),
+    },
+    {
+      value: "preparationPlaceId",
+      name: "Dépôt / Stock",
+      render: (val, row) => {
+        const placeId = val || row?.preparationPlaceId || row?.preparationPlace?.id;
+        const depot = depotsList.find((d) => d.id === placeId);
+        return (
+          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "4px",
+                background: depot ? "#f0fdf4" : "#f8fafc",
+                color: depot ? "#166534" : "#64748b",
+                border: depot ? "1px solid #bbf7d0" : "1px solid #e2e8f0",
+                padding: "3px 8px",
+                borderRadius: "6px",
+                fontSize: "0.75rem",
+                fontWeight: 700,
+              }}
+            >
+              <FaWarehouse size={11} style={{ color: depot ? "#16a34a" : "#94a3b8" }} />
+              {depot ? depot.name : "Dépôt Central Tunis"}
+            </span>
+          </div>
+        );
+      },
     },
     {
       value: "id",
-
-      name: "_",
+      name: "Bordereau",
       render: (id) => (
         <button
-          onClick={() => {
+          onClick={(e) => {
+            e.stopPropagation();
             let m = data.find((el) => el.id == id);
-            setcode(m.qrCodeContent);
-            handlePrint(id);
+            if (m) {
+              setcode(m.qrCodeContent);
+              handlePrint(id);
+            }
           }}
           style={{
-            display: "flex",
+            display: "inline-flex",
             alignItems: "center",
-            padding: "6px 9px",
-            background: "#2f1a4c",
-            width: "100px",
-            justifyContent: "space-between",
-            color: "#fff",
-            borderRadius: "4px",
-            fontWeight: "bold",
+            justifyContent: "center",
+            gap: "6px",
+            padding: "6px 12px",
+            background: "#4f46e5",
+            color: "#ffffff",
+            borderRadius: "6px",
+            fontWeight: 600,
+            fontSize: "0.78rem",
+            border: "none",
             cursor: "pointer",
+            transition: "all 0.15s ease",
+            boxShadow: "0 1px 3px rgba(79, 70, 229, 0.25)",
           }}
+          title="Imprimer bordereau de livraison"
         >
-          imprimer <ImPrinter />
+          <ImPrinter size={12} />
+          <span>Imprimer</span>
         </button>
       ),
     },
@@ -820,19 +1001,17 @@ export default function Deliveries(props) {
   </section>`;
   }
   useEffect(() => {
-    if (store.id) {
-      fetch();
-    }
-  }, [store.id, filterModel.page, filterModel.take]);
+    fetch();
+  }, [store.id, activeRole, currentDriverId, filterModel.page, filterModel.take]);
   return (
     <div>
       {" "}
       <div style={{ overflow: "hidden", height: 0 }}>
         <iframe ref={frameRef} title="printFrame" width="100%"></iframe>
         <div id="custom-codes">
-          <Barcode height={70} value={code} />
-          <br></br>
-          <QRCode value={code} size={80} />{" "}
+          {code ? <Barcode height={70} value={code} /> : null}
+          <br />
+          {code ? <QRCode value={code} size={80} /> : null}
         </div>
         <div id="custom-codes2">
           {data
@@ -846,9 +1025,9 @@ export default function Deliveries(props) {
                   display: "flex",
                 }}
               >
-                <Barcode height={70} value={el.qrCodeContent} />
-                <br></br>
-                <QRCode value={el.qrCodeContent} size={80} />{" "}
+                {el.qrCodeContent ? <Barcode height={70} value={el.qrCodeContent} /> : null}
+                <br />
+                {el.qrCodeContent ? <QRCode value={el.qrCodeContent} size={80} /> : null}
               </p>
             ))}
         </div>
@@ -875,7 +1054,7 @@ export default function Deliveries(props) {
               { label: "Payé", value: 2 },
             ]}
             block
-            noSearch
+            searchable={false}
             value={
               filterModel.isPaid ? 2 : filterModel.isPaid === false ? 1 : 0
             }
@@ -894,7 +1073,7 @@ export default function Deliveries(props) {
           <SelectPicker
             data={dateTypes}
             block
-            noSearch
+            searchable={false}
             value={filterModel.dateType}
             onSelect={(dateType) => {
               let today = new Date(moment(Date.now()).format("yyyy-MM-DD"));
@@ -986,7 +1165,7 @@ export default function Deliveries(props) {
               })
             )}
             block
-            noSearch
+            searchable={false}
             value={filterModel.driverId}
             onSelect={(driverId) => {
               setfilterModel((prev) => {
@@ -998,10 +1177,9 @@ export default function Deliveries(props) {
         <Responsive m={4} l={2} xl={2} className="p-5">
           <label>Status: </label>
           <SelectPicker
-            searchable={false}
             data={DeliveryStatus}
             block
-            noSearch
+            searchable={false}
             value={filterModel.status}
             onSelect={(status) => {
               setfilterModel((prev) => {
@@ -1020,7 +1198,7 @@ export default function Deliveries(props) {
                 })
               )}
               block
-              noSearch
+              searchable={false}
               value={filterModel.storeId}
               onSelect={(storeId) => {
                 setfilterModel((prev) => {
@@ -1145,7 +1323,7 @@ export default function Deliveries(props) {
                 })
               )}
               block
-              noSearch
+              searchable={false}
               value={changedDriverModel.driverId}
               onSelect={(driverId) => {
                 setchangedDriverModel((prev) => {
@@ -1250,7 +1428,6 @@ export default function Deliveries(props) {
                 searchable={false}
                 data={[{ label: "Tout", value: 0 }].concat(DeliveryStatus)}
                 block
-                noSearch
                 value={data.find((el) => el.id == show).status}
                 onSelect={async (status) => {
                   let d = [...data];

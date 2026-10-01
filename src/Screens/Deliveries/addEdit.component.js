@@ -17,6 +17,7 @@ import {
 } from "rsuite";
 import { APi } from "../../Api";
 import { DriversList } from "../../Atoms/drivers.atom";
+import { preparationPlacesState } from "../../Atoms/preparationPlaces.atom";
 import Grid from "../../Components/Grid";
 import Responsive from "../../Components/Responsive";
 import { DeliveryStatus } from "../../Constants/types";
@@ -27,6 +28,7 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
   const { isB2B } = useB2B();
 
   const [drivers, setDriversList] = useRecoilState(DriversList);
+  const [depotsList, setDepotsList] = useRecoilState(preparationPlacesState);
   const [data, setdata] = useState([]);
 
   const [customers, setcustomers] = useState([]);
@@ -96,20 +98,19 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
               return { ...prev, qrCodeContent };
             });
           }}
-          value={model.qrCodeContent}
+          value={model.qrCodeContent || ""}
         />
-        {model.qrCodeContent && (
+        {model.qrCodeContent ? (
           <div
-            style={{ textAlign: "center", padding: "20px", display: "flex" }}
+            style={{ textAlign: "center", padding: "20px", display: "flex", alignItems: "center" }}
           >
-            <QRCode value={model.qrCodeContent} size={100} />{" "}
+            <QRCode value={model.qrCodeContent} size={100} />
             <span style={{ margin: "8px" }}> </span>
             <Barcode value={model.qrCodeContent} />
           </div>
-        )}
+        ) : null}
         {!isB2B && (
           <>
-            {" "}
             <label>Livreur </label>
             <SelectPicker
               data={[{ label: "Sélectionner", value: 0 }].concat(
@@ -118,7 +119,7 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
                 })
               )}
               block
-              noSearch
+              searchable={false}
               value={model.driverId}
               onSelect={(driverId) => {
                 _setmodel((prev) => {
@@ -126,40 +127,49 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
                 });
               }}
             />
+
+            <div style={{ marginTop: "12px", marginBottom: "8px" }}>
+              <label style={{ fontWeight: 600, color: "#1e293b", display: "flex", alignItems: "center", gap: "6px" }}>
+                🏬 Dépôt & Lieu de Stockage Actuel :
+              </label>
+              <SelectPicker
+                data={[{ label: "— Aucun (En transit / Non affecté) —", value: 0 }].concat(
+                  depotsList.map((d) => ({
+                    label: `${d.name} (${d.code || "DEP"})`,
+                    value: d.id,
+                  }))
+                )}
+                block
+                searchable={true}
+                placeholder="Choisir le dépôt (ex: Dépôt Tunis, Sousse...)"
+                value={model.preparationPlaceId || 0}
+                onSelect={(val) => {
+                  _setmodel((prev) => ({
+                    ...prev,
+                    preparationPlaceId: val === 0 ? null : val,
+                  }));
+                }}
+              />
+              <small style={{ color: "#64748b", fontSize: "0.75rem", marginTop: "2px", display: "block" }}>
+                Permet de savoir dans quel dépôt le colis est actuellement stocké ou préparé.
+              </small>
+            </div>
           </>
         )}
-        {/* <label>Designation:</label>
-        <Input exchangeable
-          onChange={(designation) => {
-            _setmodel((prev) => {
-              return { ...prev, designation };
-            });
-          }}
-          value={model.designation}
-        /> */}
-        <label>
+        <label style={{ display: "flex", alignItems: "center", marginTop: "10px" }}>
           <Checkbox
-            style={{
-              border: "1px solid #aaa",
-              borderRadius: "5px",
-              width: "36px",
-              height: "36px",
-              padding: 0,
-              backgroundColor: "#fff",
-              marginRight: "10px",
+            style={{ marginRight: "10px" }}
+            onChange={(val, checked) => {
+              _setmodel((prev) => ({
+                ...prev,
+                exchangeable: checked,
+              }));
             }}
-            onChange={(exchangeable) => {
-              _setmodel((prev) => {
-                return { ...prev, exchangeable: !prev.exchangeable };
-              });
-            }}
-            value={model.exchangeable}
-            checked={model.exchangeable}
-            defaultValue={false}
+            checked={Boolean(model.exchangeable)}
           />
           Échangeable
         </label>
-        <br></br>
+        <br />
         <label>Date Debut De Procédure:</label>
         <Input
           onChange={(beginProcessDate) => {
@@ -168,7 +178,13 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
             });
           }}
           type="date"
-          value={model.beginProcessDate}
+          value={
+            model.beginProcessDate
+              ? typeof model.beginProcessDate === "string"
+                ? model.beginProcessDate.split("T")[0]
+                : new Date(model.beginProcessDate).toISOString().split("T")[0]
+              : ""
+          }
         />
         <label>Remarque:</label>
         <Input
@@ -178,7 +194,7 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
             });
           }}
           as="textarea"
-          value={model.remark}
+          value={model.remark || ""}
         />
         <label>Liste Des Produits / Services :</label>
         <div style={{ background: "rgb(0,169,141,0.2)", padding: "5px" }}>
@@ -190,7 +206,7 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
                 return { ...prev, designation };
               });
             }}
-            value={item.designation}
+            value={item.designation || ""}
           />
           <Responsive s={4} m={4} l={4} xl={4} className="p-5">
             <label>Quantité:</label>
@@ -199,10 +215,10 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
               type="number"
               onChange={(qty) => {
                 setitem((prev) => {
-                  return { ...prev, qty: parseInt(qty) };
+                  return { ...prev, qty: parseInt(qty) || 0 };
                 });
               }}
-              value={item.qty}
+              value={item.qty ?? 1}
             />
           </Responsive>
           <Responsive s={4} m={4} l={4} xl={4} className="p-5">
@@ -212,10 +228,10 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
               type="number"
               onChange={(unitPrice) => {
                 setitem((prev) => {
-                  return { ...prev, unitPrice: parseFloat(unitPrice) };
+                  return { ...prev, unitPrice: parseFloat(unitPrice) || 0 };
                 });
               }}
-              value={item.unitPrice}
+              value={item.unitPrice ?? 0}
             />
           </Responsive>
           <Responsive s={4} m={4} l={4} xl={4} className="p-5">
@@ -225,35 +241,26 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
               type="number"
               onChange={(weight) => {
                 setitem((prev) => {
-                  return { ...prev, weight: parseFloat(weight) };
+                  return { ...prev, weight: parseFloat(weight) || 0 };
                 });
               }}
-              value={item.weight}
+              value={item.weight ?? 0}
             />
           </Responsive>
-          <label>
+          <label style={{ display: "flex", alignItems: "center", marginTop: "5px" }}>
             <Checkbox
-              style={{
-                border: "1px solid #aaa",
-                borderRadius: "5px",
-                width: "36px",
-                height: "36px",
-                padding: 0,
-                backgroundColor: "#fff",
-                marginRight: "10px",
+              style={{ marginRight: "10px" }}
+              onChange={(val, checked) => {
+                setitem((prev) => ({
+                  ...prev,
+                  brittle: checked,
+                }));
               }}
-              onChange={(brittle) => {
-                setitem((prev) => {
-                  return { ...prev, brittle: !prev.brittle };
-                });
-              }}
-              value={item.brittle}
-              checked={item.brittle}
-              defaultValue={true}
+              checked={Boolean(item.brittle)}
             />
             Fragile
           </label>
-          <br></br>{" "}
+          <br />
           <div style={{ textAlign: "right", margin: "5px" }}>
             <Button
               color="green"
@@ -263,7 +270,7 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
                   coliItems: item.index
                     ? [
                         ...prev.coliItems.map((el) => {
-                          if (el.index != item.index) return el;
+                          if (el.index !== item.index) return el;
                           else return item;
                         }),
                       ]
@@ -285,13 +292,17 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
         <table>
           <thead>
             <tr style={{ background: "#454599", color: "#fff" }}>
-              <td>Désignation</td> <td>Qté</td> <td>Prix</td> <td>Actions</td>
+              <th>Désignation</th>
+              <th>Qté</th>
+              <th>Prix</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {model.coliItems.map((el) => (
-              <tr style={{ color: "#454599" }}>
-                <td>{el.designation}</td> <td>{el.qty}</td>{" "}
+            {(model.coliItems || []).map((el, idx) => (
+              <tr key={el.index || idx} style={{ color: "#454599" }}>
+                <td>{el.designation}</td>
+                <td>{el.qty}</td>
                 <td>{el.unitPrice}</td>
                 <td>
                   <IconButton
@@ -307,13 +318,13 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
                       _setmodel((prev) => ({
                         ...prev,
                         coliItems: prev.coliItems.filter(
-                          (el1) => el1.index != el.index
+                          (el1) => el1.index !== el.index
                         ),
                       }))
                     }
                     icon={<TrashIcon />}
                     circle
-                  />{" "}
+                  />
                 </td>
               </tr>
             ))}
@@ -366,7 +377,6 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
                   };
                 });
               }}
-              defaultValue={model.customerId}
             />
           </div>
         </div>
@@ -377,7 +387,7 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
               return { ...prev, customer: { ...prev.customer, fullName } };
             });
           }}
-          value={model.customer.fullName}
+          value={model.customer?.fullName || ""}
         />
         <label>Email:</label>
         <Input
@@ -386,12 +396,12 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
               return { ...prev, customer: { ...prev.customer, email } };
             });
           }}
-          value={model.customer.email}
+          value={model.customer?.email || ""}
           type="email"
         />
         <label className="required">Téléphone 1:</label>
         <Input
-          value={model.customer.phoneNumber}
+          value={model.customer?.phoneNumber || ""}
           onChange={(phoneNumber) => {
             _setmodel((prev) => {
               return { ...prev, customer: { ...prev.customer, phoneNumber } };
@@ -401,7 +411,7 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
         />
         <label>Téléphone 2:</label>
         <Input
-          value={model.customer.phoneNumber2}
+          value={model.customer?.phoneNumber2 || ""}
           onChange={(phoneNumber2) => {
             _setmodel((prev) => {
               return { ...prev, customer: { ...prev.customer, phoneNumber2 } };
@@ -421,8 +431,8 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
               })
             )}
             block
-            noSearch
-            value={model.customer.city.toUpperCase()}
+            searchable={false}
+            value={(model.customer?.city || "").toUpperCase()}
             onSelect={(city) => {
               _setmodel((prev) => ({
                 ...prev,
@@ -438,20 +448,20 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
           />
         </Responsive>
 
-        {model.customer.city ? (
+        {model.customer?.city ? (
           <Responsive m={6} l={6} xl={6} className="p-5">
             <label>Délégation </label>
             <SelectPicker
               data={[{ label: "Sélectionner", value: 0 }].concat(
                 zip_codes.find(
                   (el) =>
-                    el.name.toUpperCase() == model.customer.city.toUpperCase()
+                    el.name.toUpperCase() == (model.customer?.city || "").toUpperCase()
                 )
                   ? zip_codes
                       .find(
                         (el) =>
                           el.name.toUpperCase() ==
-                          model.customer.city.toUpperCase()
+                          (model.customer?.city || "").toUpperCase()
                       )
                       .delegs.map((c) => {
                         return {
@@ -462,8 +472,8 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
                   : []
               )}
               block
-              noSearch
-              value={model.customer.deleg}
+              searchable={false}
+              value={model.customer?.deleg || ""}
               onSelect={(deleg) => {
                 _setmodel((prev) => ({
                   ...prev,
@@ -475,20 +485,20 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
         ) : (
           ""
         )}
-        {model.customer.deleg && model.customer.city ? (
+        {model.customer?.deleg && model.customer?.city ? (
           <Responsive m={6} l={6} xl={6} className="p-5">
             <label>Ville </label>
             <SelectPicker
               data={[{ label: "Sélectionner", value: 0 }].concat(
                 zip_codes.find(
                   (el) =>
-                    el.name.toUpperCase() == model.customer.city.toUpperCase()
+                    el.name.toUpperCase() == (model.customer?.city || "").toUpperCase()
                 )
                   ? zip_codes
                       .find(
                         (el) =>
                           el.name.toUpperCase() ==
-                          model.customer.city.toUpperCase()
+                          (model.customer?.city || "").toUpperCase()
                       )
                       .delegs.find(
                         (d) => Object.keys(d)[0] == model.customer.deleg
@@ -497,7 +507,7 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
                         .find(
                           (el) =>
                             el.name.toUpperCase() ==
-                            model.customer.city.toUpperCase()
+                            (model.customer?.city || "").toUpperCase()
                         )
                         .delegs.find(
                           (d) => Object.keys(d)[0] == model.customer.deleg
@@ -512,8 +522,8 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
                   : []
               )}
               block
-              noSearch
-              value={model.customer.ville}
+              searchable={false}
+              value={model.customer?.ville || ""}
               onSelect={(ville) => {
                 _setmodel((prev) => ({
                   ...prev,
@@ -558,7 +568,6 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
           ""
         )}
         <Responsive m={6} l={6} xl={6} className="p-5">
-          {" "}
           <label>Zip Code :</label>
           <Input
             width={100}
@@ -568,7 +577,7 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
                 return { ...prev, customer: { ...prev.customer, zipCode } };
               });
             }}
-            value={model.customer.zipCode}
+            value={model.customer?.zipCode || ""}
           />
         </Responsive>
         <br></br>
@@ -580,7 +589,7 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
             });
           }}
           as="textarea"
-          value={model.customer.address}
+          value={model.customer?.address || ""}
         />
         <h5>Historique de client </h5>
         <Grid columns={columns} rows={data} />

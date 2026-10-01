@@ -1,13 +1,12 @@
 import React from "react";
-// import history from "../../Helpers/history";
 import "./grid.css";
 import GridIcon from "@rsuite/icons/Grid";
 import { Edit, More } from "@rsuite/icons";
-// import "./pagination.css";
-import { Divider, Dropdown, IconButton, Popover, Whisper } from "rsuite";
+import { Dropdown, IconButton, Popover, Whisper } from "rsuite";
 import TrashIcon from "@rsuite/icons/Trash";
 import Swal from "sweetalert2";
 import Loading from "../Loading";
+import { FaInbox } from "react-icons/fa";
 
 class Grid extends React.Component {
   constructor(props) {
@@ -21,10 +20,10 @@ class Grid extends React.Component {
 
   handleEvent2 = (event, id) => {
     var d = this.state.rows;
-    var order1 = d[d.findIndex((x) => x.id == this.state.index)].order;
-    var order2 = d[d.findIndex((x) => x.id == id)].order;
-    d[d.findIndex((x) => x.id == id)].order = order1;
-    d[d.findIndex((x) => x.id == this.state.index)].order = order2;
+    var order1 = d[d.findIndex((x) => x.id === this.state.index)].order;
+    var order2 = d[d.findIndex((x) => x.id === id)].order;
+    d[d.findIndex((x) => x.id === id)].order = order1;
+    d[d.findIndex((x) => x.id === this.state.index)].order = order2;
     d.sort((a, b) => a.order - b.order);
     this.setState({ rows: d, style: false });
   };
@@ -32,176 +31,150 @@ class Grid extends React.Component {
   onChange = (current, pageSize) => {
     this.props.paginate(this.props.filter, current, pageSize);
   };
-  componentDidMount() {}
+
   render() {
     let columns = this.props.columns;
     this.state.rows = this.props.rows;
     const props = this.props;
-    let arLocale = {
-      locale: this.state.locale,
-    };
-    return (
-      <>
-        <div id="custom-table-container">
-          {this.props.loading && <Loading absolute></Loading>}
-          {/* {this.props.loading &&
-            (!this.props.rows || !this.props.rows.length) && (
-              <div style={{ height: "600px" }}></div>
-            )} */}
-          <table id="custom-table">
-            <tbody>
-              <tr className="top-table-row ">
-                {columns &&
-                  columns.map((item, index) => {
-                    return (
-                      <td key={index}>
-                        <span className={item["class"]}>{item.name}</span>
-                      </td>
-                    );
-                  })}
-                {props.actionKey && (
-                  <td style={{ textAlign: "right", paddingRight: "30px" }}>
-                    Actions
-                  </td>
-                )}
-              </tr>
-              {columns &&
-                this.state.rows &&
-                this.state.rows.map((row, index) => {
-                  return (
-                    <tr
-                      style={{
-                        direction: this.props.rtl ? "rtl" : "",
-                        cursor: "pointer",
-                      }}
-                      key={index}
-                      className="hovred-tr  border-bottom body-table-row"
-                    >
-                      {this.props.draggable ? (
-                        <div
-                          style={
-                            this.props.draggable
-                              ? { display: "none" }
-                              : { display: "" }
-                          }
-                        >
-                          <div
-                            style={
-                              this.props.draggable == false
-                                ? { display: "none" }
-                                : { display: "" }
-                            }
-                            onDragOver={() => {
-                              console.log(this.props.draggable);
-                              console.log(row.id);
-                              this.setState({ index: row.id });
-                            }}
-                            onDragEnd={(e) => {
-                              this.handleEvent2(e, row.id);
-                            }}
-                          >
-                            <span
-                              style={{ cursor: "pointer" }}
-                              draggable={true}
-                            >
-                              <GridIcon size="18px" />
-                            </span>
-                          </div>
-                        </div>
-                      ) : (
-                        ""
-                      )}
 
-                      {columns.map((column, i) => {
-                        return (
-                          <td
-                            style={{ direction: this.props.rtl ? "rtl" : "" }}
-                            className={column["tdClass"]}
-                            key={i}
-                            onClick={() =>
-                              column.click
-                                ? column.click(row[column.value])
-                                : column.deleteLocal
-                                ? column.deleteLocal(index)
-                                : column.editLocal
-                                ? column.editLocal(index)
-                                : ""
-                            }
-                          >
-                            {column.value4
-                              ? column.render(
-                                  row[column.value],
-                                  row[column.value2],
-                                  row[column.value3],
-                                  row[column.value4]
-                                )
-                              : column.value3
-                              ? column.render(
-                                  row[column.value],
-                                  row[column.value2],
-                                  row[column.value3]
-                                )
-                              : column.value2
-                              ? column.render(
-                                  row[column.value],
-                                  row[column.value2]
-                                )
-                              : column.render(row[column.value])}
-                          </td>
-                        );
-                      })}
-                      {props.actionKey && (
-                        <td style={{ textAlign: "right" }}>
-                          {ActionCell({
-                            dataKey: row[props.actionKey],
-                            noAdvancedActions: props.noAdvancedActions,
-                            editAction: props.editAction,
-                            deleteAction: props.deleteAction,
-                            actions: props.actions,
-                          })}
-                        </td>
-                      )}
-                    </tr>
+    return (
+      <div id="custom-table-container">
+        {this.props.loading && <Loading absolute></Loading>}
+        <table id="custom-table">
+          <tbody>
+            <tr className="top-table-row">
+              {columns &&
+                columns.map((item, index) => {
+                  return (
+                    <td key={index} style={item.style}>
+                      <span className={item["class"]}>{item.name}</span>
+                    </td>
                   );
                 })}
-            </tbody>
-          </table>
-          {(!this.props.rows || !this.props.rows.length) && (
-            <div
-              style={{
-                height: "400px",
-                textAlign: "center",
-                paddingTop: "140px",
-                width: "100%",
-                fontSize: "18px",
-                textTransform: "uppercase",
-              }}
-            >
-              Il n'y a pas des données !
+              {props.actionKey && (
+                <td style={{ textAlign: "right", paddingRight: "20px" }}>
+                  Actions
+                </td>
+              )}
+            </tr>
+            {columns &&
+              this.state.rows &&
+              this.state.rows.map((row, index) => {
+                return (
+                  <tr
+                    style={{
+                      direction: this.props.rtl ? "rtl" : "",
+                      cursor: "pointer",
+                    }}
+                    key={index}
+                    className="hovred-tr border-bottom body-table-row"
+                  >
+                    {this.props.draggable ? (
+                      <td style={{ width: "30px", padding: "6px" }}>
+                        <div
+                          onDragOver={() => {
+                            this.setState({ index: row.id });
+                          }}
+                          onDragEnd={(e) => {
+                            this.handleEvent2(e, row.id);
+                          }}
+                        >
+                          <span style={{ cursor: "grab" }} draggable={true}>
+                            <GridIcon size="18px" />
+                          </span>
+                        </div>
+                      </td>
+                    ) : null}
+
+                    {columns.map((column, i) => {
+                      return (
+                        <td
+                          style={{ direction: this.props.rtl ? "rtl" : "" }}
+                          className={column["tdClass"]}
+                          key={i}
+                          onClick={() =>
+                            column.click
+                              ? column.click(row[column.value])
+                              : column.deleteLocal
+                              ? column.deleteLocal(index)
+                              : column.editLocal
+                              ? column.editLocal(index)
+                              : ""
+                          }
+                        >
+                          {column.value4
+                            ? column.render(
+                                row[column.value],
+                                row[column.value2],
+                                row[column.value3],
+                                row[column.value4]
+                              )
+                            : column.value3
+                            ? column.render(
+                                row[column.value],
+                                row[column.value2],
+                                row[column.value3]
+                              )
+                            : column.value2
+                            ? column.render(
+                                row[column.value],
+                                row[column.value2]
+                              )
+                            : column.render(row[column.value])}
+                        </td>
+                      );
+                    })}
+                    {props.actionKey && (
+                      <td style={{ textAlign: "right", paddingRight: "16px" }}>
+                        {ActionCell({
+                          dataKey: row[props.actionKey],
+                          noAdvancedActions: props.noAdvancedActions,
+                          editAction: props.editAction,
+                          deleteAction: props.deleteAction,
+                          actions: props.actions,
+                        })}
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+          </tbody>
+        </table>
+        {(!this.props.rows || !this.props.rows.length) && !this.props.loading && (
+          <div className="grid-empty-state">
+            <div className="grid-empty-icon">
+              <FaInbox />
             </div>
-          )}
-        </div>
-      </>
+            <h4 className="grid-empty-title">Aucune donnée disponible</h4>
+            <p className="grid-empty-desc">
+              Les enregistrements apparaîtront ici dès qu'ils seront ajoutés ou reçus du serveur.
+            </p>
+          </div>
+        )}
+      </div>
     );
   }
 }
+
 export default Grid;
+
 const renderMenu = (
   { onClose, left, top, className },
   ref,
   events = [],
-  dataKey,
-  onselect
+  dataKey
 ) => {
   const handleSelect = (eventKey) => {
     onClose();
-    events[eventKey].action(dataKey);
+    if (events[eventKey]?.action) {
+      events[eventKey].action(dataKey);
+    }
   };
   return (
     <Popover ref={ref} className={className} style={{ left, top }} full>
       <Dropdown.Menu onSelect={handleSelect}>
         {events.map((ev, i) => (
-          <Dropdown.Item eventKey={i}>
+          <Dropdown.Item key={i} eventKey={i}>
             {ev.render ? ev.render(ev.label, dataKey) : ev.label}
           </Dropdown.Item>
         ))}
@@ -216,53 +189,63 @@ const ActionCell = ({
   editAction,
   deleteAction,
   actions,
-  ...props
 }) => {
   function handleDelete() {
     Swal.fire({
-      title: "Voulez-vous vraiment supprimer cet element ! ",
-      text: "",
+      title: "Confirmer la suppression ?",
+      text: "Cette action est irréversible.",
       icon: "warning",
       showCancelButton: true,
-      confirmButtonColor: "rgb(93,120,255)",
-      cancelButtonColor: "#d33",
-      confirmButtonText: "Oui, Supprimer!",
+      confirmButtonColor: "#ef4444",
+      cancelButtonColor: "#64748b",
+      confirmButtonText: "Oui, supprimer",
+      cancelButtonText: "Annuler",
     }).then((result) => {
       if (result.isConfirmed) {
         deleteAction(dataKey);
       }
     });
   }
+
   return (
-    <div>
+    <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
       {editAction && (
         <IconButton
+          className="grid-action-btn-edit"
           appearance="subtle"
           onClick={() => editAction(dataKey)}
           icon={<Edit />}
+          size="sm"
           circle
+          title="Modifier"
         />
       )}
-      <Divider vertical />{" "}
       {deleteAction && (
         <IconButton
+          className="grid-action-btn-delete"
           appearance="subtle"
           onClick={handleDelete}
           icon={<TrashIcon />}
+          size="sm"
           circle
+          title="Supprimer"
         />
       )}
-      {!noAdvancedActions && (
-        <>
-          <Divider vertical />
-          <Whisper
-            placement="autoVerticalEnd"
-            trigger="click"
-            speaker={(el, ref) => renderMenu(el, ref, actions, dataKey)}
-          >
-            <IconButton appearance="subtle" icon={<More />} circle />
-          </Whisper>
-        </>
+      {!noAdvancedActions && actions && actions.length > 0 && (
+        <Whisper
+          placement="autoVerticalEnd"
+          trigger="click"
+          speaker={(el, ref) => renderMenu(el, ref, actions, dataKey)}
+        >
+          <IconButton
+            className="grid-action-btn-more"
+            appearance="subtle"
+            icon={<More />}
+            size="sm"
+            circle
+            title="Options"
+          />
+        </Whisper>
       )}
     </div>
   );

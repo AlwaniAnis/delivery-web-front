@@ -2,80 +2,553 @@ import React, { useState } from "react";
 import { useSetRecoilState } from "recoil";
 import { Button, Input, Message } from "rsuite";
 import { AuthService } from "../../Api/auth.service";
-import { isLogged } from "../../Atoms/auth.atom";
+import { BASE_URL } from "../../Config/api.config";
+import {
+  isLogged,
+  currentUserState,
+  activeRoleState,
+  currentDriverIdState,
+} from "../../Atoms/auth.atom";
+import {
+  FaBox,
+  FaServer,
+  FaLock,
+  FaUser,
+  FaUserShield,
+  FaTruck,
+  FaStore,
+  FaCheckCircle,
+} from "react-icons/fa";
 
-export default function Login(props) {
+export default function Login() {
   const setLogged = useSetRecoilState(isLogged);
-  const [model, setmodel] = useState({ username: "", password: "" });
-  const [error, seterror] = useState("");
-  function authenticate() {
-    if (model.username && model.password)
-      AuthService()
-        .login(model)
-        .then((res) => {
-          if (res.data.success) {
-            localStorage.setItem("auth", JSON.stringify(res.data));
-            window.location.reload();
+  const setCurrentUser = useSetRecoilState(currentUserState);
+  const setActiveRole = useSetRecoilState(activeRoleState);
+  const setCurrentDriverId = useSetRecoilState(currentDriverIdState);
 
-            setLogged(true);
-            seterror("");
-          } else seterror(res.data.message);
-        })
-        .catch((er) => seterror(er.Message));
-  }
+  // Selected Profile: 'admin' | 'driver' | 'B2Bclient'
+  const [selectedRole, setSelectedRole] = useState("admin");
+
+  const [model, setModel] = useState({
+    username: "",
+    password: "",
+  });
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSelectRole = (role) => {
+    setSelectedRole(role);
+    setError("");
+  };
+
+  const handleLoginSuccess = (userData) => {
+    const userRole = userData?.role || selectedRole;
+    const finalizedUser = {
+      ...userData,
+      role: userRole,
+      userName: userData?.userName || userData?.username || model.username,
+      fullName: userData?.fullName || userData?.name || userData?.userName || model.username,
+      driverId: userData?.driverId || userData?.id || null,
+      storeId: userData?.storeId || null,
+      token: userData?.token || (typeof userData === "string" ? userData : null),
+      isMainStore: userRole === "admin",
+    };
+
+    localStorage.setItem("auth", JSON.stringify(finalizedUser));
+    setCurrentUser(finalizedUser);
+    setActiveRole(userRole);
+
+    if (userRole === "driver") {
+      setCurrentDriverId(finalizedUser.driverId);
+    } else {
+      setCurrentDriverId(null);
+    }
+
+    setLogged(true);
+    setError("");
+  };
+
+  const authenticate = () => {
+    if (!model.username || !model.password) {
+      setError("Veuillez renseigner le nom d'utilisateur et le mot de passe.");
+      return;
+    }
+    setLoading(true);
+    setError("");
+
+    const payload = {
+      username: model.username.trim(),
+      password: model.password,
+    };
+
+    // Route to the corresponding real API endpoint
+    let authPromise;
+    let endpointName = "Auth/login";
+    if (selectedRole === "driver") {
+      endpointName = "Auth/loginDriver";
+      authPromise = AuthService().loginDriver(payload);
+    } else if (selectedRole === "B2Bclient") {
+      endpointName = "Auth/loginB2B";
+      authPromise = AuthService().loginB2B(payload);
+    } else {
+      endpointName = "Auth/login";
+      authPromise = AuthService().login(payload);
+    }
+
+    authPromise
+      .then((res) => {
+        setLoading(false);
+        const data = res.data;
+        if (data?.token || data?.success || typeof data === "string") {
+          handleLoginSuccess(data);
+        } else if (data?.message) {
+          setError(data.message);
+        } else {
+          handleLoginSuccess(data);
+        }
+      })
+      .catch((err) => {
+        setLoading(false);
+        const serverError =
+          err.response?.data?.message ||
+          (typeof err.response?.data === "string" ? err.response?.data : null) ||
+          err.message ||
+          `Erreur de connexion à l'API (${endpointName}).`;
+        setError(serverError);
+      });
+  };
+
   return (
     <div
       style={{
-        background: "#fff",
-        borderRadius: "10px",
-        width: "90%",
-        maxWidth: "600px",
-        margin: "20px auto",
-        padding: "10px",
+        minHeight: "100vh",
+        background: "radial-gradient(ellipse at top, #1e1b4b 0%, #0f172a 100%)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "24px 16px",
+        fontFamily: "'Plus Jakarta Sans', sans-serif",
       }}
     >
-      {" "}
-      <h1
+      <div
         style={{
-          color: "rgb(61,117,224)",
-          textAlign: "center",
-          marginBottom: "20px",
+          width: "100%",
+          maxWidth: "520px",
+          background: "#ffffff",
+          borderRadius: "24px",
+          padding: "36px 32px",
+          boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.45)",
+          border: "1px solid rgba(255, 255, 255, 0.15)",
         }}
       >
-        TAWSIL
-      </h1>
-      <h3>Connexion</h3>
-      <label>Nom d'utilisateur ou email:</label>
-      <Input
-        name="username"
-        onChange={(username) => {
-          setmodel((prev) => {
-            return { ...prev, username };
-          });
-        }}
-      />
-      <br></br>
-      <label>Mot de passe :</label>
-      <Input
-        name="password"
-        type="password"
-        onChange={(password) => {
-          setmodel((prev) => {
-            return { ...prev, password };
-          });
-        }}
-        autoComplete="off"
-      />
-      {error && (
-        <Message showIcon type="error">
-          {error}
-        </Message>
-      )}
-      <br></br>
-      <Button appearance="primary" onClick={authenticate}>
-        Connexion
-      </Button>
-      <Button appearance="link">Mot de pass oublié?</Button>
+        {/* Brand Header */}
+        <div style={{ textAlign: "center", marginBottom: "26px" }}>
+          <div
+            style={{
+              width: "56px",
+              height: "56px",
+              background: "linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%)",
+              borderRadius: "16px",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#fff",
+              fontSize: "26px",
+              boxShadow: "0 10px 25px -5px rgba(79, 70, 229, 0.45)",
+              marginBottom: "12px",
+            }}
+          >
+            <FaBox />
+          </div>
+          <h2
+            style={{
+              margin: 0,
+              fontSize: "1.85rem",
+              fontWeight: 800,
+              letterSpacing: "-0.03em",
+              color: "#0f172a",
+            }}
+          >
+            TAWSIL LOGISTICS
+          </h2>
+          <p
+            style={{
+              margin: "6px 0 0",
+              fontSize: "0.88rem",
+              color: "#64748b",
+            }}
+          >
+            Plateforme Unifiée de Livraison Express
+          </p>
+        </div>
+
+        {/* STEP 1: Select Profile Type */}
+        <div style={{ marginBottom: "22px" }}>
+          <label
+            style={{
+              fontSize: "0.85rem",
+              fontWeight: 700,
+              color: "#334155",
+              marginBottom: "10px",
+              display: "block",
+            }}
+          >
+            Sélectionnez votre type d'accès :
+          </label>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(3, 1fr)",
+              gap: "10px",
+            }}
+          >
+            {/* Admin Option */}
+            <div
+              onClick={() => handleSelectRole("admin")}
+              style={{
+                borderRadius: "14px",
+                border:
+                  selectedRole === "admin"
+                    ? "2px solid #4f46e5"
+                    : "1.5px solid #e2e8f0",
+                background:
+                  selectedRole === "admin" ? "#f5f3ff" : "#f8fafc",
+                padding: "14px 10px",
+                textAlign: "center",
+                cursor: "pointer",
+                transition: "all 0.15s ease",
+                position: "relative",
+              }}
+            >
+              {selectedRole === "admin" && (
+                <FaCheckCircle
+                  style={{
+                    position: "absolute",
+                    top: "8px",
+                    right: "8px",
+                    color: "#4f46e5",
+                    fontSize: "13px",
+                  }}
+                />
+              )}
+              <div
+                style={{
+                  width: "38px",
+                  height: "38px",
+                  borderRadius: "10px",
+                  background: selectedRole === "admin" ? "#4f46e5" : "#e2e8f0",
+                  color: selectedRole === "admin" ? "#fff" : "#475569",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "17px",
+                  marginBottom: "8px",
+                }}
+              >
+                <FaUserShield />
+              </div>
+              <div
+                style={{
+                  fontWeight: 800,
+                  fontSize: "0.85rem",
+                  color: selectedRole === "admin" ? "#312e81" : "#1e293b",
+                }}
+              >
+                Admin
+              </div>
+              <div
+                style={{
+                  fontSize: "0.7rem",
+                  color: selectedRole === "admin" ? "#6366f1" : "#64748b",
+                  marginTop: "2px",
+                  fontWeight: 600,
+                }}
+              >
+                + Boutique
+              </div>
+            </div>
+
+            {/* Driver Option */}
+            <div
+              onClick={() => handleSelectRole("driver")}
+              style={{
+                borderRadius: "14px",
+                border:
+                  selectedRole === "driver"
+                    ? "2px solid #10b981"
+                    : "1.5px solid #e2e8f0",
+                background:
+                  selectedRole === "driver" ? "#ecfdf5" : "#f8fafc",
+                padding: "14px 10px",
+                textAlign: "center",
+                cursor: "pointer",
+                transition: "all 0.15s ease",
+                position: "relative",
+              }}
+            >
+              {selectedRole === "driver" && (
+                <FaCheckCircle
+                  style={{
+                    position: "absolute",
+                    top: "8px",
+                    right: "8px",
+                    color: "#10b981",
+                    fontSize: "13px",
+                  }}
+                />
+              )}
+              <div
+                style={{
+                  width: "38px",
+                  height: "38px",
+                  borderRadius: "10px",
+                  background: selectedRole === "driver" ? "#10b981" : "#e2e8f0",
+                  color: selectedRole === "driver" ? "#fff" : "#475569",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "17px",
+                  marginBottom: "8px",
+                }}
+              >
+                <FaTruck />
+              </div>
+              <div
+                style={{
+                  fontWeight: 800,
+                  fontSize: "0.85rem",
+                  color: selectedRole === "driver" ? "#065f46" : "#1e293b",
+                }}
+              >
+                Livreur
+              </div>
+              <div
+                style={{
+                  fontSize: "0.7rem",
+                  color: selectedRole === "driver" ? "#059669" : "#64748b",
+                  marginTop: "2px",
+                  fontWeight: 600,
+                }}
+              >
+                Tournées & GPS
+              </div>
+            </div>
+
+            {/* Store Option */}
+            <div
+              onClick={() => handleSelectRole("B2Bclient")}
+              style={{
+                borderRadius: "14px",
+                border:
+                  selectedRole === "B2Bclient"
+                    ? "2px solid #3b82f6"
+                    : "1.5px solid #e2e8f0",
+                background:
+                  selectedRole === "B2Bclient" ? "#eff6ff" : "#f8fafc",
+                padding: "14px 10px",
+                textAlign: "center",
+                cursor: "pointer",
+                transition: "all 0.15s ease",
+                position: "relative",
+              }}
+            >
+              {selectedRole === "B2Bclient" && (
+                <FaCheckCircle
+                  style={{
+                    position: "absolute",
+                    top: "8px",
+                    right: "8px",
+                    color: "#3b82f6",
+                    fontSize: "13px",
+                  }}
+                />
+              )}
+              <div
+                style={{
+                  width: "38px",
+                  height: "38px",
+                  borderRadius: "10px",
+                  background: selectedRole === "B2Bclient" ? "#3b82f6" : "#e2e8f0",
+                  color: selectedRole === "B2Bclient" ? "#fff" : "#475569",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "17px",
+                  marginBottom: "8px",
+                }}
+              >
+                <FaStore />
+              </div>
+              <div
+                style={{
+                  fontWeight: 800,
+                  fontSize: "0.85rem",
+                  color: selectedRole === "B2Bclient" ? "#1e3a8a" : "#1e293b",
+                }}
+              >
+                Boutique
+              </div>
+              <div
+                style={{
+                  fontSize: "0.7rem",
+                  color: selectedRole === "B2Bclient" ? "#2563eb" : "#64748b",
+                  marginTop: "2px",
+                  fontWeight: 600,
+                }}
+              >
+                Partenaire B2B
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* STEP 2: Credentials Form (Clean input fields, no presets, no fake data) */}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            authenticate();
+          }}
+          style={{ display: "flex", flexDirection: "column", gap: "16px" }}
+        >
+          <div>
+            <label
+              style={{
+                fontSize: "0.8rem",
+                fontWeight: 600,
+                color: "#334155",
+                marginBottom: "6px",
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+              }}
+            >
+              <FaUser style={{ color: "#64748b" }} /> Identifiant / Nom d'utilisateur
+            </label>
+            <Input
+              name="username"
+              placeholder="Nom d'utilisateur"
+              value={model.username}
+              onChange={(username) => setModel((prev) => ({ ...prev, username }))}
+              autoComplete="username"
+              style={{ borderRadius: "10px", padding: "10px 14px", height: "42px" }}
+            />
+          </div>
+
+          <div>
+            <label
+              style={{
+                fontSize: "0.8rem",
+                fontWeight: 600,
+                color: "#334155",
+                marginBottom: "6px",
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+              }}
+            >
+              <FaLock style={{ color: "#64748b" }} /> Mot de passe
+            </label>
+            <Input
+              name="password"
+              type="password"
+              placeholder="Mot de passe"
+              value={model.password}
+              onChange={(password) => setModel((prev) => ({ ...prev, password }))}
+              autoComplete="current-password"
+              style={{ borderRadius: "10px", padding: "10px 14px", height: "42px" }}
+            />
+          </div>
+
+          {error && (
+            <Message showIcon type="error" style={{ borderRadius: "8px" }}>
+              {error}
+            </Message>
+          )}
+
+          <Button
+            appearance="primary"
+            type="submit"
+            loading={loading}
+            style={{
+              background:
+                selectedRole === "admin"
+                  ? "#4f46e5"
+                  : selectedRole === "driver"
+                  ? "#10b981"
+                  : "#2563eb",
+              color: "#fff",
+              borderRadius: "10px",
+              padding: "12px",
+              fontWeight: 800,
+              fontSize: "0.95rem",
+              boxShadow: "0 4px 14px rgba(0, 0, 0, 0.15)",
+              marginTop: "4px",
+              transition: "background 0.2s ease",
+            }}
+          >
+            Se Connecter en tant que{" "}
+            {selectedRole === "admin"
+              ? "Administrateur"
+              : selectedRole === "driver"
+              ? "Livreur"
+              : "Boutique"}
+          </Button>
+        </form>
+
+        {/* Real API Endpoint Display */}
+        <div
+          style={{
+            marginTop: "20px",
+            paddingTop: "16px",
+            borderTop: "1px solid #f1f5f9",
+            display: "flex",
+            flexDirection: "column",
+            gap: "8px",
+            fontSize: "0.75rem",
+            color: "#64748b",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <FaServer style={{ color: "#6366f1" }} /> Endpoint d'authentification :
+            </span>
+            <code
+              style={{
+                background: "#f1f5f9",
+                padding: "3px 8px",
+                borderRadius: "6px",
+                fontSize: "0.72rem",
+                color:
+                  selectedRole === "admin"
+                    ? "#4338ca"
+                    : selectedRole === "driver"
+                    ? "#065f46"
+                    : "#1e40af",
+                fontWeight: 700,
+              }}
+            >
+              POST api/{selectedRole === "admin" ? "Auth/login" : selectedRole === "driver" ? "Auth/loginDriver" : "Auth/loginB2B"}
+            </code>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span style={{ color: "#94a3b8" }}>Serveur API :</span>
+            <code
+              style={{
+                background: "#f8fafc",
+                padding: "2px 6px",
+                borderRadius: "4px",
+                fontSize: "0.7rem",
+                color: "#64748b",
+              }}
+              title={BASE_URL}
+            >
+              {BASE_URL}
+            </code>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

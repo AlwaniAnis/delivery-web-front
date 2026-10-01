@@ -3,6 +3,7 @@ import { useRecoilState } from "recoil";
 import { Button, Input, Modal } from "rsuite";
 import Pagination from "rsuite/Pagination";
 import Swal from "sweetalert2";
+import { FaPhoneAlt, FaTruck, FaIdCard, FaMapMarkerAlt, FaEnvelope } from "react-icons/fa";
 import { APi } from "../../Api/";
 import { exportAddAtom } from "../../Atoms/exportAdd.atom";
 import ExportAdd from "../../Components/Common/ExportAdd";
@@ -271,13 +272,179 @@ const columns = [
   {
     value: "firstName",
     value2: "lastName",
-    name: "Nom",
-    render: (v, v2) => <a>{v + " " + v2}</a>,
+    value3: "cin",
+    name: "Livreur",
+    render: (v, v2, v3) => (
+      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+        <div
+          style={{
+            width: "36px",
+            height: "36px",
+            borderRadius: "50%",
+            background: "#eff6ff",
+            color: "#2563eb",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontWeight: 700,
+            fontSize: "0.85rem",
+            border: "1px solid #bfdbfe",
+            flexShrink: 0,
+          }}
+        >
+          {`${(v?.[0] || "").toUpperCase()}${(v2?.[0] || "").toUpperCase()}`}
+        </div>
+        <div>
+          <div style={{ fontWeight: 700, color: "#0f172a", fontSize: "0.9rem" }}>
+            {`${v || ""} ${v2 || ""}`}
+          </div>
+          {v3 && (
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "4px",
+                fontSize: "0.72rem",
+                color: "#64748b",
+                background: "#f1f5f9",
+                padding: "1px 6px",
+                borderRadius: "4px",
+                marginTop: "2px",
+              }}
+            >
+              <FaIdCard size={10} /> CIN: {v3}
+            </div>
+          )}
+        </div>
+      </div>
+    ),
   },
-
+  {
+    value: "phone1",
+    value2: "phone2",
+    name: "Téléphones",
+    render: (p1, p2) => (
+      <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+        {p1 ? (
+          <a
+            href={`tel:${p1}`}
+            style={{
+              textDecoration: "none",
+              color: "#2563eb",
+              background: "#eff6ff",
+              border: "1px solid #bfdbfe",
+              padding: "3px 8px",
+              borderRadius: "6px",
+              fontSize: "0.8rem",
+              fontWeight: 600,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "5px",
+              width: "fit-content",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <FaPhoneAlt size={10} /> {p1}
+          </a>
+        ) : (
+          <span style={{ color: "#94a3b8", fontSize: "0.8rem" }}>—</span>
+        )}
+        {p2 && (
+          <a
+            href={`tel:${p2}`}
+            style={{
+              textDecoration: "none",
+              color: "#64748b",
+              background: "#f8fafc",
+              border: "1px solid #e2e8f0",
+              padding: "2px 6px",
+              borderRadius: "5px",
+              fontSize: "0.75rem",
+              fontWeight: 600,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "4px",
+              width: "fit-content",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <FaPhoneAlt size={9} /> {p2}
+          </a>
+        )}
+      </div>
+    ),
+  },
   {
     value: "email",
     name: "Email",
-    render: (v) => <b>{v}</b>,
+    render: (v) => (
+      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+        {v ? (
+          <a
+            href={`mailto:${v}`}
+            style={{
+              color: "#475569",
+              textDecoration: "none",
+              fontSize: "0.82rem",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "5px",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <FaEnvelope size={11} style={{ color: "#94a3b8" }} />
+            <span>{v}</span>
+          </a>
+        ) : (
+          <span style={{ color: "#94a3b8", fontSize: "0.8rem" }}>—</span>
+        )}
+      </div>
+    ),
+  },
+  {
+    value: "carNumber",
+    name: "Véhicule / Matricule",
+    render: (v) => (
+      <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+        {v ? (
+          <span
+            style={{
+              background: "#f8fafc",
+              border: "1px solid #cbd5e1",
+              padding: "3px 8px",
+              borderRadius: "6px",
+              fontFamily: "monospace",
+              fontWeight: 700,
+              fontSize: "0.8rem",
+              color: "#1e293b",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "5px",
+            }}
+          >
+            <FaTruck size={12} style={{ color: "#6366f1" }} />
+            {v}
+          </span>
+        ) : (
+          <span style={{ color: "#94a3b8", fontSize: "0.8rem" }}>Non renseigné</span>
+        )}
+      </div>
+    ),
+  },
+  {
+    value: "address",
+    name: "Adresse / Secteur",
+    render: (v) => (
+      <div style={{ display: "flex", alignItems: "center", gap: "5px", color: "#64748b", fontSize: "0.82rem" }}>
+        {v ? (
+          <>
+            <FaMapMarkerAlt size={12} style={{ color: "#ef4444", flexShrink: 0 }} />
+            <span>{v}</span>
+          </>
+        ) : (
+          <span>—</span>
+        )}
+      </div>
+    ),
   },
 ];

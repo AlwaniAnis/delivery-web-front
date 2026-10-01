@@ -8,4 +8,5 @@ export const ENDPOINTS = {
   Driver: "Driver",
   Store: "Store",
   Statistics: "Statistics",
+  PreparationPlace: "PreparationPlace",
 };

@@ -26,9 +26,11 @@ export default class DeliveryModel {
   qrCodeContent = "";
   customer = new CustomerModel();
   driverId = null;
+  preparationPlaceId = null;
 }
 export class ColiItem {
   qty = 0;
   unitPrice = 0;
   designation = "";
+  preparationPlaceId = null;
 }
