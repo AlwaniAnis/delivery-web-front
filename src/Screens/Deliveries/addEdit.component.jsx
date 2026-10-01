@@ -1,45 +1,58 @@
+import React, { useEffect, useState } from "react";
 import { Edit } from "@rsuite/icons";
 import ImageIcon from "@rsuite/icons/Image";
 import TrashIcon from "@rsuite/icons/Trash";
-import { useEffect, useState } from "react";
 import Barcode from "react-barcode";
 import QRCode from "react-qr-code";
 import { useRecoilState } from "recoil";
 import {
   Button,
   Checkbox,
-  Divider,
   IconButton,
   Input,
   Message,
   SelectPicker,
   Tag,
 } from "rsuite";
+import {
+  FaBoxOpen,
+  FaUser,
+  FaTruck,
+  FaWarehouse,
+  FaMapMarkerAlt,
+  FaPhoneAlt,
+  FaCalendarAlt,
+  FaHistory,
+  FaPlus,
+  FaCheck,
+  FaBarcode,
+  FaExchangeAlt,
+} from "react-icons/fa";
 import { APi } from "../../Api";
 import { DriversList } from "../../Atoms/drivers.atom";
 import { preparationPlacesState } from "../../Atoms/preparationPlaces.atom";
-import Grid from "../../Components/Grid";
-import Responsive from "../../Components/Responsive";
 import { DeliveryStatus } from "../../Constants/types";
 import zip_codes from "../../Data/zip_codes.json";
 import DeliveryModel from "../../Models/deliveryModel";
 import useB2B from "../../hooks/useB2B";
+
 function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
   const { isB2B } = useB2B();
 
-  const [drivers, setDriversList] = useRecoilState(DriversList);
-  const [depotsList, setDepotsList] = useRecoilState(preparationPlacesState);
+  const [drivers] = useRecoilState(DriversList);
+  const [depotsList] = useRecoilState(preparationPlacesState);
   const [data, setdata] = useState([]);
-
   const [customers, setcustomers] = useState([]);
+  const [showBarcode, setShowBarcode] = useState(false);
 
   const [item, setitem] = useState({
     designation: "",
     qty: 1,
     unitPrice: 0,
-    brittle: true,
+    brittle: false,
     weight: 0,
   });
+
   const fetchHistoric = (customerId) => {
     APi.createAPIEndpoint(APi.ENDPOINTS.Delivery, {
       page: 1,
@@ -48,623 +61,895 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
     })
       .fetchAll()
       .then((res) => {
-        setdata(res.data.data);
+        setdata(res.data?.data || []);
       })
       .catch((e) => console.log(e.Message));
   };
-  const reset = () => {
+
+  const resetItem = () => {
     setitem({
       designation: "",
       qty: 1,
       unitPrice: 0,
-      brittle: true,
+      brittle: false,
       weight: 0,
     });
   };
+
   const fetchCustomers = (q) => {
     APi.createAPIEndpoint(APi.ENDPOINTS.Customer, { page: 1, take: 100, q })
       .fetchAll()
       .then((res) => {
-        setcustomers(res.data.data);
+        setcustomers(res.data?.data || []);
       })
       .catch((e) => console.log(e.Message));
   };
+
   useEffect(() => {
-    if (!model.id)
+    if (!model.id && !model.qrCodeContent) {
       _setmodel((prev) => ({ ...prev, qrCodeContent: Date.now().toString() }));
+    }
   }, [model.id]);
+
+  // Total price of items
+  const totalPrice = (model.coliItems || []).reduce(
+    (acc, it) => acc + (Number(it.qty) || 1) * (Number(it.unitPrice) || 0),
+    0
+  );
+
   return (
-    <>
-      {" "}
+    <div style={{ display: "flex", flexDirection: "column", gap: "16px", padding: "4px" }}>
       {error && (
-        <Message showIcon type="error">
+        <Message showIcon type="error" style={{ borderRadius: "10px" }}>
           {error}
         </Message>
       )}
-      <Responsive
-        m={5.8}
-        xl={5.85}
-        l={5.8}
-        className="p-10"
-        style={{ background: "#f1f1f2" }}
-        margin="5px"
-      >
-        <h6>Informations Produits </h6>
 
-        <label>Code:</label>
-        <Input
-          onChange={(qrCodeContent) => {
-            _setmodel((prev) => {
-              return { ...prev, qrCodeContent };
-            });
+      {/* Main 2-Column Responsive Layout */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))",
+          gap: "18px",
+          alignItems: "start",
+        }}
+      >
+        {/* CARD 1: PACKAGE & EXPEDITION */}
+        <div
+          style={{
+            background: "#ffffff",
+            border: "1px solid #e2e8f0",
+            borderRadius: "14px",
+            padding: "18px",
+            boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+            display: "flex",
+            flexDirection: "column",
+            gap: "14px",
           }}
-          value={model.qrCodeContent || ""}
-        />
-        {model.qrCodeContent ? (
+        >
+          {/* Card Header */}
           <div
-            style={{ textAlign: "center", padding: "20px", display: "flex", alignItems: "center" }}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              paddingBottom: "12px",
+              borderBottom: "1px solid #f1f5f9",
+            }}
           >
-            <QRCode value={model.qrCodeContent} size={100} />
-            <span style={{ margin: "8px" }}> </span>
-            <Barcode value={model.qrCodeContent} />
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <div
+                style={{
+                  background: "#e0e7ff",
+                  color: "#4338ca",
+                  width: "34px",
+                  height: "34px",
+                  borderRadius: "10px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "16px",
+                }}
+              >
+                <FaBoxOpen />
+              </div>
+              <div>
+                <h4 style={{ margin: 0, fontSize: "1rem", fontWeight: 800, color: "#0f172a" }}>
+                  Informations Colis & Expédition
+                </h4>
+                <span style={{ fontSize: "0.75rem", color: "#64748b" }}>
+                  Code barre, affectation livreur et articles
+                </span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowBarcode((prev) => !prev)}
+              style={{
+                background: showBarcode ? "#ede9fe" : "#f1f5f9",
+                color: showBarcode ? "#6d28d9" : "#475569",
+                border: "1px solid #cbd5e1",
+                padding: "4px 8px",
+                borderRadius: "6px",
+                fontSize: "0.75rem",
+                fontWeight: 700,
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "5px",
+              }}
+            >
+              <FaBarcode size={12} /> {showBarcode ? "Masquer Codes" : "Voir Codes"}
+            </button>
           </div>
-        ) : null}
-        {!isB2B && (
-          <>
-            <label>Livreur </label>
+
+          {/* QR & Barcode Preview (Expandable) */}
+          {showBarcode && model.qrCodeContent && (
+            <div
+              style={{
+                background: "#f8fafc",
+                border: "1px dashed #cbd5e1",
+                borderRadius: "10px",
+                padding: "12px",
+                textAlign: "center",
+                display: "flex",
+                flexWrap: "wrap",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "16px",
+              }}
+            >
+              <div style={{ background: "#fff", padding: "6px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+                <QRCode value={model.qrCodeContent} size={76} />
+              </div>
+              <div style={{ background: "#fff", padding: "6px 12px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+                <Barcode value={model.qrCodeContent} height={40} width={1.4} fontSize={12} />
+              </div>
+            </div>
+          )}
+
+          {/* Code Colis Input */}
+          <div>
+            <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#334155", marginBottom: "4px", display: "block" }}>
+              Code Unique du Colis :
+            </label>
+            <Input
+              placeholder="Ex: 169875412..."
+              onChange={(qrCodeContent) => {
+                _setmodel((prev) => ({ ...prev, qrCodeContent }));
+              }}
+              value={model.qrCodeContent || ""}
+            />
+          </div>
+
+          {/* Non-B2B Fields: Driver & Depot */}
+          {!isB2B && (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+              <div>
+                <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#334155", marginBottom: "4px", display: "flex", alignItems: "center", gap: "5px" }}>
+                  <FaTruck style={{ color: "#4f46e5" }} /> Livreur Assigné :
+                </label>
+                <SelectPicker
+                  data={[{ label: "— Non Assigné —", value: 0 }].concat(
+                    drivers.map((c) => ({
+                      label: `${c.firstName || ""} ${c.lastName || ""}`.trim() || c.name || `Livreur #${c.id}`,
+                      value: c.id,
+                    }))
+                  )}
+                  block
+                  searchable={true}
+                  placeholder="Sélectionner..."
+                  value={model.driverId || 0}
+                  onSelect={(driverId) => {
+                    _setmodel((prev) => ({ ...prev, driverId: driverId === 0 ? null : driverId }));
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#334155", marginBottom: "4px", display: "flex", alignItems: "center", gap: "5px" }}>
+                  <FaWarehouse style={{ color: "#059669" }} /> Dépôt / Stock :
+                </label>
+                <SelectPicker
+                  data={[{ label: "— En transit —", value: 0 }].concat(
+                    depotsList.map((d) => ({
+                      label: `${d.name} (${d.code || "DEP"})`,
+                      value: d.id,
+                    }))
+                  )}
+                  block
+                  searchable={true}
+                  placeholder="Dépôt de stockage..."
+                  value={model.preparationPlaceId || 0}
+                  onSelect={(val) => {
+                    _setmodel((prev) => ({
+                      ...prev,
+                      preparationPlaceId: val === 0 ? null : val,
+                    }));
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Date & Exchangeable */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", alignItems: "center" }}>
+            <div>
+              <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#334155", marginBottom: "4px", display: "flex", alignItems: "center", gap: "5px" }}>
+                <FaCalendarAlt style={{ color: "#64748b" }} /> Date Début Procédure :
+              </label>
+              <Input
+                type="date"
+                onChange={(beginProcessDate) => {
+                  _setmodel((prev) => ({ ...prev, beginProcessDate }));
+                }}
+                value={
+                  model.beginProcessDate
+                    ? typeof model.beginProcessDate === "string"
+                      ? model.beginProcessDate.split("T")[0]
+                      : new Date(model.beginProcessDate).toISOString().split("T")[0]
+                    : ""
+                }
+              />
+            </div>
+
+            <div style={{ paddingTop: "20px" }}>
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  cursor: "pointer",
+                  background: model.exchangeable ? "#fef3c7" : "#f8fafc",
+                  border: model.exchangeable ? "1px solid #fde68a" : "1px solid #e2e8f0",
+                  padding: "7px 10px",
+                  borderRadius: "8px",
+                  fontWeight: 700,
+                  fontSize: "0.82rem",
+                  color: model.exchangeable ? "#92400e" : "#475569",
+                }}
+              >
+                <Checkbox
+                  inline
+                  checked={Boolean(model.exchangeable)}
+                  onChange={(val, checked) => {
+                    _setmodel((prev) => ({ ...prev, exchangeable: checked }));
+                  }}
+                />
+                <FaExchangeAlt /> Colis Échangeable
+              </label>
+            </div>
+          </div>
+
+          {/* Remarque */}
+          <div>
+            <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#334155", marginBottom: "4px", display: "block" }}>
+              Remarques / Instructions Spéciales :
+            </label>
+            <Input
+              as="textarea"
+              rows={2}
+              placeholder="Ex: Appeler avant livraison, sonner à l'interphone..."
+              onChange={(remark) => {
+                _setmodel((prev) => ({ ...prev, remark }));
+              }}
+              value={model.remark || ""}
+            />
+          </div>
+
+          {/* Section Articles & Produits */}
+          <div
+            style={{
+              background: "#f8fafc",
+              border: "1px solid #e2e8f0",
+              borderRadius: "12px",
+              padding: "14px",
+              marginTop: "4px",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+              <span style={{ fontSize: "0.85rem", fontWeight: 800, color: "#1e293b", display: "flex", alignItems: "center", gap: "6px" }}>
+                <span>📦</span> Articles Inclus ({model.coliItems?.length || 0})
+              </span>
+              <span style={{ fontSize: "0.82rem", fontWeight: 800, color: "#4f46e5" }}>
+                Total: {totalPrice.toFixed(3)} TND
+              </span>
+            </div>
+
+            {/* Item Input Box */}
+            <div
+              style={{
+                background: "#ffffff",
+                border: "1px solid #cbd5e1",
+                borderRadius: "10px",
+                padding: "12px",
+                marginBottom: "12px",
+              }}
+            >
+              <div style={{ marginBottom: "8px" }}>
+                <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", marginBottom: "3px", display: "block" }}>
+                  Désignation de l'article :
+                </label>
+                <Input
+                  placeholder="Ex: T-Shirt Coton Noir, Écouteurs Bluetooth..."
+                  value={item.designation || ""}
+                  onChange={(designation) => {
+                    setitem((prev) => ({ ...prev, designation }));
+                  }}
+                />
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px", marginBottom: "8px" }}>
+                <div>
+                  <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", marginBottom: "2px", display: "block" }}>
+                    Quantité :
+                  </label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={item.qty ?? 1}
+                    onChange={(qty) => {
+                      setitem((prev) => ({ ...prev, qty: parseInt(qty) || 1 }));
+                    }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", marginBottom: "2px", display: "block" }}>
+                    Prix Unitaire (TND) :
+                  </label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    min={0}
+                    value={item.unitPrice ?? 0}
+                    onChange={(unitPrice) => {
+                      setitem((prev) => ({ ...prev, unitPrice: parseFloat(unitPrice) || 0 }));
+                    }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", marginBottom: "2px", display: "block" }}>
+                    Poids (kg) :
+                  </label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    min={0}
+                    value={item.weight ?? 0}
+                    onChange={(weight) => {
+                      setitem((prev) => ({ ...prev, weight: parseFloat(weight) || 0 }));
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: "6px" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.8rem", color: "#475569", cursor: "pointer" }}>
+                  <Checkbox
+                    inline
+                    checked={Boolean(item.brittle)}
+                    onChange={(val, checked) => {
+                      setitem((prev) => ({ ...prev, brittle: checked }));
+                    }}
+                  />
+                  <span>⚠️ Article Fragile</span>
+                </label>
+
+                <div style={{ display: "flex", gap: "6px" }}>
+                  {item.index && (
+                    <Button size="xs" onClick={resetItem} appearance="subtle">
+                      Annuler
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    appearance="primary"
+                    style={{ background: "#4f46e5", fontWeight: 700 }}
+                    onClick={() => {
+                      if (!item.designation?.trim()) return;
+                      _setmodel((prev) => ({
+                        ...prev,
+                        coliItems: item.index
+                          ? prev.coliItems.map((el) => (el.index === item.index ? item : el))
+                          : [
+                              ...(prev.coliItems || []),
+                              {
+                                ...item,
+                                index: Date.now(),
+                              },
+                            ],
+                      }));
+                      resetItem();
+                    }}
+                  >
+                    {item.index ? "Modifier Article" : "+ Ajouter au Colis"}
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            {/* Articles Table */}
+            {(model.coliItems || []).length > 0 ? (
+              <div style={{ overflowX: "auto" }}>
+                <table
+                  style={{
+                    width: "100%",
+                    borderCollapse: "collapse",
+                    fontSize: "0.82rem",
+                    background: "#ffffff",
+                    borderRadius: "8px",
+                    overflow: "hidden",
+                    border: "1px solid #e2e8f0",
+                  }}
+                >
+                  <thead>
+                    <tr style={{ background: "#f1f5f9", color: "#334155", textAlign: "left" }}>
+                      <th style={{ padding: "8px 10px" }}>Désignation</th>
+                      <th style={{ padding: "8px 6px", textAlign: "center" }}>Qté</th>
+                      <th style={{ padding: "8px 10px", textAlign: "right" }}>Prix (TND)</th>
+                      <th style={{ padding: "8px 6px", textAlign: "center" }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(model.coliItems || []).map((el, idx) => (
+                      <tr
+                        key={el.index || idx}
+                        style={{
+                          borderTop: "1px solid #f1f5f9",
+                          background: idx % 2 === 0 ? "#ffffff" : "#fafafa",
+                        }}
+                      >
+                        <td style={{ padding: "8px 10px", fontWeight: 600, color: "#0f172a" }}>
+                          {el.designation}
+                          {el.brittle && (
+                            <span style={{ fontSize: "0.7rem", color: "#d97706", marginLeft: "6px" }}>
+                              [Fragile]
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ padding: "8px 6px", textAlign: "center", color: "#475569" }}>
+                          {el.qty}
+                        </td>
+                        <td style={{ padding: "8px 10px", textAlign: "right", fontWeight: 700, color: "#0f172a" }}>
+                          {(Number(el.qty || 1) * Number(el.unitPrice || 0)).toFixed(3)}
+                        </td>
+                        <td style={{ padding: "6px", textAlign: "center" }}>
+                          <IconButton
+                            size="xs"
+                            appearance="subtle"
+                            onClick={() => setitem(el)}
+                            icon={<Edit />}
+                            title="Modifier"
+                          />
+                          <IconButton
+                            size="xs"
+                            appearance="subtle"
+                            style={{ color: "#dc2626" }}
+                            onClick={() =>
+                              _setmodel((prev) => ({
+                                ...prev,
+                                coliItems: (prev.coliItems || []).filter(
+                                  (el1) => el1.index !== el.index
+                                ),
+                              }))
+                            }
+                            icon={<TrashIcon />}
+                            title="Supprimer"
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div style={{ textAlign: "center", padding: "16px", color: "#94a3b8", fontSize: "0.82rem" }}>
+                Aucun article ajouté. Veuillez saisir au moins un article ci-dessus.
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* CARD 2: CUSTOMER / DESTINATAIRE */}
+        <div
+          style={{
+            background: "#ffffff",
+            border: "1px solid #e2e8f0",
+            borderRadius: "14px",
+            padding: "18px",
+            boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+            display: "flex",
+            flexDirection: "column",
+            gap: "14px",
+          }}
+        >
+          {/* Card Header */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              paddingBottom: "12px",
+              borderBottom: "1px solid #f1f5f9",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <div
+                style={{
+                  background: "#dcfce7",
+                  color: "#15803d",
+                  width: "34px",
+                  height: "34px",
+                  borderRadius: "10px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "16px",
+                }}
+              >
+                <FaUser />
+              </div>
+              <div>
+                <h4 style={{ margin: 0, fontSize: "1rem", fontWeight: 800, color: "#0f172a" }}>
+                  Destinataire & Coordonnées Client
+                </h4>
+                <span style={{ fontSize: "0.75rem", color: "#64748b" }}>
+                  Sélection rapide ou nouveau client
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Existing Customer Lookup */}
+          <div
+            style={{
+              background: "#eff6ff",
+              border: "1px solid #bfdbfe",
+              borderRadius: "10px",
+              padding: "12px",
+            }}
+          >
+            <label style={{ fontSize: "0.78rem", fontWeight: 800, color: "#1e40af", marginBottom: "4px", display: "block" }}>
+              🔍 Sélectionner un Client Existant (Recherche par nom / téléphone) :
+            </label>
             <SelectPicker
-              data={[{ label: "Sélectionner", value: 0 }].concat(
-                drivers.map((c) => {
-                  return { label: c.firstName + " " + c.lastName, value: c.id };
-                })
+              data={[{ label: "— Saisir un nouveau client —", value: 0 }].concat(
+                customers.map((c) => ({
+                  label: `${c.fullName || "Client"} (${c.phoneNumber || ""}${c.phoneNumber2 ? ` / ${c.phoneNumber2}` : ""})`,
+                  value: c.id,
+                }))
               )}
               block
-              searchable={false}
-              value={model.driverId}
-              onSelect={(driverId) => {
-                _setmodel((prev) => {
-                  return { ...prev, driverId };
-                });
-              }}
-            />
-
-            <div style={{ marginTop: "12px", marginBottom: "8px" }}>
-              <label style={{ fontWeight: 600, color: "#1e293b", display: "flex", alignItems: "center", gap: "6px" }}>
-                🏬 Dépôt & Lieu de Stockage Actuel :
-              </label>
-              <SelectPicker
-                data={[{ label: "— Aucun (En transit / Non affecté) —", value: 0 }].concat(
-                  depotsList.map((d) => ({
-                    label: `${d.name} (${d.code || "DEP"})`,
-                    value: d.id,
-                  }))
-                )}
-                block
-                searchable={true}
-                placeholder="Choisir le dépôt (ex: Dépôt Tunis, Sousse...)"
-                value={model.preparationPlaceId || 0}
-                onSelect={(val) => {
+              searchable={true}
+              placeholder="Tapez pour rechercher un client..."
+              onSearch={(q) => fetchCustomers(q)}
+              value={model.customerId || 0}
+              onSelect={(customerId) => {
+                if (customerId === 0) {
                   _setmodel((prev) => ({
                     ...prev,
-                    preparationPlaceId: val === 0 ? null : val,
+                    customerId: null,
+                  }));
+                  return;
+                }
+                fetchHistoric(customerId);
+                const found = customers.find((c) => c.id == customerId);
+                if (found) {
+                  _setmodel((prev) => ({
+                    ...prev,
+                    customerId,
+                    customer: { ...found },
+                  }));
+                }
+              }}
+            />
+          </div>
+
+          {/* Customer Name & Email */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+            <div>
+              <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#334155", marginBottom: "4px", display: "block" }}>
+                Nom Complet du Client *
+              </label>
+              <Input
+                placeholder="Ex: Mohamed Ben Ali"
+                value={model.customer?.fullName || ""}
+                onChange={(fullName) => {
+                  _setmodel((prev) => ({
+                    ...prev,
+                    customer: { ...prev.customer, fullName },
                   }));
                 }}
               />
-              <small style={{ color: "#64748b", fontSize: "0.75rem", marginTop: "2px", display: "block" }}>
-                Permet de savoir dans quel dépôt le colis est actuellement stocké ou préparé.
-              </small>
             </div>
-          </>
-        )}
-        <label style={{ display: "flex", alignItems: "center", marginTop: "10px" }}>
-          <Checkbox
-            style={{ marginRight: "10px" }}
-            onChange={(val, checked) => {
-              _setmodel((prev) => ({
-                ...prev,
-                exchangeable: checked,
-              }));
-            }}
-            checked={Boolean(model.exchangeable)}
-          />
-          Échangeable
-        </label>
-        <br />
-        <label>Date Debut De Procédure:</label>
-        <Input
-          onChange={(beginProcessDate) => {
-            _setmodel((prev) => {
-              return { ...prev, beginProcessDate };
-            });
-          }}
-          type="date"
-          value={
-            model.beginProcessDate
-              ? typeof model.beginProcessDate === "string"
-                ? model.beginProcessDate.split("T")[0]
-                : new Date(model.beginProcessDate).toISOString().split("T")[0]
-              : ""
-          }
-        />
-        <label>Remarque:</label>
-        <Input
-          onChange={(remark) => {
-            _setmodel((prev) => {
-              return { ...prev, remark };
-            });
-          }}
-          as="textarea"
-          value={model.remark || ""}
-        />
-        <label>Liste Des Produits / Services :</label>
-        <div style={{ background: "rgb(0,169,141,0.2)", padding: "5px" }}>
-          <label>Désignation:</label>
-          <Input
-            as="textarea"
-            onChange={(designation) => {
-              setitem((prev) => {
-                return { ...prev, designation };
-              });
-            }}
-            value={item.designation || ""}
-          />
-          <Responsive s={4} m={4} l={4} xl={4} className="p-5">
-            <label>Quantité:</label>
 
-            <Input
-              type="number"
-              onChange={(qty) => {
-                setitem((prev) => {
-                  return { ...prev, qty: parseInt(qty) || 0 };
-                });
-              }}
-              value={item.qty ?? 1}
-            />
-          </Responsive>
-          <Responsive s={4} m={4} l={4} xl={4} className="p-5">
-            <label>Prix:</label>
-            <Input
-              step="0.1"
-              type="number"
-              onChange={(unitPrice) => {
-                setitem((prev) => {
-                  return { ...prev, unitPrice: parseFloat(unitPrice) || 0 };
-                });
-              }}
-              value={item.unitPrice ?? 0}
-            />
-          </Responsive>
-          <Responsive s={4} m={4} l={4} xl={4} className="p-5">
-            <label>Poids :</label>
-            <Input
-              step="0.1"
-              type="number"
-              onChange={(weight) => {
-                setitem((prev) => {
-                  return { ...prev, weight: parseFloat(weight) || 0 };
-                });
-              }}
-              value={item.weight ?? 0}
-            />
-          </Responsive>
-          <label style={{ display: "flex", alignItems: "center", marginTop: "5px" }}>
-            <Checkbox
-              style={{ marginRight: "10px" }}
-              onChange={(val, checked) => {
-                setitem((prev) => ({
-                  ...prev,
-                  brittle: checked,
-                }));
-              }}
-              checked={Boolean(item.brittle)}
-            />
-            Fragile
-          </label>
-          <br />
-          <div style={{ textAlign: "right", margin: "5px" }}>
-            <Button
-              color="green"
-              onClick={() => {
-                _setmodel((prev) => ({
-                  ...prev,
-                  coliItems: item.index
-                    ? [
-                        ...prev.coliItems.map((el) => {
-                          if (el.index !== item.index) return el;
-                          else return item;
-                        }),
-                      ]
-                    : [
-                        ...prev.coliItems,
-                        {
-                          ...item,
-                          index: Date.now(),
-                        },
-                      ],
-                }));
-                reset();
+            <div>
+              <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#334155", marginBottom: "4px", display: "block" }}>
+                Adresse Email :
+              </label>
+              <Input
+                type="email"
+                placeholder="client@domaine.tn"
+                value={model.customer?.email || ""}
+                onChange={(email) => {
+                  _setmodel((prev) => ({
+                    ...prev,
+                    customer: { ...prev.customer, email },
+                  }));
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Phone numbers */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+            <div>
+              <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#334155", marginBottom: "4px", display: "flex", alignItems: "center", gap: "5px" }}>
+                <FaPhoneAlt style={{ color: "#10b981", fontSize: "11px" }} /> Téléphone Principal *
+              </label>
+              <Input
+                type="tel"
+                placeholder="Ex: 98123456"
+                value={model.customer?.phoneNumber || ""}
+                onChange={(phoneNumber) => {
+                  _setmodel((prev) => ({
+                    ...prev,
+                    customer: { ...prev.customer, phoneNumber },
+                  }));
+                }}
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#334155", marginBottom: "4px", display: "flex", alignItems: "center", gap: "5px" }}>
+                <FaPhoneAlt style={{ color: "#64748b", fontSize: "11px" }} /> Téléphone Secondaire :
+              </label>
+              <Input
+                type="tel"
+                placeholder="Ex: 22345678"
+                value={model.customer?.phoneNumber2 || ""}
+                onChange={(phoneNumber2) => {
+                  _setmodel((prev) => ({
+                    ...prev,
+                    customer: { ...prev.customer, phoneNumber2 },
+                  }));
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Location Cascade (Gouvernorat, Délégation, Ville, Zip) */}
+          <div
+            style={{
+              background: "#f8fafc",
+              border: "1px solid #e2e8f0",
+              borderRadius: "12px",
+              padding: "12px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "10px",
+            }}
+          >
+            <div style={{ fontSize: "0.82rem", fontWeight: 800, color: "#1e293b", display: "flex", alignItems: "center", gap: "6px" }}>
+              <FaMapMarkerAlt style={{ color: "#ef4444" }} /> Localisation & Zone Géographique
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+              <div>
+                <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", marginBottom: "3px", display: "block" }}>
+                  Gouvernorat *
+                </label>
+                <SelectPicker
+                  data={[{ label: "Sélectionner...", value: "" }].concat(
+                    zip_codes.map((c) => ({
+                      label: c.name.toUpperCase(),
+                      value: c.name.toUpperCase(),
+                    }))
+                  )}
+                  block
+                  searchable={true}
+                  value={(model.customer?.city || "").toUpperCase()}
+                  onSelect={(city) => {
+                    _setmodel((prev) => ({
+                      ...prev,
+                      customer: {
+                        ...prev.customer,
+                        city,
+                        deleg: "",
+                        ville: "",
+                        zipCode: "",
+                      },
+                    }));
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", marginBottom: "3px", display: "block" }}>
+                  Délégation :
+                </label>
+                <SelectPicker
+                  disabled={!model.customer?.city}
+                  data={[{ label: "Sélectionner...", value: "" }].concat(
+                    zip_codes.find(
+                      (el) => el.name.toUpperCase() === (model.customer?.city || "").toUpperCase()
+                    )
+                      ? zip_codes
+                          .find((el) => el.name.toUpperCase() === (model.customer?.city || "").toUpperCase())
+                          .delegs.map((c) => ({
+                            label: Object.keys(c)[0],
+                            value: Object.keys(c)[0],
+                          }))
+                      : []
+                  )}
+                  block
+                  searchable={true}
+                  value={model.customer?.deleg || ""}
+                  onSelect={(deleg) => {
+                    _setmodel((prev) => ({
+                      ...prev,
+                      customer: { ...prev.customer, deleg, ville: "", zipCode: "" },
+                    }));
+                  }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+              <div>
+                <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", marginBottom: "3px", display: "block" }}>
+                  Cité / Ville :
+                </label>
+                <SelectPicker
+                  disabled={!model.customer?.deleg}
+                  data={[{ label: "Sélectionner...", value: "" }].concat(
+                    (() => {
+                      const cityObj = zip_codes.find(
+                        (el) => el.name.toUpperCase() === (model.customer?.city || "").toUpperCase()
+                      );
+                      if (!cityObj) return [];
+                      const delegObj = cityObj.delegs.find(
+                        (d) => Object.keys(d)[0] === model.customer?.deleg
+                      );
+                      if (!delegObj || !delegObj[model.customer.deleg]) return [];
+                      return delegObj[model.customer.deleg].map((c) => ({
+                        label: c.Cite,
+                        value: c.Cite,
+                      }));
+                    })()
+                  )}
+                  block
+                  searchable={true}
+                  value={model.customer?.ville || ""}
+                  onSelect={(ville) => {
+                    let calculatedZip = "";
+                    const cityObj = zip_codes.find(
+                      (el) => el.name.toUpperCase() === (model.customer?.city || "").toUpperCase()
+                    );
+                    if (cityObj) {
+                      const delegObj = cityObj.delegs.find(
+                        (d) => Object.keys(d)[0] === model.customer?.deleg
+                      );
+                      if (delegObj && delegObj[model.customer.deleg]) {
+                        const foundCite = delegObj[model.customer.deleg].find(
+                          (el) => el.Cite === ville
+                        );
+                        if (foundCite) calculatedZip = foundCite.zip;
+                      }
+                    }
+
+                    _setmodel((prev) => ({
+                      ...prev,
+                      customer: {
+                        ...prev.customer,
+                        ville,
+                        zipCode: calculatedZip || prev.customer?.zipCode,
+                      },
+                    }));
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", marginBottom: "3px", display: "block" }}>
+                  Code Postal :
+                </label>
+                <Input
+                  type="text"
+                  placeholder="Ex: 2035"
+                  value={model.customer?.zipCode || ""}
+                  onChange={(zipCode) => {
+                    _setmodel((prev) => ({
+                      ...prev,
+                      customer: { ...prev.customer, zipCode },
+                    }));
+                  }}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", marginBottom: "3px", display: "block" }}>
+                Adresse Détaillée (Rue, Résidence, Appartement) :
+              </label>
+              <Input
+                as="textarea"
+                rows={2}
+                placeholder="Ex: 14 Rue du Lac Victoria, Résidence Les Fleurs..."
+                value={model.customer?.address || ""}
+                onChange={(address) => {
+                  _setmodel((prev) => ({
+                    ...prev,
+                    customer: { ...prev.customer, address },
+                  }));
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Customer History Accordion */}
+          {data.length > 0 && (
+            <div
+              style={{
+                background: "#f8fafc",
+                border: "1px solid #e2e8f0",
+                borderRadius: "10px",
+                padding: "10px 12px",
               }}
             >
-              {item.index ? "modifier" : "ajouter"}
-            </Button>
-          </div>
-        </div>
-        <table>
-          <thead>
-            <tr style={{ background: "#454599", color: "#fff" }}>
-              <th>Désignation</th>
-              <th>Qté</th>
-              <th>Prix</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(model.coliItems || []).map((el, idx) => (
-              <tr key={el.index || idx} style={{ color: "#454599" }}>
-                <td>{el.designation}</td>
-                <td>{el.qty}</td>
-                <td>{el.unitPrice}</td>
-                <td>
-                  <IconButton
-                    appearance="subtle"
-                    onClick={() => setitem(el)}
-                    icon={<Edit />}
-                    circle
-                  />
-                  <Divider vertical />
-                  <IconButton
-                    appearance="subtle"
-                    onClick={() =>
-                      _setmodel((prev) => ({
-                        ...prev,
-                        coliItems: prev.coliItems.filter(
-                          (el1) => el1.index !== el.index
-                        ),
-                      }))
-                    }
-                    icon={<TrashIcon />}
-                    circle
-                  />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Responsive>
-      <Responsive
-        m={5.8}
-        xl={5.85}
-        l={5.8}
-        margin="5px"
-        className="p-10"
-        style={{ background: "#f1f1f2" }}
-      >
-        <h6>Informations Client</h6>
-        <div
-          style={{ padding: "8px", background: "#4667d1", borderRadius: "5px" }}
-        >
-          <label style={{ color: "#fff" }}>
-            Trouver un client correspendant:
-          </label>
-          <div style={{ display: "flex" }}>
-            <SelectPicker
-              style={{ flex: 1 }}
-              data={[{ label: "Sélectionner", value: 0 }].concat(
-                customers.map((c) => {
-                  return {
-                    label:
-                      c.fullName +
-                      " ( " +
-                      c.phoneNumber +
-                      "/" +
-                      c.phoneNumber2 +
-                      ")",
+              <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "8px" }}>
+                <FaHistory style={{ color: "#64748b" }} />
+                <span style={{ fontSize: "0.82rem", fontWeight: 800, color: "#334155" }}>
+                  Historique des Commandes Antérieures ({data.length})
+                </span>
+              </div>
 
-                    value: c.id,
-                  };
-                })
-              )}
-              block
-              onSearch={(q) => fetchCustomers(q)}
-              value={model.customerId}
-              onSelect={(customerId) => {
-                fetchHistoric(customerId);
-                _setmodel((prev) => {
-                  return {
-                    ...prev,
-                    customerId,
-                    customer: { ...customers.find((c) => c.id == customerId) },
-                  };
-                });
-              }}
-            />
-          </div>
+              <div style={{ maxHeight: "160px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "6px" }}>
+                {data.slice(0, 10).map((hist, i) => {
+                  const st = DeliveryStatus.find((s) => s.value == hist.status);
+                  return (
+                    <div
+                      key={hist.id || i}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        padding: "6px 8px",
+                        background: "#fff",
+                        borderRadius: "6px",
+                        border: "1px solid #e2e8f0",
+                        fontSize: "0.78rem",
+                      }}
+                    >
+                      <span style={{ fontFamily: "monospace", fontWeight: 700, color: "#0f172a" }}>
+                        #{hist.qrCodeContent || hist.id}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: "0.72rem",
+                          fontWeight: 700,
+                          padding: "2px 6px",
+                          borderRadius: "4px",
+                          background: hist.status == 5 ? "#d1fae5" : "#fef3c7",
+                          color: hist.status == 5 ? "#065f46" : "#92400e",
+                        }}
+                      >
+                        {st?.label || "En cours"}
+                      </span>
+                      <span style={{ color: "#64748b", fontSize: "0.75rem" }}>
+                        {hist.driver ? `${hist.driver.firstName || ""} ${hist.driver.lastName || ""}` : "—"}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
-        <label className="required">Nom Complet :</label>
-        <Input
-          onChange={(fullName) => {
-            _setmodel((prev) => {
-              return { ...prev, customer: { ...prev.customer, fullName } };
-            });
-          }}
-          value={model.customer?.fullName || ""}
-        />
-        <label>Email:</label>
-        <Input
-          onChange={(email) => {
-            _setmodel((prev) => {
-              return { ...prev, customer: { ...prev.customer, email } };
-            });
-          }}
-          value={model.customer?.email || ""}
-          type="email"
-        />
-        <label className="required">Téléphone 1:</label>
-        <Input
-          value={model.customer?.phoneNumber || ""}
-          onChange={(phoneNumber) => {
-            _setmodel((prev) => {
-              return { ...prev, customer: { ...prev.customer, phoneNumber } };
-            });
-          }}
-          type="tel"
-        />
-        <label>Téléphone 2:</label>
-        <Input
-          value={model.customer?.phoneNumber2 || ""}
-          onChange={(phoneNumber2) => {
-            _setmodel((prev) => {
-              return { ...prev, customer: { ...prev.customer, phoneNumber2 } };
-            });
-          }}
-          type="tel"
-        />
-        <Responsive m={6} l={6} xl={6} className="p-5">
-          <label className="required">Gouvernerat </label>
-          <SelectPicker
-            data={[{ label: "Sélectionner", value: 0 }].concat(
-              zip_codes.map((c) => {
-                return {
-                  label: c.name.toUpperCase(),
-                  value: c.name.toUpperCase(),
-                };
-              })
-            )}
-            block
-            searchable={false}
-            value={(model.customer?.city || "").toUpperCase()}
-            onSelect={(city) => {
-              _setmodel((prev) => ({
-                ...prev,
-                customer: {
-                  ...prev.customer,
-                  city,
-                  deleg: "",
-                  ville: "",
-                  zipCode: "",
-                },
-              }));
-            }}
-          />
-        </Responsive>
-
-        {model.customer?.city ? (
-          <Responsive m={6} l={6} xl={6} className="p-5">
-            <label>Délégation </label>
-            <SelectPicker
-              data={[{ label: "Sélectionner", value: 0 }].concat(
-                zip_codes.find(
-                  (el) =>
-                    el.name.toUpperCase() == (model.customer?.city || "").toUpperCase()
-                )
-                  ? zip_codes
-                      .find(
-                        (el) =>
-                          el.name.toUpperCase() ==
-                          (model.customer?.city || "").toUpperCase()
-                      )
-                      .delegs.map((c) => {
-                        return {
-                          label: Object.keys(c)[0],
-                          value: Object.keys(c)[0],
-                        };
-                      })
-                  : []
-              )}
-              block
-              searchable={false}
-              value={model.customer?.deleg || ""}
-              onSelect={(deleg) => {
-                _setmodel((prev) => ({
-                  ...prev,
-                  customer: { ...prev.customer, deleg, ville: "", zipCode: "" },
-                }));
-              }}
-            />
-          </Responsive>
-        ) : (
-          ""
-        )}
-        {model.customer?.deleg && model.customer?.city ? (
-          <Responsive m={6} l={6} xl={6} className="p-5">
-            <label>Ville </label>
-            <SelectPicker
-              data={[{ label: "Sélectionner", value: 0 }].concat(
-                zip_codes.find(
-                  (el) =>
-                    el.name.toUpperCase() == (model.customer?.city || "").toUpperCase()
-                )
-                  ? zip_codes
-                      .find(
-                        (el) =>
-                          el.name.toUpperCase() ==
-                          (model.customer?.city || "").toUpperCase()
-                      )
-                      .delegs.find(
-                        (d) => Object.keys(d)[0] == model.customer.deleg
-                      )
-                    ? zip_codes
-                        .find(
-                          (el) =>
-                            el.name.toUpperCase() ==
-                            (model.customer?.city || "").toUpperCase()
-                        )
-                        .delegs.find(
-                          (d) => Object.keys(d)[0] == model.customer.deleg
-                        )
-                        [model.customer.deleg].map((c) => {
-                          return {
-                            label: c.Cite,
-                            value: c.Cite,
-                          };
-                        })
-                    : []
-                  : []
-              )}
-              block
-              searchable={false}
-              value={model.customer?.ville || ""}
-              onSelect={(ville) => {
-                _setmodel((prev) => ({
-                  ...prev,
-                  customer: {
-                    ...prev.customer,
-                    ville,
-                    zipCode:
-                      zip_codes.find((el) => el.name == model.customer.city) &&
-                      zip_codes.find((el) => el.name == model.customer.city)
-                        .delegs &&
-                      zip_codes
-                        .find((el) => el.name == model.customer.city)
-                        .delegs.find(
-                          (d) => Object.keys(d)[0] == model.customer.deleg
-                        ) &&
-                      zip_codes
-                        .find((el) => el.name == model.customer.city)
-                        .delegs.find(
-                          (d) => Object.keys(d)[0] == model.customer.deleg
-                        )[model.customer.deleg] &&
-                      zip_codes
-                        .find((el) => el.name == model.customer.city)
-                        .delegs.find(
-                          (d) => Object.keys(d)[0] == model.customer.deleg
-                        )
-                        [model.customer.deleg].find((el) => el.Cite == ville)
-                        ? zip_codes
-                            .find((el) => el.name == model.customer.city)
-                            .delegs.find(
-                              (d) => Object.keys(d)[0] == model.customer.deleg
-                            )
-                            [model.customer.deleg].find(
-                              (el) => el.Cite == ville
-                            ).zip
-                        : "",
-                  },
-                }));
-              }}
-            />
-          </Responsive>
-        ) : (
-          ""
-        )}
-        <Responsive m={6} l={6} xl={6} className="p-5">
-          <label>Zip Code :</label>
-          <Input
-            width={100}
-            type="number"
-            onChange={(zipCode) => {
-              _setmodel((prev) => {
-                return { ...prev, customer: { ...prev.customer, zipCode } };
-              });
-            }}
-            value={model.customer?.zipCode || ""}
-          />
-        </Responsive>
-        <br></br>
-        <label>Addresse :</label>
-        <Input
-          onChange={(address) => {
-            _setmodel((prev) => {
-              return { ...prev, customer: { ...prev.customer, address } };
-            });
-          }}
-          as="textarea"
-          value={model.customer?.address || ""}
-        />
-        <h5>Historique de client </h5>
-        <Grid columns={columns} rows={data} />
-      </Responsive>
-      <br></br>
-      {error && (
-        <Message showIcon type="error">
-          {error}
-        </Message>
-      )}
-    </>
+      </div>
+    </div>
   );
 }
 
 export default AddEdit;
-const columns = [
-  {
-    value: "qrCodeContent",
-
-    name: "Code",
-    render: (v) => (
-      <b style={{ display: "flex", alignItems: "center" }}>
-        <div style={{ padding: "0 5px", color: "#00a98d" }}>{v}</div>
-      </b>
-    ),
-  },
-  {
-    value: "status",
-    name: "Statut",
-    render: (v) => (
-      <>
-        <Tag
-          color={
-            v == 1
-              ? "yellow"
-              : v == 2
-              ? "green"
-              : v == 3
-              ? "violet"
-              : v == 4
-              ? "orange"
-              : v == 5
-              ? "red"
-              : "blue"
-          }
-        >
-          {v && DeliveryStatus.find((el) => el.value == v).label}
-        </Tag>
-      </>
-    ),
-  },
-  {
-    value: "driver",
-
-    name: "Livreur",
-    render: (v) => (
-      <b style={{ display: "flex", alignItems: "center" }}>
-        <div
-          style={{
-            fontSize: "15px",
-            border: "1px dashed #888",
-            borderRadius: "50%",
-            width: "43px",
-            height: "43px",
-            textAlign: "center",
-            lineHeight: "42px",
-          }}
-        >
-          <ImageIcon color="#3598ff"></ImageIcon>
-        </div>
-
-        <div style={{ padding: "0 5px" }}>
-          {v && v.firstName + "  " + v.lastName}
-        </div>
-      </b>
-    ),
-  },
-];

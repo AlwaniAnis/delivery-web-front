@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useRecoilState, useRecoilValue } from "recoil";
-import { Tag } from "rsuite";
+import { Input } from "rsuite";
 import Swal from "sweetalert2";
 import { APi } from "../../Api/";
 import { exportAddAtom } from "../../Atoms/exportAdd.atom";
@@ -9,13 +9,24 @@ import { StoresList } from "../../Atoms/stores.atom";
 import ExportAdd from "../../Components/Common/ExportAdd";
 import Grid from "../../Components/Grid";
 import AddEdit from "./AddEdit.component";
-import { FaUserShield, FaTruck, FaStore } from "react-icons/fa";
+import {
+  FaUserShield,
+  FaTruck,
+  FaStore,
+  FaSearch,
+  FaTimes,
+  FaUsers,
+  FaFilter,
+} from "react-icons/fa";
 
 export default function Users() {
   const [data, setData] = useState([]);
   const [state, setState] = useRecoilState(exportAddAtom);
   const drivers = useRecoilValue(DriversList);
   const stores = useRecoilValue(StoresList);
+
+  const [searchQuery, setSearchQuery] = useState("");
+  const [roleFilter, setRoleFilter] = useState("all"); // 'all' | 'admin' | 'driver' | 'B2Bclient'
 
   const [error, setError] = useState("");
   const [model, setModel] = useState({
@@ -121,6 +132,44 @@ export default function Users() {
   useEffect(() => {
     fetchUsers();
   }, []);
+
+  // Filter accounts by search query and role
+  const filteredUsers = data.filter((u) => {
+    if (roleFilter !== "all" && u.role !== roleFilter) return false;
+
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase().trim();
+
+    const userName = (u.userName || "").toLowerCase();
+    const firstName = (u.firstName || "").toLowerCase();
+    const lastName = (u.lastName || "").toLowerCase();
+    const fullName = `${firstName} ${lastName}`.trim().toLowerCase();
+    const email = (u.email || "").toLowerCase();
+    const phone = (u.phoneNumber || "").toLowerCase();
+    const role = (u.role || "").toLowerCase();
+
+    let driverName = "";
+    if (u.driverId) {
+      const d = drivers.find((el) => el.id === Number(u.driverId));
+      if (d) driverName = `${d.firstName || ""} ${d.lastName || ""} ${d.name || ""}`.toLowerCase();
+    }
+
+    let storeName = "";
+    if (u.storeId) {
+      const s = stores.find((el) => el.id === Number(u.storeId));
+      if (s) storeName = (s.name_fr || "").toLowerCase();
+    }
+
+    return (
+      userName.includes(q) ||
+      fullName.includes(q) ||
+      email.includes(q) ||
+      phone.includes(q) ||
+      role.includes(q) ||
+      driverName.includes(q) ||
+      storeName.includes(q)
+    );
+  });
 
   const columns = [
     {
@@ -239,10 +288,12 @@ export default function Users() {
 
   return (
     <div style={{ padding: "16px", maxWidth: "1400px", margin: "0 auto" }}>
+      {/* Top Bar with ExportAdd Button */}
       <div style={{ marginBottom: "16px" }}>
         <ExportAdd
           noExport
           size="md"
+          title="Ajouter un Compte Utilisateur"
           save={save}
           AddComponent={
             <AddEdit
@@ -256,6 +307,124 @@ export default function Users() {
         />
       </div>
 
+      {/* SEARCH AND FILTER BAR */}
+      <div
+        style={{
+          background: "#ffffff",
+          borderRadius: "14px",
+          border: "1px solid #e2e8f0",
+          padding: "14px 18px",
+          marginBottom: "16px",
+          display: "flex",
+          flexWrap: "wrap",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: "12px",
+          boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+        }}
+      >
+        {/* Search Input */}
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", flex: 1, minWidth: "260px", maxWidth: "520px" }}>
+          <div style={{ position: "relative", width: "100%" }}>
+            <FaSearch
+              style={{
+                position: "absolute",
+                left: "12px",
+                top: "50%",
+                transform: "translateY(-50%)",
+                color: "#94a3b8",
+                fontSize: "14px",
+                zIndex: 2,
+              }}
+            />
+            <input
+              type="text"
+              placeholder="Filtrer par nom, identifiant, email, téléphone, profil..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "9px 36px 9px 34px",
+                borderRadius: "8px",
+                border: "1.5px solid #cbd5e1",
+                fontSize: "0.88rem",
+                outline: "none",
+                background: "#f8fafc",
+                transition: "border-color 0.15s ease",
+              }}
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                style={{
+                  position: "absolute",
+                  right: "10px",
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "#94a3b8",
+                  padding: "4px",
+                }}
+              >
+                <FaTimes size={13} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Role Filters Chips */}
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+          <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "#64748b", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+            <FaFilter size={11} /> Filtrer par rôle :
+          </span>
+
+          <div style={{ display: "flex", gap: "4px", background: "#f1f5f9", padding: "3px", borderRadius: "8px" }}>
+            {[
+              { id: "all", label: "Tous" },
+              { id: "admin", label: "Admins" },
+              { id: "driver", label: "Livreurs" },
+              { id: "B2Bclient", label: "Boutiques B2B" },
+            ].map((btn) => (
+              <button
+                key={btn.id}
+                type="button"
+                onClick={() => setRoleFilter(btn.id)}
+                style={{
+                  background: roleFilter === btn.id ? "#ffffff" : "transparent",
+                  color: roleFilter === btn.id ? "#0f172a" : "#64748b",
+                  fontWeight: roleFilter === btn.id ? 800 : 500,
+                  border: "none",
+                  borderRadius: "6px",
+                  padding: "5px 10px",
+                  fontSize: "0.78rem",
+                  cursor: "pointer",
+                  boxShadow: roleFilter === btn.id ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+                }}
+              >
+                {btn.label}
+              </button>
+            ))}
+          </div>
+
+          <span
+            style={{
+              fontSize: "0.75rem",
+              fontWeight: 700,
+              padding: "4px 10px",
+              borderRadius: "20px",
+              background: "#e2e8f0",
+              color: "#334155",
+            }}
+          >
+            {filteredUsers.length} / {data.length} compte(s)
+          </span>
+        </div>
+      </div>
+
+      {/* Grid of Users */}
       <div style={{ background: "#fff", borderRadius: "12px", border: "1px solid #e2e8f0", overflow: "hidden" }}>
         <Grid
           editAction={(id) => {
@@ -266,8 +435,37 @@ export default function Users() {
           actionKey="id"
           noAdvancedActions
           columns={columns}
-          rows={data}
+          rows={filteredUsers}
         />
+
+        {filteredUsers.length === 0 && (
+          <div style={{ padding: "40px 20px", textAlign: "center", color: "#64748b" }}>
+            <FaUsers size={36} style={{ color: "#cbd5e1", marginBottom: "8px" }} />
+            <div style={{ fontWeight: 600 }}>Aucun compte utilisateur ne correspond à votre recherche.</div>
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery("");
+                  setRoleFilter("all");
+                }}
+                style={{
+                  marginTop: "8px",
+                  background: "#eff6ff",
+                  border: "1px solid #bfdbfe",
+                  color: "#2563eb",
+                  padding: "6px 14px",
+                  borderRadius: "6px",
+                  fontSize: "0.8rem",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                Réinitialiser la recherche
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

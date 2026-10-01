@@ -1,21 +1,35 @@
-import { useEffect, useState } from "react";
-import { Button, Input, SelectPicker, TagInput } from "rsuite";
+import React, { useEffect, useState } from "react";
+import { Button, Input, TagInput } from "rsuite";
+import { useRecoilValue } from "recoil";
+import {
+  FaStore,
+  FaFileInvoice,
+  FaMapMarkerAlt,
+  FaPhoneAlt,
+  FaEnvelope,
+  FaExternalLinkAlt,
+  FaSave,
+  FaPlus,
+  FaEdit,
+  FaTrash,
+  FaCheckCircle,
+} from "react-icons/fa";
+import Swal from "sweetalert2";
 import { createAPIEndpoint } from "../../Api/authenticated.requests";
 import { ENDPOINTS } from "../../Api/enpoints";
-import { FileD } from "../../Components/media_library";
-import Responsive from "../../Components/Responsive";
-import { BASE_URL } from "../../Config/api.config";
-import { useRecoilValue } from "recoil";
 import { MyStore } from "../../Atoms/store.atom";
 
 export default function OurStore() {
+  const store = useRecoilValue(MyStore);
   const [model, setmodel] = useState({
     contacts: [],
   });
-  const store = useRecoilValue(MyStore);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    setmodel(store);
+    if (store && store.id) {
+      setmodel(store);
+    }
   }, [store.id]);
 
   const [contact, setcontact] = useState({
@@ -25,233 +39,420 @@ export default function OurStore() {
     maplink: "",
   });
 
+  const resetContactForm = () => {
+    setcontact({
+      address: "",
+      phones: "",
+      emails: "",
+      maplink: "",
+      eStoreId: model.id,
+    });
+  };
+
+  const handleSaveContact = () => {
+    if (!contact.address?.trim() && !contact.phones && !contact.emails) {
+      Swal.fire({
+        icon: "warning",
+        title: "Champs requis",
+        text: "Veuillez renseigner au moins l'adresse ou un numéro de téléphone pour ce point de contact.",
+      });
+      return;
+    }
+
+    let contacts = [...(model.contacts || [])];
+    if (!contact.id) {
+      contacts.push({
+        ...contact,
+        id: Date.now(),
+        eStoreId: model.id,
+      });
+    } else {
+      let _indx = contacts.findIndex((el) => el.id == contact.id);
+      if (_indx !== -1) {
+        contacts[_indx] = contact;
+      } else {
+        contacts.push(contact);
+      }
+    }
+
+    setmodel((prev) => ({
+      ...prev,
+      contacts,
+    }));
+    resetContactForm();
+  };
+
+  const handleSaveStore = () => {
+    setSaving(true);
+    let m = { ...model };
+
+    if (m.contacts && Array.isArray(m.contacts)) {
+      m.contacts = m.contacts.map((el) => {
+        const copy = { ...el };
+        delete copy.id;
+        return copy;
+      });
+    }
+
+    createAPIEndpoint(ENDPOINTS.Store)
+      .update(model.id, m)
+      .then(() => {
+        setSaving(false);
+        Swal.fire({
+          position: "top-end",
+          icon: "success",
+          title: "Boutique enregistrée avec succès !",
+          showConfirmButton: false,
+          timer: 1800,
+        });
+        createAPIEndpoint(ENDPOINTS.Store + "/getDefault")
+          .customGet()
+          .then((res) => {
+            if (res && res.data) setmodel(res.data);
+          });
+      })
+      .catch((err) => {
+        setSaving(false);
+        Swal.fire({
+          icon: "error",
+          title: "Erreur",
+          text: err.message || "Impossible de mettre à jour la boutique.",
+        });
+      });
+  };
+
   return (
-    <div style={{ padding: "10px", background: "#fff" }}>
-      <h1>Notre Boutique</h1>
-      <hr></hr>
-      <label>Nom :</label>
-      <Input
-        onChange={(name_fr) => {
-          setmodel((prev) => {
-            return { ...prev, name_fr };
-          });
-        }}
-        value={model.name_fr}
-      />
-      <label>Matricule Fiscale :</label>
-      <Input
-        onChange={(taxCode) => {
-          setmodel((prev) => {
-            return { ...prev, taxCode };
-          });
-        }}
-        value={model.taxCode}
-      />
-      <label>Description :</label>
-      <Input
-        as="textarea"
-        value={model.description_fr}
-        onChange={(description_fr) => {
-          setmodel((prev) => {
-            return { ...prev, description_fr };
-          });
-        }}
-      />
-      {/* <label>Emails:</label>
-      <TagInput
-        block
-        size="md"
-        // placeholder="numéros des télephones"
-        value={model.contact.emails ? model.contact.emails.split(",") : []}
-        onChange={(emails) => {
-          let m = { ...model };
-          m.contact.emails = emails.join(",");
-          setmodel(m);
-        }}
-      />
-      <label>Télephones</label>
-      <TagInput
-        block
-        size="md"
-        // placeholder="numéros des télephones"
-        value={model.contact.phones ? model.contact.phones.split(",") : []}
-        onChange={(phones) => {
-          let m = { ...model };
-          m.contact.phones = phones.join(",");
-          setmodel(m);
-        }}
-      /> */}
-      {/* <label>Adresse :</label>
-      <Input
-        as="textarea"
-        value={model.contact.address}
-        onChange={(address) => {
-          setmodel((prev) => {
-            return { ...prev, contact: { ...prev.contact, address } };
-          });
-        }}
-      /> */}
-      <h2>Contacts:</h2>
+    <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "16px" }}>
+      {/* Top Banner */}
       <div
         style={{
-          border: "1px solid #eee",
-          padding: "10px",
-          borderRadius: "5px",
-          background: "#eee",
+          background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
+          color: "#ffffff",
+          borderRadius: "16px",
+          padding: "20px 24px",
+          marginBottom: "20px",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: "14px",
+          boxShadow: "0 10px 25px -5px rgba(15, 23, 42, 0.25)",
         }}
       >
-        <Responsive xl={6} l={6} className="p-10">
-          <label>Emails:</label>
-          <TagInput
-            block
-            size="md"
-            // placeholder="numéros des télephones"
-            value={contact.emails ? contact.emails.split(",") : []}
-            onChange={(emails) => {
-              let m = { ...contact };
-              m.emails = emails.join(",");
-              setcontact(m);
+        <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+          <div
+            style={{
+              background: "linear-gradient(135deg, #4f46e5 0%, #3730a3 100%)",
+              width: "48px",
+              height: "48px",
+              borderRadius: "12px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "22px",
+              boxShadow: "0 4px 12px rgba(79, 70, 229, 0.4)",
             }}
-          />
-        </Responsive>
-        <Responsive xl={6} l={6} className="p-10">
-          <label>Télephones</label>
-          <TagInput
-            block
-            size="md"
-            // placeholder="numéros des télephones"
-            value={contact.phones ? contact.phones.split(",") : []}
-            onChange={(phones) => {
-              let m = { ...contact };
-              m.phones = phones.join(",");
-              setcontact(m);
-            }}
-          />
-        </Responsive>
-        <Responsive xl={6} l={6} className="p-10">
-          <label>Lien Map :</label>
-          <Input
-            value={contact.maplink}
-            onChange={(maplink) => {
-              setcontact((prev) => {
-                return { ...prev, maplink };
-              });
-            }}
-          />
-        </Responsive>
-        <Responsive xl={6} l={6} className="p-10">
-          <label>Adresse :</label>
-          <Input
-            value={contact.address}
-            onChange={(address) => {
-              setcontact((prev) => {
-                return { ...prev, address };
-              });
-            }}
-          />
-        </Responsive>
-        <Button
-          style={{ background: "#4545cc", color: "#fff" }}
-          onClick={() => {
-            let contacts = [...model.contacts];
-            if (!contact.id) {
-              contacts.push({
-                ...contact,
-                id: new Date().getUTCMilliseconds(),
-                eStoreId: model.id,
-              });
-            } else {
-              let _indx = contacts.findIndex((el) => el.id == contact.id);
-              console.log(_indx);
-              contacts[_indx] = contact;
-            }
+          >
+            <FaStore />
+          </div>
+          <div>
+            <h2 style={{ margin: 0, fontSize: "1.35rem", fontWeight: 800, color: "#fff" }}>
+              Configuration de la Boutique
+            </h2>
+            <p style={{ margin: "4px 0 0", fontSize: "0.85rem", color: "#94a3b8" }}>
+              Gérez les informations légales, fiscales et les agences / points de contact de votre enseigne
+            </p>
+          </div>
+        </div>
 
-            setmodel((prev) => ({
-              ...prev,
-              contacts,
-            }));
-            setcontact({
-              address: "",
-              phones: "",
-              emails: "",
-              maplink: "",
-              eStoreId: model.id,
-            });
-          }}
-        >
-          enregistrer +
-        </Button>
-      </div>
-      <div style={{ maxWidth: "600px", padding: "20px 0" }}>
-        {model.contacts &&
-          model.contacts.map((el) => (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                background: "#eee",
-                margin: "3px 0",
-                padding: "3px",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center" }}>
-                <strong>{el.address}</strong>
-              </div>
-              <a href={el.maplink} target="_blank">
-                lien map
-              </a>
-              <button
-                style={{ background: "#88cc88", color: "#fff" }}
-                onClick={() => setcontact(el)}
-              >
-                editer
-              </button>
-              <button
-                style={{ background: "#cc4545", color: "#fff" }}
-                onClick={() =>
-                  setmodel((prev) => ({
-                    ...prev,
-                    contacts: prev.contacts.filter((item) => item.id != el.id),
-                  }))
-                }
-              >
-                suprimer
-              </button>
-            </div>
-          ))}
-      </div>{" "}
-      {/* ------------------------------------- */}
-      {/* -------------------------------------- */}
-      <br></br>
-      <div style={{ textAlign: "right" }}>
         <button
+          onClick={handleSaveStore}
+          disabled={saving}
           style={{
-            background: "rgb(0,169,141)",
-            color: "#fff",
-            fontSize: "20px",
-            borderRadius: "4px",
-          }}
-          onClick={() => {
-            let m = { ...model };
-
-            m.contacts = m.contacts.map((el) => {
-              delete el.id;
-              return el;
-            });
-
-            createAPIEndpoint(ENDPOINTS.Store)
-              .update(model.id, m)
-              .then((res) => {
-                alert("success");
-                createAPIEndpoint(ENDPOINTS.Store + "/getDefault")
-                  .customGet()
-                  .then((res) => setmodel(res.data));
-              });
+            background: "#10b981",
+            color: "#ffffff",
+            border: "none",
+            borderRadius: "10px",
+            padding: "10px 20px",
+            fontSize: "0.9rem",
+            fontWeight: 800,
+            cursor: "pointer",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "8px",
+            boxShadow: "0 4px 12px rgba(16, 185, 129, 0.35)",
           }}
         >
-          Enregistrer
+          <FaSave /> {saving ? "Enregistrement..." : "Enregistrer la Boutique"}
         </button>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: "20px" }}>
+        {/* CARD 1: GENERAL INFORMATION */}
+        <div
+          style={{
+            background: "#ffffff",
+            borderRadius: "16px",
+            border: "1px solid #e2e8f0",
+            padding: "22px",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+            display: "flex",
+            flexDirection: "column",
+            gap: "16px",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", paddingBottom: "12px", borderBottom: "1px solid #f1f5f9" }}>
+            <FaFileInvoice style={{ color: "#4f46e5", fontSize: "18px" }} />
+            <h3 style={{ margin: 0, fontSize: "1.05rem", fontWeight: 800, color: "#0f172a" }}>
+              Identité & Données Légales
+            </h3>
+          </div>
+
+          <div>
+            <label style={{ fontSize: "0.85rem", fontWeight: 700, color: "#334155", marginBottom: "6px", display: "block" }}>
+              Nom de la Boutique / Raison Sociale :
+            </label>
+            <Input
+              placeholder="Ex: Tawsil Store Tunis"
+              value={model.name_fr || ""}
+              onChange={(name_fr) => setmodel((prev) => ({ ...prev, name_fr }))}
+            />
+          </div>
+
+          <div>
+            <label style={{ fontSize: "0.85rem", fontWeight: 700, color: "#334155", marginBottom: "6px", display: "block" }}>
+              Matricule Fiscale :
+            </label>
+            <Input
+              placeholder="Ex: 1234567/A/M/000"
+              value={model.taxCode || ""}
+              onChange={(taxCode) => setmodel((prev) => ({ ...prev, taxCode }))}
+            />
+          </div>
+
+          <div>
+            <label style={{ fontSize: "0.85rem", fontWeight: 700, color: "#334155", marginBottom: "6px", display: "block" }}>
+              Description de l'activité & Engagements :
+            </label>
+            <Input
+              as="textarea"
+              rows={4}
+              placeholder="Description affichée sur les factures, bordereaux et espace client..."
+              value={model.description_fr || ""}
+              onChange={(description_fr) => setmodel((prev) => ({ ...prev, description_fr }))}
+            />
+          </div>
+        </div>
+
+        {/* CARD 2: CONTACTS & AGENCES */}
+        <div
+          style={{
+            background: "#ffffff",
+            borderRadius: "16px",
+            border: "1px solid #e2e8f0",
+            padding: "22px",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+            display: "flex",
+            flexDirection: "column",
+            gap: "16px",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", paddingBottom: "12px", borderBottom: "1px solid #f1f5f9" }}>
+            <FaMapMarkerAlt style={{ color: "#ef4444", fontSize: "18px" }} />
+            <div>
+              <h3 style={{ margin: 0, fontSize: "1.05rem", fontWeight: 800, color: "#0f172a" }}>
+                Points de Contact & Agences
+              </h3>
+              <span style={{ fontSize: "0.75rem", color: "#64748b" }}>
+                Ajoutez les adresses, téléphones et liens maps de vos boutiques
+              </span>
+            </div>
+          </div>
+
+          {/* Contact Input Form */}
+          <div
+            style={{
+              background: "#f8fafc",
+              border: "1px solid #e2e8f0",
+              borderRadius: "12px",
+              padding: "16px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "12px",
+            }}
+          >
+            <div style={{ fontSize: "0.85rem", fontWeight: 800, color: "#1e293b", display: "flex", alignItems: "center", gap: "6px" }}>
+              <FaPlus style={{ color: "#4f46e5" }} /> {contact.id ? "Modifier le Point de Contact" : "Ajouter un Point de Contact"}
+            </div>
+
+            <div>
+              <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", marginBottom: "4px", display: "block" }}>
+                Adresse physique :
+              </label>
+              <Input
+                placeholder="Ex: 10 Avenue Habib Bourguiba, Tunis"
+                value={contact.address || ""}
+                onChange={(address) => setcontact((prev) => ({ ...prev, address }))}
+              />
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+              <div>
+                <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", marginBottom: "4px", display: "flex", alignItems: "center", gap: "4px" }}>
+                  <FaPhoneAlt size={10} style={{ color: "#10b981" }} /> Téléphones (Entrée pour ajouter) :
+                </label>
+                <TagInput
+                  block
+                  placeholder="+216 ..."
+                  value={contact.phones ? contact.phones.split(",") : []}
+                  onChange={(phones) => setcontact((prev) => ({ ...prev, phones: phones.join(",") }))}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", marginBottom: "4px", display: "flex", alignItems: "center", gap: "4px" }}>
+                  <FaEnvelope size={10} style={{ color: "#3b82f6" }} /> Emails :
+                </label>
+                <TagInput
+                  block
+                  placeholder="contact@..."
+                  value={contact.emails ? contact.emails.split(",") : []}
+                  onChange={(emails) => setcontact((prev) => ({ ...prev, emails: emails.join(",") }))}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", marginBottom: "4px", display: "flex", alignItems: "center", gap: "4px" }}>
+                <FaExternalLinkAlt size={10} style={{ color: "#64748b" }} /> Lien Google Maps :
+              </label>
+              <Input
+                placeholder="https://maps.google.com/?q=..."
+                value={contact.maplink || ""}
+                onChange={(maplink) => setcontact((prev) => ({ ...prev, maplink }))}
+              />
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "4px" }}>
+              {contact.id && (
+                <Button size="sm" appearance="subtle" onClick={resetContactForm}>
+                  Annuler
+                </Button>
+              )}
+              <Button
+                size="sm"
+                appearance="primary"
+                style={{ background: "#4f46e5", fontWeight: 700 }}
+                onClick={handleSaveContact}
+              >
+                {contact.id ? "Mettre à jour le contact" : "+ Ajouter à la liste"}
+              </Button>
+            </div>
+          </div>
+
+          {/* List of Existing Contacts */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            <span style={{ fontSize: "0.85rem", fontWeight: 800, color: "#0f172a" }}>
+              Adresses & Agences Enregistrées ({model.contacts?.length || 0}) :
+            </span>
+
+            {(model.contacts || []).map((el, idx) => (
+              <div
+                key={el.id || idx}
+                style={{
+                  background: "#ffffff",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "12px",
+                  padding: "12px 14px",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: "12px",
+                }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, color: "#0f172a", fontSize: "0.9rem" }}>
+                    📍 {el.address || "Adresse non renseignée"}
+                  </div>
+
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "12px", marginTop: "4px", fontSize: "0.78rem", color: "#64748b" }}>
+                    {el.phones && (
+                      <span>
+                        📞 <strong>{el.phones}</strong>
+                      </span>
+                    )}
+                    {el.emails && (
+                      <span>
+                        ✉️ {el.emails}
+                      </span>
+                    )}
+                    {el.maplink && (
+                      <a
+                        href={el.maplink}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ color: "#2563eb", textDecoration: "none", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: "3px" }}
+                      >
+                        <FaExternalLinkAlt size={10} /> Voir sur Google Maps
+                      </a>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: "6px" }}>
+                  <button
+                    onClick={() => setcontact(el)}
+                    style={{
+                      background: "#eff6ff",
+                      border: "1px solid #bfdbfe",
+                      color: "#2563eb",
+                      padding: "6px 10px",
+                      borderRadius: "6px",
+                      fontSize: "0.75rem",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "4px",
+                    }}
+                  >
+                    <FaEdit size={11} /> Modifier
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setmodel((prev) => ({
+                        ...prev,
+                        contacts: prev.contacts.filter((item) => item.id !== el.id),
+                      }));
+                    }}
+                    style={{
+                      background: "#fef2f2",
+                      border: "1px solid #fecaca",
+                      color: "#dc2626",
+                      padding: "6px 10px",
+                      borderRadius: "6px",
+                      fontSize: "0.75rem",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "4px",
+                    }}
+                  >
+                    <FaTrash size={11} /> Supprimer
+                  </button>
+                </div>
+              </div>
+            ))}
+
+            {(!model.contacts || model.contacts.length === 0) && (
+              <div style={{ textAlign: "center", padding: "20px", color: "#94a3b8", fontSize: "0.85rem" }}>
+                Aucune agence ou adresse enregistrée pour le moment.
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

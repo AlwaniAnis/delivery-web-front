@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useHistory } from "react-router-dom";
 import { useRecoilState } from "recoil";
 import {
@@ -21,19 +21,255 @@ import {
   FaTimesCircle,
   FaInfoCircle,
   FaBarcode,
+  FaCompass,
+  FaCrosshairs,
+  FaExternalLinkAlt,
 } from "react-icons/fa";
 import Swal from "sweetalert2";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 import { APi } from "../../Api";
 import {
   preparationPlacesState,
   REAL_DEFAULT_DEPOTS,
 } from "../../Atoms/preparationPlaces.atom";
 
+// Interactive Map Picker Component for Leaflet
+function DepotMapPicker({ lat, lng, onChange }) {
+  const mapContainerRef = useRef(null);
+  const mapInstanceRef = useRef(null);
+  const markerRef = useRef(null);
+
+  const currentLat = Number(lat) || 36.8431;
+  const currentLng = Number(lng) || 10.2033;
+
+  useEffect(() => {
+    if (!mapContainerRef.current) return;
+    if (mapInstanceRef.current) return;
+
+    const map = L.map(mapContainerRef.current, {
+      center: [currentLat, currentLng],
+      zoom: 13,
+      zoomControl: true,
+    });
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: '&copy; OpenStreetMap contributors',
+      maxZoom: 19,
+    }).addTo(map);
+
+    const depotIcon = L.divIcon({
+      className: "depot-picker-pin",
+      html: `
+        <div style="
+          background: #4f46e5;
+          color: white;
+          width: 36px;
+          height: 36px;
+          border-radius: 50% 50% 50% 0;
+          transform: rotate(-45deg);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border: 3px solid white;
+          box-shadow: 0 4px 12px rgba(79, 70, 229, 0.5);
+        ">
+          <span style="transform: rotate(45deg); font-size: 15px;">🏬</span>
+        </div>
+      `,
+      iconSize: [36, 36],
+      iconAnchor: [18, 36],
+    });
+
+    const marker = L.marker([currentLat, currentLng], {
+      icon: depotIcon,
+      draggable: true,
+    }).addTo(map);
+
+    markerRef.current = marker;
+    mapInstanceRef.current = map;
+
+    marker.on("dragend", () => {
+      const position = marker.getLatLng();
+      onChange(Number(position.lat.toFixed(6)), Number(position.lng.toFixed(6)));
+    });
+
+    map.on("click", (e) => {
+      marker.setLatLng(e.latlng);
+      onChange(Number(e.latlng.lat.toFixed(6)), Number(e.latlng.lng.toFixed(6)));
+    });
+
+    setTimeout(() => {
+      map.invalidateSize();
+    }, 250);
+
+    return () => {
+      map.remove();
+      mapInstanceRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (markerRef.current && mapInstanceRef.current) {
+      const markerPos = markerRef.current.getLatLng();
+      if (
+        Math.abs(markerPos.lat - currentLat) > 0.0001 ||
+        Math.abs(markerPos.lng - currentLng) > 0.0001
+      ) {
+        markerRef.current.setLatLng([currentLat, currentLng]);
+        mapInstanceRef.current.panTo([currentLat, currentLng]);
+      }
+    }
+  }, [currentLat, currentLng]);
+
+  const setPreset = (presetLat, presetLng) => {
+    onChange(presetLat, presetLng);
+    if (markerRef.current && mapInstanceRef.current) {
+      markerRef.current.setLatLng([presetLat, presetLng]);
+      mapInstanceRef.current.flyTo([presetLat, presetLng], 14);
+    }
+  };
+
+  const useCurrentGps = () => {
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setPreset(
+            Number(pos.coords.latitude.toFixed(6)),
+            Number(pos.coords.longitude.toFixed(6))
+          );
+        },
+        () => {
+          Swal.fire({
+            icon: "info",
+            title: "GPS Non Disponible",
+            text: "Veuillez activer la localisation dans votre navigateur.",
+          });
+        }
+      );
+    }
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+      {/* Preset Quick Buttons */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", alignItems: "center" }}>
+        <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748b" }}>
+          Raccourcis rapides :
+        </span>
+        <button
+          type="button"
+          onClick={useCurrentGps}
+          style={{
+            background: "#ecfdf5",
+            border: "1px solid #a7f3d0",
+            color: "#065f46",
+            padding: "4px 8px",
+            borderRadius: "6px",
+            fontSize: "0.75rem",
+            fontWeight: 700,
+            cursor: "pointer",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "4px",
+          }}
+        >
+          <FaCrosshairs size={10} /> Ma Position GPS
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setPreset(36.8431, 10.2033)}
+          style={{
+            background: "#eff6ff",
+            border: "1px solid #bfdbfe",
+            color: "#1d4ed8",
+            padding: "4px 8px",
+            borderRadius: "6px",
+            fontSize: "0.75rem",
+            fontWeight: 700,
+            cursor: "pointer",
+          }}
+        >
+          Tunis (Charguia)
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setPreset(35.8256, 10.6369)}
+          style={{
+            background: "#f5f3ff",
+            border: "1px solid #ddd6fe",
+            color: "#6d28d9",
+            padding: "4px 8px",
+            borderRadius: "6px",
+            fontSize: "0.75rem",
+            fontWeight: 700,
+            cursor: "pointer",
+          }}
+        >
+          Sousse (Akouda)
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setPreset(34.7406, 10.7603)}
+          style={{
+            background: "#fffbeb",
+            border: "1px solid #fde68a",
+            color: "#b45309",
+            padding: "4px 8px",
+            borderRadius: "6px",
+            fontSize: "0.75rem",
+            fontWeight: 700,
+            cursor: "pointer",
+          }}
+        >
+          Sfax
+        </button>
+      </div>
+
+      {/* Map Container */}
+      <div
+        style={{
+          height: "220px",
+          width: "100%",
+          borderRadius: "10px",
+          overflow: "hidden",
+          border: "1.5px solid #cbd5e1",
+          position: "relative",
+          boxShadow: "inset 0 1px 3px rgba(0,0,0,0.1)",
+        }}
+      >
+        <div ref={mapContainerRef} style={{ width: "100%", height: "100%" }} />
+        <div
+          style={{
+            position: "absolute",
+            bottom: "8px",
+            left: "8px",
+            zIndex: 1000,
+            background: "rgba(255, 255, 255, 0.9)",
+            backdropFilter: "blur(4px)",
+            padding: "3px 8px",
+            borderRadius: "6px",
+            fontSize: "0.72rem",
+            fontWeight: 700,
+            color: "#334155",
+            border: "1px solid rgba(226, 232, 240, 0.8)",
+          }}
+        >
+          Cliquez sur la carte ou glissez le repère 🏬
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function PreparationPlaces() {
   const [depots, setDepots] = useRecoilState(preparationPlacesState);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const [activeFilter, setActiveFilter] = useState("all"); // 'all' | 'active' | 'inactive'
+  const [activeFilter, setActiveFilter] = useState("all");
 
   // Modal State
   const [modalOpen, setModalOpen] = useState(false);
@@ -44,6 +280,8 @@ export default function PreparationPlaces() {
     code: "",
     address: "",
     phone: "",
+    latitude: 36.8431,
+    longitude: 10.2033,
     isActive: true,
     remark: "",
   });
@@ -60,7 +298,6 @@ export default function PreparationPlaces() {
         if (Array.isArray(res.data) && res.data.length > 0) {
           setDepots(res.data);
         } else {
-          // Exactly the 2 real depots: Dépôt Tunis & Dépôt Sousse
           setDepots(REAL_DEFAULT_DEPOTS);
           for (const item of REAL_DEFAULT_DEPOTS) {
             try {
@@ -69,6 +306,8 @@ export default function PreparationPlaces() {
                 code: item.code,
                 address: item.address,
                 phone: item.phone,
+                latitude: item.latitude,
+                longitude: item.longitude,
                 isActive: true,
                 remark: item.remark,
               });
@@ -76,7 +315,7 @@ export default function PreparationPlaces() {
           }
         }
       })
-      .catch((err) => {
+      .catch(() => {
         setLoading(false);
         setDepots(REAL_DEFAULT_DEPOTS);
       });
@@ -95,6 +334,8 @@ export default function PreparationPlaces() {
       code: `DEP-${Math.floor(100 + Math.random() * 900)}`,
       address: "",
       phone: "+216 ",
+      latitude: 36.8431,
+      longitude: 10.2033,
       isActive: true,
       remark: "",
     });
@@ -110,6 +351,8 @@ export default function PreparationPlaces() {
       code: depot.code || "",
       address: depot.address || "",
       phone: depot.phone || "",
+      latitude: Number(depot.latitude) || (depot.name?.toLowerCase().includes("sousse") ? 35.8256 : 36.8431),
+      longitude: Number(depot.longitude) || (depot.name?.toLowerCase().includes("sousse") ? 10.6369 : 10.2033),
       isActive: depot.isActive !== false,
       remark: depot.remark || "",
     });
@@ -128,7 +371,6 @@ export default function PreparationPlaces() {
     }
 
     if (isEditing) {
-      // PUT update
       APi.createAPIEndpoint(APi.ENDPOINTS.PreparationPlace)
         .update(formData.id, formData)
         .then(() => {
@@ -145,7 +387,6 @@ export default function PreparationPlaces() {
           fetchDepots();
         })
         .catch(() => {
-          // Local fallback in case offline or API sync
           setDepots((prev) =>
             prev.map((d) => (d.id === formData.id ? { ...d, ...formData } : d))
           );
@@ -158,8 +399,6 @@ export default function PreparationPlaces() {
           });
         });
     } else {
-      // POST create
-      const newRecord = { ...formData, id: Date.now() % 10000 };
       APi.createAPIEndpoint(APi.ENDPOINTS.PreparationPlace)
         .create(formData)
         .then((res) => {
@@ -169,16 +408,18 @@ export default function PreparationPlaces() {
             timer: 1500,
             showConfirmButton: false,
           });
+          const created = res.data || { ...formData, id: Date.now() };
+          setDepots((prev) => [...prev, created]);
           setModalOpen(false);
           fetchDepots();
         })
         .catch(() => {
-          // Local fallback
-          setDepots((prev) => [...prev, newRecord]);
+          const fallbackItem = { ...formData, id: Date.now() };
+          setDepots((prev) => [...prev, fallbackItem]);
           setModalOpen(false);
           Swal.fire({
             icon: "success",
-            title: "Dépôt ajouté avec succès",
+            title: "Nouveau dépôt enregistré",
             timer: 1500,
             showConfirmButton: false,
           });
@@ -186,11 +427,29 @@ export default function PreparationPlaces() {
     }
   };
 
-  // Delete
+  // Toggle active status
+  const handleToggleActive = (depot) => {
+    const newStatus = !depot.isActive;
+    const updated = { ...depot, isActive: newStatus };
+    APi.createAPIEndpoint(APi.ENDPOINTS.PreparationPlace)
+      .update(depot.id, updated)
+      .then(() => {
+        setDepots((prev) =>
+          prev.map((d) => (d.id === depot.id ? { ...d, isActive: newStatus } : d))
+        );
+      })
+      .catch(() => {
+        setDepots((prev) =>
+          prev.map((d) => (d.id === depot.id ? { ...d, isActive: newStatus } : d))
+        );
+      });
+  };
+
+  // Delete depot
   const handleDelete = (id, name) => {
     Swal.fire({
-      title: "Supprimer ce lieu de stockage ?",
-      text: `Êtes-vous sûr de vouloir supprimer le dépôt "${name}" ?`,
+      title: "Supprimer ce dépôt ?",
+      text: `Êtes-vous sûr de vouloir supprimer "${name}" ?`,
       icon: "warning",
       showCancelButton: true,
       confirmButtonColor: "#ef4444",
@@ -202,243 +461,101 @@ export default function PreparationPlaces() {
         APi.createAPIEndpoint(APi.ENDPOINTS.PreparationPlace)
           .delete(id)
           .then(() => {
-            Swal.fire("Supprimé !", "Le dépôt a été supprimé.", "success");
             setDepots((prev) => prev.filter((d) => d.id !== id));
-            fetchDepots();
+            Swal.fire("Supprimé !", "Le dépôt a été supprimé.", "success");
           })
           .catch(() => {
             setDepots((prev) => prev.filter((d) => d.id !== id));
-            Swal.fire("Supprimé !", "Le dépôt a été supprimé.", "success");
+            Swal.fire("Supprimé !", "Le dépôt a été retiré.", "success");
           });
       }
     });
   };
 
-  // Toggle Active
-  const handleToggleActive = (depot) => {
-    const updated = { ...depot, isActive: !depot.isActive };
-    APi.createAPIEndpoint(APi.ENDPOINTS.PreparationPlace)
-      .update(depot.id, updated)
-      .catch(() => {});
-    setDepots((prev) =>
-      prev.map((d) => (d.id === depot.id ? updated : d))
-    );
-  };
-
-  // Filtered List
-  const filteredDepots = depots.filter((d) => {
+  // Filter depots
+  const filteredDepots = depots.filter((depot) => {
     const matchesSearch =
-      (d.name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (d.code || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (d.address || "").toLowerCase().includes(searchTerm.toLowerCase());
+      (depot.name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (depot.code || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (depot.address || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (depot.phone || "").toLowerCase().includes(searchTerm.toLowerCase());
 
-    if (activeFilter === "active") return matchesSearch && d.isActive !== false;
-    if (activeFilter === "inactive") return matchesSearch && d.isActive === false;
-    return matchesSearch;
+    if (!matchesSearch) return false;
+    if (activeFilter === "active") return depot.isActive !== false;
+    if (activeFilter === "inactive") return depot.isActive === false;
+    return true;
   });
 
-  const activeCount = depots.filter((d) => d.isActive !== false).length;
+  const totalDepots = depots.length;
+  const activeDepots = depots.filter((d) => d.isActive !== false).length;
+  const inactiveDepots = totalDepots - activeDepots;
 
   return (
-    <div style={{ padding: "20px", maxWidth: "1600px", margin: "0 auto" }}>
+    <div style={{ padding: "16px", maxWidth: "1600px", margin: "0 auto" }}>
       {/* Header Banner */}
       <div
         style={{
-          background: "linear-gradient(135deg, #1e1b4b 0%, #312e81 100%)",
-          borderRadius: "16px",
-          padding: "24px 28px",
+          background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
           color: "#fff",
-          marginBottom: "24px",
+          borderRadius: "16px",
+          padding: "20px 24px",
+          marginBottom: "20px",
           display: "flex",
           flexWrap: "wrap",
           justifyContent: "space-between",
           alignItems: "center",
           gap: "16px",
-          boxShadow: "0 10px 25px -5px rgba(49, 46, 129, 0.3)",
+          boxShadow: "0 10px 25px -5px rgba(15, 23, 42, 0.3)",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
           <div
             style={{
-              background: "#4f46e5",
-              width: "52px",
-              height: "52px",
-              borderRadius: "14px",
+              background: "linear-gradient(135deg, #4f46e5 0%, #3730a3 100%)",
+              width: "48px",
+              height: "48px",
+              borderRadius: "12px",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              fontSize: "24px",
-              boxShadow: "0 4px 14px rgba(79, 70, 229, 0.4)",
+              fontSize: "22px",
+              boxShadow: "0 4px 12px rgba(79, 70, 229, 0.4)",
             }}
           >
             <FaWarehouse />
           </div>
           <div>
-            <h2 style={{ margin: 0, fontSize: "1.4rem", fontWeight: 800, color: "#fff" }}>
-              Dépôts & Lieux de Préparation des Colis
+            <h2 style={{ margin: 0, fontSize: "1.35rem", fontWeight: 800, color: "#fff" }}>
+              Lieux de Préparation & Dépôts
             </h2>
-            <p style={{ margin: "4px 0 0", color: "#c7d2fe", fontSize: "0.9rem" }}>
-              Gérez les centres de stockage, dépôts de tri et plateformes de préparation logistique
+            <p style={{ margin: "4px 0 0", fontSize: "0.85rem", color: "#94a3b8" }}>
+              Gérez les hubs logistiques, entrepôts régionaux et leurs coordonnées GPS
             </p>
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-          <button
-            onClick={handleAddNew}
-            style={{
-              background: "#10b981",
-              color: "#fff",
-              border: "none",
-              borderRadius: "10px",
-              padding: "10px 20px",
-              fontSize: "0.9rem",
-              fontWeight: 700,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              boxShadow: "0 4px 12px rgba(16, 185, 129, 0.3)",
-              transition: "all 0.15s ease",
-            }}
-          >
-            <FaPlus /> Nouveau Dépôt
-          </button>
-
-          <button
-            onClick={fetchDepots}
-            style={{
-              background: "rgba(255,255,255,0.12)",
-              color: "#fff",
-              border: "1px solid rgba(255,255,255,0.25)",
-              borderRadius: "10px",
-              padding: "10px 16px",
-              fontSize: "0.85rem",
-              fontWeight: 600,
-              cursor: "pointer",
-            }}
-          >
-            Actualiser
-          </button>
-        </div>
+        <button
+          onClick={handleAddNew}
+          style={{
+            background: "linear-gradient(135deg, #4f46e5 0%, #4338ca 100%)",
+            color: "#fff",
+            border: "none",
+            borderRadius: "10px",
+            padding: "10px 20px",
+            fontSize: "0.9rem",
+            fontWeight: 700,
+            cursor: "pointer",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "8px",
+            boxShadow: "0 4px 14px rgba(79, 70, 229, 0.4)",
+          }}
+        >
+          <FaPlus /> Nouveau Dépôt
+        </button>
       </div>
 
-      {/* Quick Summary Cards */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-          gap: "16px",
-          marginBottom: "20px",
-        }}
-      >
-        <div
-          style={{
-            background: "#fff",
-            borderRadius: "14px",
-            border: "1px solid #e2e8f0",
-            padding: "18px 20px",
-            display: "flex",
-            alignItems: "center",
-            gap: "14px",
-            boxShadow: "0 1px 3px rgba(0,0,0,0.02)",
-          }}
-        >
-          <div
-            style={{
-              width: "44px",
-              height: "44px",
-              borderRadius: "12px",
-              background: "#eff6ff",
-              color: "#3b82f6",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: "20px",
-            }}
-          >
-            <FaWarehouse />
-          </div>
-          <div>
-            <div style={{ fontSize: "0.8rem", color: "#64748b", fontWeight: 600 }}>Total Dépôts</div>
-            <div style={{ fontSize: "1.4rem", fontWeight: 800, color: "#0f172a" }}>
-              {depots.length}
-            </div>
-          </div>
-        </div>
-
-        <div
-          style={{
-            background: "#fff",
-            borderRadius: "14px",
-            border: "1px solid #e2e8f0",
-            padding: "18px 20px",
-            display: "flex",
-            alignItems: "center",
-            gap: "14px",
-            boxShadow: "0 1px 3px rgba(0,0,0,0.02)",
-          }}
-        >
-          <div
-            style={{
-              width: "44px",
-              height: "44px",
-              borderRadius: "12px",
-              background: "#ecfdf5",
-              color: "#10b981",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: "20px",
-            }}
-          >
-            <FaCheckCircle />
-          </div>
-          <div>
-            <div style={{ fontSize: "0.8rem", color: "#64748b", fontWeight: 600 }}>Dépôts Actifs</div>
-            <div style={{ fontSize: "1.4rem", fontWeight: 800, color: "#059669" }}>
-              {activeCount}
-            </div>
-          </div>
-        </div>
-
-        <div
-          style={{
-            background: "#fff",
-            borderRadius: "14px",
-            border: "1px solid #e2e8f0",
-            padding: "18px 20px",
-            display: "flex",
-            alignItems: "center",
-            gap: "14px",
-            boxShadow: "0 1px 3px rgba(0,0,0,0.02)",
-          }}
-        >
-          <div
-            style={{
-              width: "44px",
-              height: "44px",
-              borderRadius: "12px",
-              background: "#faf5ff",
-              color: "#a855f7",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: "20px",
-            }}
-          >
-            <FaBoxes />
-          </div>
-          <div>
-            <div style={{ fontSize: "0.8rem", color: "#64748b", fontWeight: 600 }}>Affectation Colis</div>
-            <div style={{ fontSize: "0.95rem", fontWeight: 700, color: "#6b21a8" }}>
-              Disponible dans formulaire Colis
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Filter and Search Bar */}
+      {/* Filter and Stats Bar */}
       <div
         style={{
           background: "#fff",
@@ -451,98 +568,91 @@ export default function PreparationPlaces() {
           justifyContent: "space-between",
           alignItems: "center",
           gap: "12px",
+          boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: "10px", flex: 1, minWidth: "260px" }}>
-          <div style={{ position: "relative", width: "100%", maxWidth: "380px" }}>
-            <FaSearch
-              style={{
-                position: "absolute",
-                left: "12px",
-                top: "50%",
-                transform: "translateY(-50%)",
-                color: "#94a3b8",
-              }}
-            />
-            <input
-              type="text"
-              placeholder="Rechercher par nom, code ou adresse..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              style={{
-                width: "100%",
-                padding: "8px 12px 8px 36px",
-                borderRadius: "8px",
-                border: "1px solid #cbd5e1",
-                fontSize: "0.88rem",
-                outline: "none",
-              }}
-            />
-          </div>
+        <div style={{ position: "relative", minWidth: "260px", flex: 1, maxWidth: "420px" }}>
+          <FaSearch
+            style={{
+              position: "absolute",
+              left: "12px",
+              top: "50%",
+              transform: "translateY(-50%)",
+              color: "#94a3b8",
+            }}
+          />
+          <Input
+            placeholder="Rechercher par nom, code ou adresse..."
+            value={searchTerm}
+            onChange={(val) => setSearchTerm(val)}
+            style={{ paddingLeft: "36px", borderRadius: "8px" }}
+          />
         </div>
 
-        {/* Status filters */}
-        <div style={{ display: "flex", gap: "6px" }}>
+        {/* Filter Pills */}
+        <div style={{ display: "flex", gap: "6px", background: "#f1f5f9", padding: "4px", borderRadius: "8px" }}>
           {[
-            { id: "all", label: "Tous" },
-            { id: "active", label: "Actifs uniquement" },
-            { id: "inactive", label: "Inactifs" },
-          ].map((flt) => (
+            { id: "all", label: `Tous (${totalDepots})` },
+            { id: "active", label: `Actifs (${activeDepots})` },
+            { id: "inactive", label: `Inactifs (${inactiveDepots})` },
+          ].map((filter) => (
             <button
-              key={flt.id}
-              onClick={() => setActiveFilter(flt.id)}
+              key={filter.id}
+              onClick={() => setActiveFilter(filter.id)}
               style={{
-                background: activeFilter === flt.id ? "#4f46e5" : "#f1f5f9",
-                color: activeFilter === flt.id ? "#fff" : "#475569",
+                background: activeFilter === filter.id ? "#fff" : "transparent",
+                color: activeFilter === filter.id ? "#0f172a" : "#64748b",
+                fontWeight: activeFilter === filter.id ? 700 : 500,
                 border: "none",
-                borderRadius: "8px",
-                padding: "6px 14px",
+                borderRadius: "6px",
+                padding: "6px 12px",
                 fontSize: "0.82rem",
-                fontWeight: 600,
                 cursor: "pointer",
-                transition: "all 0.15s ease",
+                boxShadow: activeFilter === filter.id ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
               }}
             >
-              {flt.label}
+              {filter.label}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Grid of Dépôts */}
+      {/* Depots Cards Grid */}
       {loading ? (
-        <div style={{ padding: "60px", textAlign: "center" }}>
-          <Loader size="md" content="Chargement des dépôts..." />
+        <div style={{ textAlign: "center", padding: "60px 0" }}>
+          <Loader size="lg" content="Chargement des dépôts..." />
         </div>
       ) : filteredDepots.length === 0 ? (
         <div
           style={{
             background: "#fff",
             borderRadius: "16px",
-            border: "1px solid #e2e8f0",
-            padding: "50px 20px",
+            border: "1px dashed #cbd5e1",
+            padding: "60px 20px",
             textAlign: "center",
+            color: "#64748b",
           }}
         >
-          <FaWarehouse size={40} style={{ color: "#cbd5e1", marginBottom: "12px" }} />
-          <h4 style={{ margin: "0 0 6px", color: "#334155" }}>Aucun lieu de stockage trouvé</h4>
-          <p style={{ color: "#64748b", fontSize: "0.88rem", margin: "0 0 16px" }}>
-            Créez un nouveau dépôt pour commencer à organiser le stockage des colis.
+          <FaWarehouse size={48} style={{ color: "#cbd5e1", marginBottom: "14px" }} />
+          <h4 style={{ margin: "0 0 6px", color: "#1e293b", fontWeight: 700 }}>
+            Aucun lieu de préparation trouvé
+          </h4>
+          <p style={{ margin: 0, fontSize: "0.9rem" }}>
+            {searchTerm ? "Aucun dépôt ne correspond à votre recherche." : "Commencez par ajouter votre premier dépôt."}
           </p>
-          <Button appearance="primary" onClick={handleAddNew}>
-            <FaPlus style={{ marginRight: 6 }} /> Ajouter un Dépôt
-          </Button>
         </div>
       ) : (
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))",
+            gridTemplateColumns: "repeat(auto-fill, minmax(350px, 1fr))",
             gap: "20px",
           }}
         >
           {filteredDepots.map((depot) => {
             const isActive = depot.isActive !== false;
+            const depotLat = Number(depot.latitude) || (depot.name?.toLowerCase().includes("sousse") ? 35.8256 : 36.8431);
+            const depotLng = Number(depot.longitude) || (depot.name?.toLowerCase().includes("sousse") ? 10.6369 : 10.2033);
 
             return (
               <div
@@ -631,6 +741,32 @@ export default function PreparationPlaces() {
                     <div style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}>
                       <FaMapMarkerAlt style={{ color: "#ef4444", flexShrink: 0, marginTop: "3px" }} />
                       <span>{depot.address || "Adresse non renseignée"}</span>
+                    </div>
+
+                    {/* Coordinates & Google Maps Link */}
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                      <a
+                        href={`https://www.google.com/maps/search/?api=1&query=${depotLat},${depotLng}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        title="Ouvrir l'emplacement sur Google Maps"
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "5px",
+                          fontSize: "0.75rem",
+                          fontWeight: 700,
+                          color: "#4f46e5",
+                          background: "#eef2ff",
+                          border: "1px solid #c7d2fe",
+                          padding: "3px 8px",
+                          borderRadius: "6px",
+                          textDecoration: "none",
+                        }}
+                      >
+                        <FaCompass size={11} /> GPS: {depotLat.toFixed(4)}, {depotLng.toFixed(4)}
+                        <FaExternalLinkAlt size={9} style={{ opacity: 0.7 }} />
+                      </a>
                     </div>
 
                     {depot.phone && (
@@ -747,7 +883,7 @@ export default function PreparationPlaces() {
         </div>
       )}
 
-      {/* Add / Edit Depot Modal */}
+      {/* Add / Edit Depot Modal with Interactive Map Picker */}
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} size="md">
         <Modal.Header>
           <Modal.Title style={{ fontWeight: 800, color: "#0f172a" }}>
@@ -755,9 +891,9 @@ export default function PreparationPlaces() {
           </Modal.Title>
         </Modal.Header>
         <Modal.Body>
-          <div style={{ display: "flex", flexDirection: "column", gap: "16px", padding: "10px 0" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "14px", padding: "8px 0" }}>
             <div>
-              <label style={{ fontSize: "0.85rem", fontWeight: 700, color: "#334155", marginBottom: "6px", display: "block" }}>
+              <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#334155", marginBottom: "4px", display: "block" }}>
                 Nom du Dépôt / Emplacement *
               </label>
               <Input
@@ -767,10 +903,10 @@ export default function PreparationPlaces() {
               />
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
               <div>
-                <label style={{ fontSize: "0.85rem", fontWeight: 700, color: "#334155", marginBottom: "6px", display: "block" }}>
-                  Code Emplacement / Référence
+                <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#334155", marginBottom: "4px", display: "block" }}>
+                  Code Emplacement / Référence :
                 </label>
                 <Input
                   placeholder="Ex: DEP-TUN-01"
@@ -780,8 +916,8 @@ export default function PreparationPlaces() {
               </div>
 
               <div>
-                <label style={{ fontSize: "0.85rem", fontWeight: 700, color: "#334155", marginBottom: "6px", display: "block" }}>
-                  Téléphone du Dépôt / Responsable
+                <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#334155", marginBottom: "4px", display: "block" }}>
+                  Téléphone du Dépôt :
                 </label>
                 <Input
                   placeholder="+216 ..."
@@ -792,8 +928,8 @@ export default function PreparationPlaces() {
             </div>
 
             <div>
-              <label style={{ fontSize: "0.85rem", fontWeight: 700, color: "#334155", marginBottom: "6px", display: "block" }}>
-                Adresse Complète
+              <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#334155", marginBottom: "4px", display: "block" }}>
+                Adresse Complète :
               </label>
               <Input
                 placeholder="Ex: Zone Industrielle Charguia 1, 2035 Tunis"
@@ -802,25 +938,78 @@ export default function PreparationPlaces() {
               />
             </div>
 
+            {/* INTERACTIVE MAP PICKER FOR LATITUDE & LONGITUDE */}
+            <div
+              style={{
+                background: "#f8fafc",
+                border: "1px solid #e2e8f0",
+                borderRadius: "12px",
+                padding: "14px",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                <span style={{ fontSize: "0.82rem", fontWeight: 800, color: "#1e293b", display: "flex", alignItems: "center", gap: "6px" }}>
+                  <FaCompass style={{ color: "#4f46e5" }} /> Position GPS & Sélecteur sur Carte
+                </span>
+                <span style={{ fontSize: "0.75rem", fontFamily: "monospace", color: "#64748b" }}>
+                  {formData.latitude}, {formData.longitude}
+                </span>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "10px" }}>
+                <div>
+                  <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", marginBottom: "2px", display: "block" }}>
+                    Latitude :
+                  </label>
+                  <Input
+                    type="number"
+                    step="0.0001"
+                    placeholder="36.843100"
+                    value={formData.latitude}
+                    onChange={(val) => setFormData((p) => ({ ...p, latitude: parseFloat(val) || 0 }))}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", marginBottom: "2px", display: "block" }}>
+                    Longitude :
+                  </label>
+                  <Input
+                    type="number"
+                    step="0.0001"
+                    placeholder="10.203300"
+                    value={formData.longitude}
+                    onChange={(val) => setFormData((p) => ({ ...p, longitude: parseFloat(val) || 0 }))}
+                  />
+                </div>
+              </div>
+
+              {/* Live Interactive Leaflet Map Picker */}
+              <DepotMapPicker
+                lat={formData.latitude}
+                lng={formData.longitude}
+                onChange={(lat, lng) => setFormData((p) => ({ ...p, latitude: lat, longitude: lng }))}
+              />
+            </div>
+
             <div>
-              <label style={{ fontSize: "0.85rem", fontWeight: 700, color: "#334155", marginBottom: "6px", display: "block" }}>
-                Remarque / Consignes de Stockage
+              <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#334155", marginBottom: "4px", display: "block" }}>
+                Remarque / Consignes de Stockage :
               </label>
               <Input
                 as="textarea"
-                rows={3}
+                rows={2}
                 placeholder="Capacité max, instructions de tri, horaires d'ouverture..."
                 value={formData.remark}
                 onChange={(val) => setFormData((p) => ({ ...p, remark: val }))}
               />
             </div>
 
-            <div style={{ display: "flex", alignItems: "center", gap: "12px", paddingTop: "8px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", paddingTop: "4px" }}>
               <Toggle
                 checked={formData.isActive}
                 onChange={(checked) => setFormData((p) => ({ ...p, isActive: checked }))}
               />
-              <span style={{ fontSize: "0.88rem", fontWeight: 600, color: "#334155" }}>
+              <span style={{ fontSize: "0.85rem", fontWeight: 600, color: "#334155" }}>
                 Dépôt actif pour la préparation et le stockage des colis
               </span>
             </div>
@@ -830,7 +1019,7 @@ export default function PreparationPlaces() {
           <Button onClick={() => setModalOpen(false)} appearance="subtle">
             Annuler
           </Button>
-          <Button onClick={handleSave} appearance="primary" style={{ background: "#4f46e5" }}>
+          <Button onClick={handleSave} appearance="primary" style={{ background: "#4f46e5", fontWeight: 700 }}>
             {isEditing ? "Enregistrer les modifications" : "Créer le Dépôt"}
           </Button>
         </Modal.Footer>
