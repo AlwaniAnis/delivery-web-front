@@ -38,6 +38,12 @@
     "preview": "vite preview",
     "lint": "eslint src"
   },
+  "overrides": {
+    "react-vis": {
+      "react": "$react",
+      "react-dom": "$react-dom"
+    }
+  },
   "eslintConfig": {
     "extends": [
       "react-app"
