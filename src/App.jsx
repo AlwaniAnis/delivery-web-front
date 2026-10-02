@@ -389,7 +389,7 @@ const App = () => {
               <button className="mobile-toggle-btn" onClick={() => setExpand((prev) => !prev)}>
                 <FaBars />
               </button>
-              <div>
+              <div className="header-title-block">
                 <h1 className="header-page-title">{getPageTitle()}</h1>
                 <div className="header-breadcrumb">
                   <span>Tawsil</span>
@@ -403,6 +403,7 @@ const App = () => {
               {/* Authenticated Role Status Badge */}
               {isAdmin && (
                 <div
+                  className="header-role-badge"
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -417,12 +418,13 @@ const App = () => {
                   }}
                 >
                   <FaUserShield style={{ color: "#7c3aed" }} />
-                  <span>Administrateur · Boutique Principale</span>
+                  <span className="header-role-label">Administrateur · Boutique Principale</span>
                 </div>
               )}
 
               {isDriver && (
                 <div
+                  className="header-role-badge"
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -437,7 +439,7 @@ const App = () => {
                   }}
                 >
                   <FaTruck style={{ color: "#10b981" }} />
-                  <span>
+                  <span className="header-role-label">
                     Livreur : <strong>{currentDriver.name || "Actif"}</strong>
                   </span>
                 </div>
@@ -445,6 +447,7 @@ const App = () => {
 
               {isB2B && (
                 <div
+                  className="header-role-badge"
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -459,7 +462,7 @@ const App = () => {
                   }}
                 >
                   <FaStore style={{ color: "#2563eb" }} />
-                  <span>Espace Boutique Partenaire B2B</span>
+                  <span className="header-role-label">Espace Boutique Partenaire B2B</span>
                 </div>
               )}
 

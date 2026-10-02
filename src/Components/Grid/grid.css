@@ -1,8 +1,11 @@
 #custom-table-container {
   display: block;
   overflow-x: auto;
+  overscroll-behavior-x: contain;
   padding: 0;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   position: relative;
   border-radius: 14px;
   background: #ffffff;
@@ -29,6 +32,7 @@
 #custom-table {
   border: none;
   background: #ffffff;
+  width: max-content;
   min-width: 100%;
   border-radius: 14px;
   table-layout: auto;

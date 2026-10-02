@@ -39,9 +39,18 @@ body {
 
 /* Global App Shell */
 .tawsil-app {
+  width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
   min-height: 100vh;
   display: flex;
   background: var(--bg-body);
+
+  > .rs-container {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
 
   .tawsil-sidebar {
     width: var(--sidebar-width);
@@ -267,6 +276,7 @@ body {
 
   .tawsil-main-container {
     margin-left: var(--sidebar-width);
+    min-width: 0;
     min-height: 100vh;
     display: flex;
     flex-direction: column;
@@ -290,6 +300,11 @@ body {
         display: flex;
         align-items: center;
         gap: 16px;
+        min-width: 0;
+
+        .header-title-block {
+          min-width: 0;
+        }
 
         .mobile-toggle-btn {
           display: none;
@@ -331,6 +346,7 @@ body {
         display: flex;
         align-items: center;
         gap: 14px;
+        flex-shrink: 0;
 
         .role-switcher-container {
           display: flex;
@@ -403,7 +419,10 @@ body {
 
     .tawsil-body-content {
       flex: 1;
+      min-width: 0;
+      max-width: 100%;
       padding: 24px;
+      overflow-x: hidden;
       overflow-y: auto;
     }
   }
@@ -486,6 +505,56 @@ body {
 
       .tawsil-body-content {
         padding: 16px;
+      }
+    }
+  }
+}
+
+@media (max-width: 640px) {
+  .tawsil-app .tawsil-main-container .tawsil-header {
+    min-height: var(--header-height);
+    height: auto;
+    gap: 8px;
+    padding: 8px 12px;
+
+    .header-left-zone {
+      flex: 1;
+      gap: 8px;
+
+      .header-page-title {
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 1rem;
+      }
+
+      .header-breadcrumb {
+        display: none;
+      }
+    }
+
+    .header-right-zone {
+      gap: 6px;
+
+      .header-role-badge {
+        max-width: 116px;
+        gap: 5px !important;
+        padding: 5px 7px !important;
+        font-size: 0.68rem !important;
+        overflow: hidden;
+      }
+
+      .header-role-label {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .user-profile-button .user-avatar-circle {
+        width: 32px;
+        height: 32px;
       }
     }
   }

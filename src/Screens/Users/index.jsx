@@ -31,6 +31,7 @@ export default function Users() {
   const [error, setError] = useState("");
   const [model, setModel] = useState({
     role: "driver",
+    position: "Driver",
     userName: "",
     firstName: "",
     lastName: "",
@@ -42,6 +43,7 @@ export default function Users() {
   const reset = () => {
     setModel({
       role: "driver",
+      position: "Driver",
       userName: "",
       firstName: "",
       lastName: "",
@@ -135,7 +137,7 @@ export default function Users() {
 
   // Filter accounts by search query and role
   const filteredUsers = data.filter((u) => {
-    if (roleFilter !== "all" && u.role !== roleFilter) return false;
+    if (roleFilter !== "all" && u.position !== roleFilter) return false;
 
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase().trim();
@@ -244,7 +246,7 @@ export default function Users() {
               fontWeight: 700,
             }}
           >
-            <FaStore size={12} /> Client B2B
+            <FaStore size={12} />  B2B
           </span>
         );
       },
@@ -384,8 +386,8 @@ export default function Users() {
           <div style={{ display: "flex", gap: "4px", background: "#f1f5f9", padding: "3px", borderRadius: "8px" }}>
             {[
               { id: "all", label: "Tous" },
-              { id: "admin", label: "Admins" },
-              { id: "driver", label: "Livreurs" },
+              { id: "Admin", label: "Admins" },
+              { id: "Driver", label: "Livreurs" },
               { id: "B2Bclient", label: "Boutiques B2B" },
             ].map((btn) => (
               <button

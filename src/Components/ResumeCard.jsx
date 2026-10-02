@@ -24,6 +24,9 @@ export default function ResumeCard({
         display: "flex",
         alignItems: "center",
         gap: "14px",
+        width: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
         position: "relative",
         boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
         cursor: action ? "pointer" : "default",
@@ -47,7 +50,7 @@ export default function ResumeCard({
         {icon ? icon : <BiMoney />}
       </div>
 
-      <div style={{ flex: 1 }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
         <div
           style={{
             color: "#64748b",
@@ -60,20 +63,30 @@ export default function ResumeCard({
         >
           {text}
         </div>
-        <div style={{ display: "flex", alignItems: "baseline", gap: "6px" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "baseline",
+            flexWrap: "wrap",
+            gap: "6px",
+            minWidth: 0,
+          }}
+        >
           <span
             style={{
               fontSize: "1.5rem",
               fontWeight: 800,
               color: "#0f172a",
               fontFamily: "'JetBrains Mono', monospace",
-              letterSpacing: "-0.02em",
+              minWidth: 0,
+              overflowWrap: "anywhere",
+              lineHeight: 1.15,
             }}
           >
             {notAmount ? amount : format_number(amount)}
           </span>
           {!notAmount && (
-            <span style={{ color: "#94a3b8", fontSize: "0.75rem", fontWeight: 600 }}>
+            <span style={{ color: "#94a3b8", fontSize: "0.75rem", fontWeight: 600, flexShrink: 0 }}>
               {currency}
             </span>
           )}

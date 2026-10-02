@@ -42,6 +42,8 @@ export default function Deliveries(props) {
   // STATE
   const [data, setdata] = useState([]);
   const frameRef = useRef(null);
+  const fetchRequestId = useRef(0);
+  const [isFetching, setIsFetching] = useState(false);
 
   const [totalCount, settotalCount] = useState(0);
   const [totalOrdered, settotalOrdered] = useState(0);
@@ -65,6 +67,7 @@ export default function Deliveries(props) {
   const { isB2B } = useB2B();
   const storesList = useRecoilValue(StoresList);
   const activeRole = useRecoilValue(activeRoleState);
+  const isDriver = activeRole === "driver";
   const currentDriverId = useRecoilValue(currentDriverIdState);
   const depotsList = useRecoilValue(preparationPlacesState);
 
@@ -80,6 +83,10 @@ export default function Deliveries(props) {
     setError("");
   }; // API CALLS
   const fetch = () => {
+    const requestId = ++fetchRequestId.current;
+    setIsFetching(true);
+    setError("");
+
     const isDriver = activeRole === "driver";
     const driverIdParam = currentDriverId || (localStorage.getItem("auth") ? JSON.parse(localStorage.getItem("auth"))?.driverId : 1003);
     const endpoint = isDriver ? APi.ENDPOINTS.Delivery + "/getForDriver" : APi.ENDPOINTS.Delivery;
@@ -93,6 +100,8 @@ export default function Deliveries(props) {
     APi.createAPIEndpoint(endpoint, fetchParams)
       .fetchAll()
       .then((res) => {
+        if (requestId !== fetchRequestId.current) return;
+
         setdata(
           res.data.data.map((el) => {
             let _el = { ...el };
@@ -110,9 +119,18 @@ export default function Deliveries(props) {
         settotalPaid(res.data.totalPaid);
         settotalDelivred(res.data.totalDelivred);
       })
-      .catch((e) => setError(e.Message));
+      .catch((e) => {
+        if (requestId === fetchRequestId.current) {
+          setError(e?.Message || e?.message || "Erreur de chargement des livraisons.");
+        }
+      })
+      .finally(() => {
+        if (requestId === fetchRequestId.current) setIsFetching(false);
+      });
   };
   const save = () => {
+    if (isDriver) return;
+
     let msg = validate(model.customer, [
       { fullName: "Nom" },
       { phoneNumber: "Numero de téléphone" },
@@ -190,6 +208,8 @@ export default function Deliveries(props) {
     }
   };
   const deleteAction = (id) => {
+    if (isDriver) return;
+
     APi.createAPIEndpoint(APi.ENDPOINTS.Delivery)
       .delete(id)
 
@@ -696,10 +716,93 @@ export default function Deliveries(props) {
     let _codes = Array.from(document.querySelectorAll("#custom-codes2 p")).map(
       (el) => el.innerHTML
     );
-    // debugger;
     const iframe = frameRef.current;
     const printDocument = iframe?.contentWindow?.document;
     if (!iframe?.contentWindow || !printDocument?.body) return;
+
+    if (activeRole === "driver") {
+      const driver = drivers.find((item) => Number(item.id) === Number(currentDriverId));
+      const escapeHtml = (value) =>
+        String(value ?? "").replace(/[&<>"']/g, (character) =>
+          ({
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            '"': "&quot;",
+            "'": "&#39;",
+          })[character]
+        );
+      const rows = d
+        .map((delivery, index) => {
+          const customer = delivery.customer || {};
+          const items = Array.isArray(delivery.coliItems) ? delivery.coliItems : [];
+          const amount = items.reduce((sum, item) => sum + item.qty * item.unitPrice, 0);
+          const address = [customer.city, customer.deleg, customer.ville, customer.zipCode]
+            .filter(Boolean)
+            .join(" - ");
+          const fullAddress = [address, customer.address].filter(Boolean).join("\n");
+          const status = DeliveryStatus.find((item) => item.value == delivery.status)?.label || delivery.status || "—";
+
+          return `<tr>
+            <td>${_codes[index] || ""}</td>
+            <td>${escapeHtml(items.map((item) => item.designation).filter(Boolean).join("\n"))}</td>
+            <td>${escapeHtml([customer.phoneNumber, customer.phoneNumber2].filter(Boolean).join(" / "))}</td>
+            <td>${escapeHtml(customer.fullName)}</td>
+            <td>${amount.toFixed(3)} TND</td>
+            <td>${escapeHtml(fullAddress)}</td>
+            <td>${escapeHtml(status)}</td>
+          </tr>`;
+        })
+        .join("");
+      const total = d.reduce(
+        (sum, delivery) =>
+          sum +
+          (Array.isArray(delivery.coliItems)
+            ? delivery.coliItems.reduce((itemSum, item) => itemSum + item.qty * item.unitPrice, 0)
+            : 0),
+        0
+      );
+      const driverName = driver
+        ? driver.name || `${driver.firstName || ""} ${driver.lastName || ""}`.trim()
+        : "Livreur";
+      const html = `<!DOCTYPE html>
+        <html lang="fr">
+          <head>
+            <meta charset="UTF-8" />
+            <title>Liste des livraisons</title>
+            <style>
+              * { box-sizing: border-box; }
+              body { font-family: Arial, sans-serif; color: #222; padding: 16px; }
+              table { width: 100%; border-collapse: collapse; }
+              th, td { border: 1px solid #777; padding: 8px; text-align: left; vertical-align: middle; }
+              th { background: #eee; }
+              td { white-space: pre-line; }
+              td:first-child { width: 150px; }
+              td:first-child p { margin: 0; }
+              .summary { display: flex; justify-content: space-between; gap: 24px; margin-top: 16px; }
+              @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+            </style>
+          </head>
+          <body>
+            <div style="text-align:right"><strong>${moment().format("DD/MM/YYYY")}</strong></div>
+            <table>
+              <thead><tr><th>Code</th><th>Désignation</th><th>Contacts</th><th>Client</th><th>Prix</th><th>Adresse</th><th>État</th></tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+            <div class="summary">
+              <div><strong>Total :</strong> ${total.toFixed(3)} TND<div>Nombre de colis : ${d.length}</div></div>
+              <div><strong>Chauffeur :</strong> ${escapeHtml(driverName)}<br /><strong>Matricule voiture :</strong> ${escapeHtml(driver?.carNumber || "—")}</div>
+            </div>
+          </body>
+        </html>`;
+
+      printDocument.open();
+      printDocument.write(html);
+      printDocument.close();
+      iframe.contentWindow.print();
+      return;
+    }
+
     printDocument.body.innerHTML = "";
     // iframe.contentDocument.body.innerHTML = content;
     printDocument.open();
@@ -1164,24 +1267,26 @@ export default function Deliveries(props) {
             />
           </Responsive>
         )}
-        <Responsive l={2.4} xl={2.4} m={4} className="p-5">
-          <label>Livreur </label>
-          <SelectPicker
-            data={[{ label: "Sélectionner", value: 0 }].concat(
-              drivers.map((c) => {
-                return { label: c.firstName + " " + c.lastName, value: c.id };
-              })
-            )}
-            block
-            searchable={false}
-            value={filterModel.driverId}
-            onSelect={(driverId) => {
-              setfilterModel((prev) => {
-                return { ...prev, driverId };
-              });
-            }}
-          />
-        </Responsive>
+        {!isDriver && (
+          <Responsive l={2.4} xl={2.4} m={4} className="p-5">
+            <label>Livreur </label>
+            <SelectPicker
+              data={[{ label: "Sélectionner", value: 0 }].concat(
+                drivers.map((c) => {
+                  return { label: c.firstName + " " + c.lastName, value: c.id };
+                })
+              )}
+              block
+              searchable={false}
+              value={filterModel.driverId}
+              onSelect={(driverId) => {
+                setfilterModel((prev) => {
+                  return { ...prev, driverId };
+                });
+              }}
+            />
+          </Responsive>
+        )}
         <Responsive m={4} l={2} xl={2} className="p-5">
           <label>Status: </label>
           <SelectPicker
@@ -1270,6 +1375,7 @@ export default function Deliveries(props) {
         title="Ajouter Commande"
         full
         noExport
+        noAdd={isDriver}
         save={save}
         AddComponent={
           <AddEdit error={error} model={model} _setmodel={setmodel} />
@@ -1306,7 +1412,7 @@ export default function Deliveries(props) {
           imprimer <ImPrinter />
         </button>{" "}
       </div>
-      {!isB2B && (
+      {!isB2B && !isDriver && (
         <div className="p-10">
           <Responsive s={6} m={6} l={4} xl={3}>
             <SelectPicker
@@ -1344,6 +1450,8 @@ export default function Deliveries(props) {
             appearance="primary"
             color="blue"
             onClick={() => {
+              if (isDriver) return;
+
               console.log(checkeds);
               APi.createAPIEndpoint(ENDPOINTS.Delivery + "/changeDriver")
                 .create({ ...changedDriverModel, deliveries: checkeds })
@@ -1358,17 +1466,22 @@ export default function Deliveries(props) {
         </div>
       )}
       <Grid
-        editAction={(id) => {
-          getBYId(id);
+        loading={isFetching}
+        editAction={
+          isDriver
+            ? false
+            : (id) => {
+                getBYId(id);
 
-          setstate((prev) => {
-            return { ...prev, open: true };
-          });
-        }}
-        deleteAction={isB2B ? false : deleteAction}
-        actionKey={"id"}
+                setstate((prev) => {
+                  return { ...prev, open: true };
+                });
+              }
+        }
+        deleteAction={isB2B || isDriver ? false : deleteAction}
+        actionKey={isB2B ? null : "id"}
         noAdvancedActions={isB2B}
-        actions={[
+        actions={isB2B ? [] : [
           {
             label: "Changer état",
             action: (dataKey) => {

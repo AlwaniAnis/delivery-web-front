@@ -8,6 +8,14 @@ const roleOptions = [
 ];
 
 function AddEdit({ _setmodel, error, model, drivers = [], stores = [] }) {
+  const roleValue = String(model.role || model.position || "driver").trim().toLowerCase();
+  const selectedRole =
+    roleValue === "b2bclient" || roleValue === "b2b"
+      ? "B2Bclient"
+      : roleValue === "admin"
+        ? "admin"
+        : "driver";
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
       <div>
@@ -18,9 +26,17 @@ function AddEdit({ _setmodel, error, model, drivers = [], stores = [] }) {
           data={roleOptions}
           searchable={false}
           block
-          value={model.role || "driver"}
-          onSelect={(role) => {
-            _setmodel((prev) => ({ ...prev, role }));
+          value={selectedRole}
+          cleanable={false}
+          onChange={(role) => {
+            const position =
+              role === "driver" ? "Driver" : role === "B2Bclient" ? "B2Bclient" : "Admin";
+            _setmodel((prev) => ({
+              ...prev,
+              role,
+              position,
+              ...(role === "driver" ? { storeId: undefined } : { driverId: undefined }),
+            }));
           }}
         />
       </div>
@@ -104,7 +120,7 @@ function AddEdit({ _setmodel, error, model, drivers = [], stores = [] }) {
             }))}
             block
             value={model.driverId}
-            onSelect={(driverId) => {
+            onChange={(driverId) => {
               const matched = drivers.find((el) => el.id === driverId);
               _setmodel((prev) => ({
                 ...prev,
@@ -130,7 +146,7 @@ function AddEdit({ _setmodel, error, model, drivers = [], stores = [] }) {
             }))}
             block
             value={model.storeId}
-            onSelect={(storeId) => {
+            onChange={(storeId) => {
               _setmodel((prev) => ({ ...prev, storeId }));
             }}
           />
