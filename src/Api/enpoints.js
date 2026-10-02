@@ -11,4 +11,6 @@ export const ENDPOINTS = {
   PreparationPlace: "PreparationPlace",
   Tarif: "Tarif",
   DriverPayment: "DriverPayment",
+  File: "File",
+  Media: "Media",
 };
