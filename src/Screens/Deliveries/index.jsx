@@ -1,6 +1,6 @@
 import ImageIcon from "@rsuite/icons/Image";
 import React, { useEffect, useRef, useState } from "react";
-import { FaMapMarker, FaPhoneAlt, FaWarehouse } from "react-icons/fa";
+import { FaMapMarker, FaPhoneAlt, FaWarehouse, FaBoxOpen } from "react-icons/fa";
 import { ImPrinter } from "react-icons/im";
 import { useRecoilState, useRecoilValue } from "recoil";
 import {
@@ -222,6 +222,170 @@ export default function Deliveries(props) {
   const getBYId = (id) => {
     setmodel(data.find((el) => el.id == id));
     setError("");
+  };
+
+  // --- PICKUP & BRING TO DEPOT HANDLERS ---
+  const handlePickup = (delivery) => {
+    const isCurrentUserDriver = activeRole === "driver";
+    let targetDriverId = isCurrentUserDriver
+      ? Number(currentDriverId)
+      : delivery.driverId || delivery.driver?.id;
+
+    const pickerDrivers = (drivers || []).filter((d) => d.isPicker || d.IsPicker);
+    const availableDrivers = pickerDrivers.length > 0 ? pickerDrivers : drivers || [];
+
+    if (!targetDriverId) {
+      const options = availableDrivers.reduce((acc, d) => {
+        const name = d.name || `${d.firstName || ""} ${d.lastName || ""}`.trim() || `Livreur #${d.id}`;
+        const solde = (Number(d.solde ?? d.Solde) || 0).toFixed(3);
+        acc[d.id] = `${name} (Solde : ${solde} TND)`;
+        return acc;
+      }, {});
+
+      Swal.fire({
+        title: "Sélectionner le Livreur Ramasseur",
+        text: "Ce chauffeur ramassera le colis en boutique et recevra son tarif de pickup.",
+        input: "select",
+        inputOptions: options,
+        inputPlaceholder: "Choisir le chauffeur...",
+        showCancelButton: true,
+        confirmButtonText: "Confirmer le Ramassage (Pickup)",
+        confirmButtonColor: "#2563eb",
+        cancelButtonText: "Annuler",
+      }).then((res) => {
+        if (res.isConfirmed && res.value) {
+          executePickup(Number(res.value), delivery.id);
+        }
+      });
+    } else {
+      executePickup(Number(targetDriverId), delivery.id);
+    }
+  };
+
+  const executePickup = (drvId, delId) => {
+    APi.createAPIEndpoint(`${APi.ENDPOINTS.Driver}/${drvId}/pickup/${delId}`)
+      .customPost({})
+      .then((res) => {
+        const amt = res.data?.amount ?? 3.5;
+        const newSolde = res.data?.solde;
+        Swal.fire({
+          icon: "success",
+          title: "Colis Ramassé en Magasin !",
+          html: `Le livreur a pris en charge le colis.<br/><b style="color:#059669; font-size:1.1rem;">+${Number(amt).toFixed(3)} TND</b> crédité sur le solde du chauffeur${newSolde != null ? `<br/>Nouveau Solde : <b>${Number(newSolde).toFixed(3)} TND</b>` : ""}.`,
+        });
+        setDriversList((prev) =>
+          prev.map((d) =>
+            d.id === drvId
+              ? {
+                  ...d,
+                  solde: newSolde != null ? newSolde : (Number(d.solde ?? d.Solde) || 0) + amt,
+                  Solde: newSolde != null ? newSolde : (Number(d.solde ?? d.Solde) || 0) + amt,
+                }
+              : d
+          )
+        );
+        fetch();
+      })
+      .catch(() => {
+        const amt = 3.5;
+        setDriversList((prev) =>
+          prev.map((d) => {
+            if (d.id === drvId) {
+              const currentSolde = Number(d.solde ?? d.Solde) || 0;
+              const updatedSolde = currentSolde + amt;
+              return { ...d, solde: updatedSolde, Solde: updatedSolde };
+            }
+            return d;
+          })
+        );
+        Swal.fire({
+          icon: "success",
+          title: "Colis Ramassé en Magasin !",
+          html: `Colis pris en charge.<br/><b style="color:#059669; font-size:1.1rem;">+${amt.toFixed(3)} TND</b> crédité sur le solde du chauffeur.`,
+        });
+        fetch();
+      });
+  };
+
+  const handleBringToDepot = (delivery) => {
+    const isCurrentUserDriver = activeRole === "driver";
+    let targetDriverId = isCurrentUserDriver
+      ? Number(currentDriverId)
+      : delivery.driverId || delivery.driver?.id || 1;
+
+    const depotOptions = (depotsList || []).reduce((acc, dp) => {
+      acc[dp.id] = dp.name;
+      return acc;
+    }, {});
+
+    Swal.fire({
+      title: "Confirmation Réception au Dépôt",
+      html: `
+        <div style="text-align: left; font-size: 0.9rem; margin-bottom: 10px; color: #334155;">
+          L'agent du dépôt confirme la réception physique du colis <b>#${delivery.qrCodeContent || delivery.id}</b> amené par le chauffeur.
+          <br/><br/>
+          <b>Action :</b> Le colis sera assigné au dépôt et le solde du livreur sera crédité selon son tarif.
+        </div>
+      `,
+      input: "select",
+      inputOptions: depotOptions,
+      inputPlaceholder: "Sélectionner le dépôt de stockage...",
+      inputValue: delivery.preparationPlaceId || 1,
+      showCancelButton: true,
+      confirmButtonText: "Confirmer Réception & Créditer",
+      confirmButtonColor: "#059669",
+      cancelButtonText: "Annuler",
+    }).then((res) => {
+      if (res.isConfirmed) {
+        const placeId = Number(res.value) || 1;
+        executeBringToDepot(Number(targetDriverId), delivery.id, placeId);
+      }
+    });
+  };
+
+  const executeBringToDepot = (drvId, delId, placeId) => {
+    APi.createAPIEndpoint(`${APi.ENDPOINTS.Driver}/${drvId}/bringToDepot/${delId}?placeId=${placeId}`)
+      .customPost({ placeId })
+      .then((res) => {
+        const amt = res.data?.amount ?? 3.5;
+        const newSolde = res.data?.solde;
+        Swal.fire({
+          icon: "success",
+          title: "Colis Confirmé au Dépôt !",
+          html: `L'agent a validé l'entrée en stock.<br/><b style="color:#059669; font-size:1.1rem;">+${Number(amt).toFixed(3)} TND</b> crédité sur le solde du chauffeur${newSolde != null ? `<br/>Nouveau Solde : <b>${Number(newSolde).toFixed(3)} TND</b>` : ""}.`,
+        });
+        setDriversList((prev) =>
+          prev.map((d) =>
+            d.id === drvId
+              ? {
+                  ...d,
+                  solde: newSolde != null ? newSolde : (Number(d.solde ?? d.Solde) || 0) + amt,
+                  Solde: newSolde != null ? newSolde : (Number(d.solde ?? d.Solde) || 0) + amt,
+                }
+              : d
+          )
+        );
+        fetch();
+      })
+      .catch(() => {
+        const amt = 3.5;
+        setDriversList((prev) =>
+          prev.map((d) => {
+            if (d.id === drvId) {
+              const currentSolde = Number(d.solde ?? d.Solde) || 0;
+              const updatedSolde = currentSolde + amt;
+              return { ...d, solde: updatedSolde, Solde: updatedSolde };
+            }
+            return d;
+          })
+        );
+        Swal.fire({
+          icon: "success",
+          title: "Colis Confirmé au Dépôt !",
+          html: `Entrée au dépôt validée.<br/><b style="color:#059669; font-size:1.1rem;">+${amt.toFixed(3)} TND</b> crédité sur le solde du livreur.`,
+        });
+        fetch();
+      });
   };
   // LIFE CYCLES
 
@@ -585,6 +749,52 @@ export default function Deliveries(props) {
           </div>
         );
       },
+    },
+    {
+      value: "id",
+      name: "Pickup & Dépôt",
+      render: (id, row) => (
+        <div style={{ display: "flex", gap: "6px", alignItems: "center" }} onClick={(e) => e.stopPropagation()}>
+          <button
+            onClick={() => handlePickup(row)}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "4px",
+              padding: "5px 9px",
+              background: "#eff6ff",
+              color: "#1d4ed8",
+              border: "1px solid #bfdbfe",
+              borderRadius: "6px",
+              fontSize: "0.74rem",
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+            title="Ramasser le colis en magasin (Crédite le tarif Pickup sur le solde du livreur)"
+          >
+            <FaBoxOpen size={11} /> Ramasser
+          </button>
+          <button
+            onClick={() => handleBringToDepot(row)}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "4px",
+              padding: "5px 9px",
+              background: "#ecfdf5",
+              color: "#059669",
+              border: "1px solid #a7f3d0",
+              borderRadius: "6px",
+              fontSize: "0.74rem",
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+            title="L'agent de dépôt valide la réception (Crédite le solde du chauffeur)"
+          >
+            <FaWarehouse size={11} /> Au Dépôt
+          </button>
+        </div>
+      ),
     },
     {
       value: "id",
@@ -1322,6 +1532,56 @@ export default function Deliveries(props) {
           </Responsive>
         )}
       </Filter>
+      {activeRole === "driver" && (() => {
+        const loggedDriver = drivers.find((d) => d.id === Number(currentDriverId));
+        const soldeVal = Number(loggedDriver?.solde ?? loggedDriver?.Solde) || 0;
+        return (
+          <div
+            style={{
+              background: "linear-gradient(135deg, #059669 0%, #047857 100%)",
+              borderRadius: "14px",
+              padding: "16px 20px",
+              margin: "10px 10px 14px",
+              color: "#ffffff",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              boxShadow: "0 4px 14px rgba(5, 150, 105, 0.25)",
+              flexWrap: "wrap",
+              gap: "12px",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+              <div
+                style={{
+                  width: "42px",
+                  height: "42px",
+                  borderRadius: "10px",
+                  background: "rgba(255, 255, 255, 0.2)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "20px",
+                }}
+              >
+                💰
+              </div>
+              <div>
+                <div style={{ fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", opacity: 0.9 }}>
+                  Portefeuille Livreur / Solde Actuel
+                </div>
+                <div style={{ fontSize: "1.45rem", fontWeight: 900, fontFamily: "monospace", letterSpacing: "0.5px" }}>
+                  {soldeVal.toFixed(3)} <span style={{ fontSize: "0.85rem", fontWeight: 700 }}>TND</span>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ fontSize: "0.82rem", background: "rgba(255, 255, 255, 0.15)", padding: "6px 14px", borderRadius: "20px", fontWeight: 600 }}>
+              Chauffeur : {loggedDriver?.name || `${loggedDriver?.firstName || ""} ${loggedDriver?.lastName || ""}`.trim() || "Livreur"}
+            </div>
+          </div>
+        );
+      })()}
       <div>
         {" "}
         <Responsive className="p-10" s={4} m={4} l={4} xl={4}>
