@@ -27,10 +27,12 @@ import {
   FaCheck,
   FaBarcode,
   FaExchangeAlt,
+  FaTags,
 } from "react-icons/fa";
 import { APi } from "../../Api";
 import { DriversList } from "../../Atoms/drivers.atom";
 import { preparationPlacesState } from "../../Atoms/preparationPlaces.atom";
+import { tarifsState } from "../../Atoms/tarifs.atom";
 import { DeliveryStatus } from "../../Constants/types";
 import zip_codes from "../../Data/zip_codes.json";
 import DeliveryModel from "../../Models/deliveryModel";
@@ -41,9 +43,23 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
 
   const [drivers] = useRecoilState(DriversList);
   const [depotsList] = useRecoilState(preparationPlacesState);
+  const [tarifsList, setTarifsList] = useRecoilState(tarifsState);
   const [data, setdata] = useState([]);
   const [customers, setcustomers] = useState([]);
   const [showBarcode, setShowBarcode] = useState(false);
+
+  useEffect(() => {
+    APi.createAPIEndpoint(APi.ENDPOINTS.Tarif, { page: 1, take: 100 })
+      .fetchAll()
+      .then((res) => {
+        if (Array.isArray(res.data) && res.data.length > 0) {
+          setTarifsList(res.data);
+        } else if (res.data?.data && Array.isArray(res.data.data) && res.data.data.length > 0) {
+          setTarifsList(res.data.data);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const [item, setitem] = useState({
     designation: "",
@@ -221,6 +237,98 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
               }}
               value={model.qrCodeContent || ""}
             />
+          </div>
+
+          {/* TARIF SELECTION (For Store / B2B and Admin) */}
+          <div
+            style={{
+              background: "#f8fafc",
+              border: "1.5px solid #cbd5e1",
+              borderRadius: "10px",
+              padding: "12px",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "6px",
+              }}
+            >
+              <label
+                style={{
+                  fontSize: "0.82rem",
+                  fontWeight: 800,
+                  color: "#1e293b",
+                  margin: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                }}
+              >
+                <FaTags style={{ color: "#4f46e5" }} /> Type de Tarif & Formule de Livraison :
+              </label>
+              {model.tarifDelivery ? (
+                <span
+                  style={{
+                    fontSize: "0.75rem",
+                    fontWeight: 700,
+                    color: "#059669",
+                    background: "#d1fae5",
+                    padding: "2px 8px",
+                    borderRadius: "6px",
+                  }}
+                >
+                  Frais: {Number(model.tarifDelivery).toFixed(3)} TND
+                </span>
+              ) : null}
+            </div>
+
+            <SelectPicker
+              data={[{ label: "— Sélectionner la formule de tarif —", value: 0 }].concat(
+                (tarifsList || []).map((t) => ({
+                  label: `${t.name} (Frais: ${(Number(t.tarifDelivery) || 0).toFixed(3)} TND · Comm: ${(Number(t.commissionDriver) || 0).toFixed(3)} TND)`,
+                  value: t.id,
+                }))
+              )}
+              block
+              searchable={true}
+              placeholder="Choisir le tarif de livraison..."
+              value={model.tarifId || 0}
+              onSelect={(val) => {
+                const selected = (tarifsList || []).find((t) => t.id === val);
+                _setmodel((prev) => ({
+                  ...prev,
+                  tarifId: val === 0 ? null : val,
+                  tarifDelivery: selected ? Number(selected.tarifDelivery) : 0,
+                  commissionDriver: selected ? Number(selected.commissionDriver) : 0,
+                  cost: selected ? Number(selected.tarifDelivery) : prev.cost,
+                }));
+              }}
+            />
+
+            {model.tarifId && (() => {
+              const selectedTarif = (tarifsList || []).find((t) => t.id === model.tarifId);
+              if (!selectedTarif) return null;
+              return (
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginTop: "6px",
+                    fontSize: "0.75rem",
+                    color: "#475569",
+                  }}
+                >
+                  <span>{selectedTarif.remark || "Tarif actif"}</span>
+                  <span style={{ fontWeight: 700, color: "#4f46e5" }}>
+                    Commission Livreur : {(Number(selectedTarif.commissionDriver) || 0).toFixed(3)} TND
+                  </span>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Non-B2B Fields: Driver & Depot */}

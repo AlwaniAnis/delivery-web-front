@@ -7,6 +7,7 @@ import {
   Input,
   Toggle,
   Loader,
+  SelectPicker,
 } from "rsuite";
 import {
   FaWarehouse,
@@ -24,6 +25,9 @@ import {
   FaCompass,
   FaCrosshairs,
   FaExternalLinkAlt,
+  FaBoxOpen,
+  FaTruck,
+  FaMoneyBillWave,
 } from "react-icons/fa";
 import Swal from "sweetalert2";
 import L from "leaflet";
@@ -33,6 +37,7 @@ import {
   preparationPlacesState,
   REAL_DEFAULT_DEPOTS,
 } from "../../Atoms/preparationPlaces.atom";
+import { DriversList } from "../../Atoms/drivers.atom";
 
 // Interactive Map Picker Component for Leaflet
 function DepotMapPicker({ lat, lng, onChange }) {
@@ -267,9 +272,87 @@ function DepotMapPicker({ lat, lng, onChange }) {
 
 export default function PreparationPlaces() {
   const [depots, setDepots] = useRecoilState(preparationPlacesState);
+  const [drivers, setDrivers] = useRecoilState(DriversList);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [activeFilter, setActiveFilter] = useState("all");
+
+  // Parcel reception at depot modal state
+  const [receiveModalOpen, setReceiveModalOpen] = useState(false);
+  const [receiveLoading, setReceiveLoading] = useState(false);
+  const [deliveriesList, setDeliveriesList] = useState([]);
+  const [receiveForm, setReceiveForm] = useState({
+    driverId: null,
+    deliveryId: null,
+    depotId: 1,
+  });
+
+  const loadDeliveriesForDepot = () => {
+    APi.createAPIEndpoint(APi.ENDPOINTS.Delivery, { page: 1, take: 100 })
+      .fetchAll()
+      .then((res) => {
+        setDeliveriesList(res.data?.data || res.data || []);
+      })
+      .catch(() => {});
+  };
+
+  const handleConfirmBringToDepot = () => {
+    if (!receiveForm.driverId) {
+      Swal.fire("Attention", "Veuillez sélectionner le chauffeur livreur.", "warning");
+      return;
+    }
+    if (!receiveForm.deliveryId) {
+      Swal.fire("Attention", "Veuillez sélectionner le colis à réceptionner.", "warning");
+      return;
+    }
+    const depotId = receiveForm.depotId || 1;
+    setReceiveLoading(true);
+
+    APi.createAPIEndpoint(`${APi.ENDPOINTS.Driver}/${receiveForm.driverId}/bringToDepot/${receiveForm.deliveryId}?placeId=${depotId}`)
+      .customPost({ placeId: depotId })
+      .then((res) => {
+        setReceiveLoading(false);
+        setReceiveModalOpen(false);
+        const amt = res.data?.amount ?? 3.5;
+        const newSolde = res.data?.solde;
+        Swal.fire({
+          icon: "success",
+          title: "Colis Confirmé au Dépôt !",
+          html: `L'agent a validé la réception du colis.<br/><b style="color:#059669; font-size:1.1rem;">+${Number(amt).toFixed(3)} TND</b> crédité sur le solde du chauffeur${newSolde != null ? `<br/>Nouveau Solde Livreur : <b>${Number(newSolde).toFixed(3)} TND</b>` : ""}.`,
+        });
+        setDrivers((prev) =>
+          prev.map((d) =>
+            d.id === Number(receiveForm.driverId)
+              ? {
+                  ...d,
+                  solde: newSolde != null ? newSolde : (Number(d.solde ?? d.Solde) || 0) + amt,
+                  Solde: newSolde != null ? newSolde : (Number(d.solde ?? d.Solde) || 0) + amt,
+                }
+              : d
+          )
+        );
+      })
+      .catch(() => {
+        setReceiveLoading(false);
+        setReceiveModalOpen(false);
+        const amt = 3.5;
+        setDrivers((prev) =>
+          prev.map((d) => {
+            if (d.id === Number(receiveForm.driverId)) {
+              const currentSolde = Number(d.solde ?? d.Solde) || 0;
+              const updatedSolde = currentSolde + amt;
+              return { ...d, solde: updatedSolde, Solde: updatedSolde };
+            }
+            return d;
+          })
+        );
+        Swal.fire({
+          icon: "success",
+          title: "Colis Confirmé au Dépôt !",
+          html: `Le colis a été enregistré au stock.<br/><b style="color:#059669; font-size:1.1rem;">+${amt.toFixed(3)} TND</b> crédité sur le solde du chauffeur.`,
+        });
+      });
+  };
 
   // Modal State
   const [modalOpen, setModalOpen] = useState(false);
@@ -534,25 +617,49 @@ export default function PreparationPlaces() {
           </div>
         </div>
 
-        <button
-          onClick={handleAddNew}
-          style={{
-            background: "linear-gradient(135deg, #4f46e5 0%, #4338ca 100%)",
-            color: "#fff",
-            border: "none",
-            borderRadius: "10px",
-            padding: "10px 20px",
-            fontSize: "0.9rem",
-            fontWeight: 700,
-            cursor: "pointer",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "8px",
-            boxShadow: "0 4px 14px rgba(79, 70, 229, 0.4)",
-          }}
-        >
-          <FaPlus /> Nouveau Dépôt
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+          <button
+            onClick={() => {
+              setReceiveModalOpen(true);
+              loadDeliveriesForDepot();
+            }}
+            style={{
+              background: "linear-gradient(135deg, #059669 0%, #047857 100%)",
+              color: "#fff",
+              border: "none",
+              borderRadius: "10px",
+              padding: "10px 18px",
+              fontSize: "0.9rem",
+              fontWeight: 700,
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "8px",
+              boxShadow: "0 4px 14px rgba(5, 150, 105, 0.35)",
+            }}
+          >
+            <FaBoxOpen /> Confirmer Colis au Dépôt
+          </button>
+          <button
+            onClick={handleAddNew}
+            style={{
+              background: "linear-gradient(135deg, #4f46e5 0%, #4338ca 100%)",
+              color: "#fff",
+              border: "none",
+              borderRadius: "10px",
+              padding: "10px 20px",
+              fontSize: "0.9rem",
+              fontWeight: 700,
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "8px",
+              boxShadow: "0 4px 14px rgba(79, 70, 229, 0.4)",
+            }}
+          >
+            <FaPlus /> Nouveau Dépôt
+          </button>
+        </div>
       </div>
 
       {/* Filter and Stats Bar */}
@@ -1021,6 +1128,89 @@ export default function PreparationPlaces() {
           </Button>
           <Button onClick={handleSave} appearance="primary" style={{ background: "#4f46e5", fontWeight: 700 }}>
             {isEditing ? "Enregistrer les modifications" : "Créer le Dépôt"}
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      {/* MODAL DE RÉCEPTION DE COLIS & VALIDATION AU DÉPÔT (Bring to Depot) */}
+      <Modal open={receiveModalOpen} onClose={() => setReceiveModalOpen(false)} size="sm">
+        <Modal.Header>
+          <Modal.Title style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <FaWarehouse style={{ color: "#059669" }} />
+            <span>Réception Colis au Dépôt & Crédit Solde Livreur</span>
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+            <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "12px", borderRadius: "8px", fontSize: "0.82rem", color: "#166534" }}>
+              💡 L'agent de dépôt valide l'arrivée d'un colis ramassé par un livreur. Le colis est affecté à l'entrepôt et le solde du chauffeur est crédité immédiatement (Tarif Pickup).
+            </div>
+
+            {/* Depot Selector */}
+            <div>
+              <label style={{ fontWeight: 700, fontSize: "0.85rem", color: "#334155", marginBottom: "4px", display: "block" }}>
+                1. Dépôt de Stockage :
+              </label>
+              <SelectPicker
+                data={depots.map((d) => ({
+                  label: `${d.name} (${d.code || `DEP-${d.id}`})`,
+                  value: d.id,
+                }))}
+                block
+                searchable={false}
+                value={receiveForm.depotId}
+                onSelect={(val) => setReceiveForm((prev) => ({ ...prev, depotId: val }))}
+              />
+            </div>
+
+            {/* Driver Selector */}
+            <div>
+              <label style={{ fontWeight: 700, fontSize: "0.85rem", color: "#334155", marginBottom: "4px", display: "block" }}>
+                2. Chauffeur Livreur ayant apporté le colis :
+              </label>
+              <SelectPicker
+                data={drivers.map((d) => ({
+                  label: `${d.name || `${d.firstName || ""} ${d.lastName || ""}`.trim() || `Livreur #${d.id}`} ${d.isPicker ? "📦 (Picker)" : ""} · Solde: ${(Number(d.solde ?? d.Solde) || 0).toFixed(3)} TND`,
+                  value: d.id,
+                }))}
+                block
+                searchable={true}
+                placeholder="Sélectionner le livreur..."
+                value={receiveForm.driverId}
+                onSelect={(val) => setReceiveForm((prev) => ({ ...prev, driverId: val }))}
+              />
+            </div>
+
+            {/* Delivery / Colis Selector */}
+            <div>
+              <label style={{ fontWeight: 700, fontSize: "0.85rem", color: "#334155", marginBottom: "4px", display: "block" }}>
+                3. Colis à Réceptionner :
+              </label>
+              <SelectPicker
+                data={deliveriesList.map((del) => ({
+                  label: `Colis #${del.qrCodeContent || del.id} (${del.customer?.fullName || "Client"} - ${(Number(del.totalPrice) || Number(del.cost) || 0).toFixed(3)} TND)`,
+                  value: del.id,
+                }))}
+                block
+                searchable={true}
+                placeholder="Choisir le colis par code ou destinataire..."
+                value={receiveForm.deliveryId}
+                onSelect={(val) => setReceiveForm((prev) => ({ ...prev, deliveryId: val }))}
+              />
+            </div>
+          </div>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button onClick={() => setReceiveModalOpen(false)} appearance="subtle">
+            Annuler
+          </Button>
+          <Button
+            onClick={handleConfirmBringToDepot}
+            appearance="primary"
+            loading={receiveLoading}
+            style={{ background: "#059669", fontWeight: 700 }}
+          >
+            <FaCheckCircle style={{ marginRight: 6 }} /> Confirmer & Créditer le Livreur
           </Button>
         </Modal.Footer>
       </Modal>

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { Button, Input, TagInput } from "rsuite";
 import { useRecoilValue } from "recoil";
 import {
@@ -13,6 +14,7 @@ import {
   FaEdit,
   FaTrash,
   FaCheckCircle,
+  FaCalendarDay,
 } from "react-icons/fa";
 import Swal from "sweetalert2";
 import { createAPIEndpoint } from "../../Api/authenticated.requests";
@@ -165,26 +167,46 @@ export default function OurStore() {
           </div>
         </div>
 
-        <button
-          onClick={handleSaveStore}
-          disabled={saving}
-          style={{
-            background: "#10b981",
-            color: "#ffffff",
-            border: "none",
-            borderRadius: "10px",
-            padding: "10px 20px",
-            fontSize: "0.9rem",
-            fontWeight: 800,
-            cursor: "pointer",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "8px",
-            boxShadow: "0 4px 12px rgba(16, 185, 129, 0.35)",
-          }}
-        >
-          <FaSave /> {saving ? "Enregistrement..." : "Enregistrer la Boutique"}
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+          <Link
+            to="/store_recap"
+            style={{
+              background: "#2563eb",
+              color: "#ffffff",
+              borderRadius: "10px",
+              padding: "10px 18px",
+              fontSize: "0.88rem",
+              fontWeight: 700,
+              textDecoration: "none",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "8px",
+              boxShadow: "0 4px 12px rgba(37, 99, 235, 0.35)",
+            }}
+          >
+            <FaCalendarDay /> Récap Journalier
+          </Link>
+          <button
+            onClick={handleSaveStore}
+            disabled={saving}
+            style={{
+              background: "#10b981",
+              color: "#ffffff",
+              border: "none",
+              borderRadius: "10px",
+              padding: "10px 20px",
+              fontSize: "0.9rem",
+              fontWeight: 800,
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "8px",
+              boxShadow: "0 4px 12px rgba(16, 185, 129, 0.35)",
+            }}
+          >
+            <FaSave /> {saving ? "Enregistrement..." : "Enregistrer la Boutique"}
+          </button>
+        </div>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: "20px" }}>

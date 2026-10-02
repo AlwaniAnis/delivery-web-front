@@ -3,7 +3,7 @@ import { useRecoilState } from "recoil";
 import { Button, Input, Modal } from "rsuite";
 import Pagination from "rsuite/Pagination";
 import Swal from "sweetalert2";
-import { FaPhoneAlt, FaTruck, FaIdCard, FaMapMarkerAlt, FaEnvelope } from "react-icons/fa";
+import { FaPhoneAlt, FaTruck, FaIdCard, FaMapMarkerAlt, FaEnvelope, FaWallet } from "react-icons/fa";
 import { APi } from "../../Api/";
 import { exportAddAtom } from "../../Atoms/exportAdd.atom";
 import ExportAdd from "../../Components/Common/ExportAdd";
@@ -27,6 +27,10 @@ export default function Drivers(props) {
     firstName: "",
     lastName: "",
     address: "",
+    solde: 0,
+    Solde: 0,
+    isPicker: false,
+    tarifId: null,
   });
   const [userModel, setuserModel] = useState({
     email: "",
@@ -50,6 +54,10 @@ export default function Drivers(props) {
       firstName: "",
       lastName: "",
       address: "",
+      solde: 0,
+      Solde: 0,
+      isPicker: false,
+      tarifId: null,
     });
     setError("");
   };
@@ -446,5 +454,76 @@ const columns = [
         )}
       </div>
     ),
+  },
+  {
+    value: "isPicker",
+    value2: "IsPicker",
+    value3: "tarifId",
+    name: "Rôle Ramassage",
+    render: (isPicker, IsPicker, tarifId) => {
+      const picker = Boolean(isPicker ?? IsPicker);
+      return (
+        <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+          {picker ? (
+            <span
+              style={{
+                background: "#eff6ff",
+                color: "#1d4ed8",
+                border: "1px solid #bfdbfe",
+                padding: "2px 8px",
+                borderRadius: "6px",
+                fontSize: "0.75rem",
+                fontWeight: 700,
+                width: "fit-content",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "4px",
+              }}
+            >
+              📦 Ramasseur (Picker)
+            </span>
+          ) : (
+            <span style={{ color: "#94a3b8", fontSize: "0.75rem" }}>Livreur standard</span>
+          )}
+          {tarifId ? (
+            <span style={{ fontSize: "0.72rem", color: "#64748b", fontWeight: 600 }}>
+              Tarif #{tarifId}
+            </span>
+          ) : null}
+        </div>
+      );
+    },
+  },
+  {
+    value: "solde",
+    value2: "Solde",
+    value3: "id",
+    name: "Solde (TND)",
+    render: (solde, Solde, id) => {
+      const amount = Number(solde ?? Solde) || 0;
+      const isPositive = amount > 0;
+      const isNegative = amount < 0;
+      return (
+        <a
+          href={`/driver_payments?driverId=${id}`}
+          title="Voir l'historique des règlements de ce chauffeur"
+          style={{
+            fontWeight: 800,
+            fontSize: "0.88rem",
+            color: isPositive ? "#059669" : isNegative ? "#dc2626" : "#475569",
+            background: isPositive ? "#ecfdf5" : isNegative ? "#fef2f2" : "#f1f5f9",
+            border: isPositive ? "1px solid #a7f3d0" : isNegative ? "1px solid #fecaca" : "1px solid #cbd5e1",
+            padding: "4px 10px",
+            borderRadius: "6px",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "5px",
+            textDecoration: "none",
+          }}
+        >
+          <FaWallet size={11} /> {amount.toFixed(3)} TND
+        </a>
+      );
+    },
   },
 ];

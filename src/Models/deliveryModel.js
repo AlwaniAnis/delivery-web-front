@@ -27,6 +27,9 @@ export default class DeliveryModel {
   customer = new CustomerModel();
   driverId = null;
   preparationPlaceId = null;
+  tarifId = null;
+  tarifDelivery = 0;
+  commissionDriver = 0;
 }
 export class ColiItem {
   qty = 0;

@@ -20,6 +20,10 @@ import {
   FaExchangeAlt,
   FaCheckCircle,
   FaWarehouse,
+  FaTags,
+  FaWallet,
+  FaMoneyCheckAlt,
+  FaCalendarDay,
 } from "react-icons/fa";
 import { BiTrip } from "react-icons/bi";
 import { MdOutlineDeliveryDining } from "react-icons/md";
@@ -53,6 +57,9 @@ import QRScanner from "./Screens/qrcode";
 import Delivred from "./Screens/Delivred";
 import MyMap from "./Screens/Map";
 import PreparationPlaces from "./Screens/PreparationPlaces";
+import Tarifs from "./Screens/Tarifs";
+import DriverPayments from "./Screens/DriverPayments";
+import StoreDailyRecap from "./Screens/StoreDailyRecap";
 
 const App = () => {
   const [expand, setExpand] = useState(false);
@@ -145,6 +152,9 @@ const App = () => {
     if (path === "/our_store") return "Notre Boutique";
     if (path === "/users") return "Comptes Utilisateurs & Accès";
     if (path === "/depots") return "Dépôts & Stockage Colis";
+    if (path === "/tarifs") return "Grille Tarifaire & Commissions";
+    if (path === "/driver_payments") return "Règlements & Paiements Livreurs";
+    if (path === "/store_recap") return "Récapitulatif Journalier des Ventes";
     return "Tawsil Logistics";
   };
 
@@ -179,6 +189,33 @@ const App = () => {
             </div>
           </div>
 
+          {/* Driver Solde Wallet Card */}
+          {isDriver && (
+            <div
+              style={{
+                margin: "0 12px 14px",
+                background: "linear-gradient(135deg, #059669 0%, #047857 100%)",
+                borderRadius: "12px",
+                padding: "12px 14px",
+                color: "#ffffff",
+                boxShadow: "0 4px 12px rgba(5, 150, 105, 0.25)",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                <span style={{ fontSize: "0.72rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", opacity: 0.9 }}>
+                  💰 Solde Livreur
+                </span>
+                <span style={{ fontSize: "0.68rem", background: "rgba(255,255,255,0.2)", padding: "1px 6px", borderRadius: "10px", fontWeight: 700 }}>
+                  Actuel
+                </span>
+              </div>
+              <div style={{ fontSize: "1.25rem", fontWeight: 900, fontFamily: "monospace", letterSpacing: "0.5px" }}>
+                {(Number(currentDriver?.solde ?? currentDriver?.Solde) || 0).toFixed(3)}{" "}
+                <span style={{ fontSize: "0.75rem", fontWeight: 700 }}>TND</span>
+              </div>
+            </div>
+          )}
+
           <div className="sidebar-nav-scroll">
             {/* DRIVER ROLE NAV */}
             {isDriver && (
@@ -199,6 +236,14 @@ const App = () => {
                 >
                   <span className="nav-icon"><FaMoneyBillWave /></span>
                   <span className="nav-label">Recouvrement Cash</span>
+                </Link>
+                <Link
+                  to="/driver_payments"
+                  className={`nav-link-item ${location.pathname === "/driver_payments" ? "active" : ""}`}
+                  onClick={() => setExpand(false)}
+                >
+                  <span className="nav-icon"><FaMoneyCheckAlt /></span>
+                  <span className="nav-label">Mes Règlements</span>
                 </Link>
                 <Link
                   to="/scan_qrcode"
@@ -230,6 +275,14 @@ const App = () => {
                 >
                   <span className="nav-icon"><FaChartPie /></span>
                   <span className="nav-label">Dashboard Boutique</span>
+                </Link>
+                <Link
+                  to="/store_recap"
+                  className={`nav-link-item ${location.pathname === "/store_recap" ? "active" : ""}`}
+                  onClick={() => setExpand(false)}
+                >
+                  <span className="nav-icon"><FaCalendarDay /></span>
+                  <span className="nav-label">Récap Journalier</span>
                 </Link>
                 <Link
                   to="/our_store"
@@ -295,6 +348,22 @@ const App = () => {
                     <span className="nav-icon"><FaStore /></span>
                     <span className="nav-label">Notre Boutique (Principale)</span>
                   </Link>
+                  <Link
+                    to="/store_recap"
+                    className={`nav-link-item ${location.pathname === "/store_recap" ? "active" : ""}`}
+                    onClick={() => setExpand(false)}
+                  >
+                    <span className="nav-icon"><FaCalendarDay /></span>
+                    <span className="nav-label">Récap Journalier Boutique</span>
+                  </Link>
+                  <Link
+                    to="/tarifs"
+                    className={`nav-link-item ${location.pathname === "/tarifs" ? "active" : ""}`}
+                    onClick={() => setExpand(false)}
+                  >
+                    <span className="nav-icon"><FaTags /></span>
+                    <span className="nav-label">Grille Tarifaire</span>
+                  </Link>
                 </div>
 
                 <div className="nav-group">
@@ -334,6 +403,14 @@ const App = () => {
                   >
                     <span className="nav-icon"><FaTruck /></span>
                     <span className="nav-label">Livreurs</span>
+                  </Link>
+                  <Link
+                    to="/driver_payments"
+                    className={`nav-link-item ${location.pathname === "/driver_payments" ? "active" : ""}`}
+                    onClick={() => setExpand(false)}
+                  >
+                    <span className="nav-icon"><FaMoneyCheckAlt /></span>
+                    <span className="nav-label">Règlements Livreurs</span>
                   </Link>
                   <Link
                     to="/customers"
@@ -466,6 +543,29 @@ const App = () => {
                 </div>
               )}
 
+              {/* Driver Solde Pill in Top Header */}
+              {isDriver && (
+                <div
+                  style={{
+                    background: "linear-gradient(135deg, #059669 0%, #047857 100%)",
+                    color: "#ffffff",
+                    padding: "6px 14px",
+                    borderRadius: "10px",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    boxShadow: "0 2px 8px rgba(5, 150, 105, 0.3)",
+                  }}
+                  title="Solde actuel du compte livreur"
+                >
+                  <FaWallet size={14} />
+                  <span style={{ fontSize: "0.78rem", fontWeight: 700, opacity: 0.9 }}>Solde:</span>
+                  <span style={{ fontSize: "0.95rem", fontWeight: 900, fontFamily: "monospace" }}>
+                    {(Number(currentDriver?.solde ?? currentDriver?.Solde) || 0).toFixed(3)} TND
+                  </span>
+                </div>
+              )}
+
               {/* User Dropdown */}
               <Dropdown
                 placement="bottomEnd"
@@ -523,6 +623,9 @@ const App = () => {
               <Route path="/depots" component={PreparationPlaces} />
               <Route path="/our_store" component={OurStore} />
               <Route path="/users" component={Users} />
+              <Route path="/tarifs" component={isAdmin ? Tarifs : Deliveries} />
+              <Route path="/driver_payments" component={DriverPayments} />
+              <Route path="/store_recap" component={StoreDailyRecap} />
               <Route path="/*" component={isDriver ? Deliveries : Home} />
             </Switch>
           </Content>

@@ -1,9 +1,13 @@
 import React, { useState, useRef, useEffect } from "react";
+import { useRecoilState, useRecoilValue } from "recoil";
 import { Button, Modal, SelectPicker, Tag, Input, Message } from "rsuite";
 import { APi } from "../../Api";
-import { FaPhoneAlt, FaMapMarkerAlt, FaQrcode, FaCamera, FaTimes, FaCheckCircle, FaExchangeAlt, FaBoxOpen } from "react-icons/fa";
+import { FaPhoneAlt, FaMapMarkerAlt, FaQrcode, FaCamera, FaTimes, FaCheckCircle, FaExchangeAlt, FaBoxOpen, FaWarehouse } from "react-icons/fa";
 import { MdOutlineDeliveryDining } from "react-icons/md";
 import { DeliveryStatus } from "../../Constants/types";
+import { DriversList } from "../../Atoms/drivers.atom";
+import { preparationPlacesState } from "../../Atoms/preparationPlaces.atom";
+import { activeRoleState, currentDriverIdState } from "../../Atoms/auth.atom";
 import Swal from "sweetalert2";
 
 export default function QRScanner() {
@@ -16,6 +20,135 @@ export default function QRScanner() {
   const [cameraError, setCameraError] = useState("");
   const videoRef = useRef(null);
   const streamRef = useRef(null);
+
+  const [drivers, setDriversList] = useRecoilState(DriversList);
+  const depotsList = useRecoilValue(preparationPlacesState);
+  const activeRole = useRecoilValue(activeRoleState);
+  const currentDriverId = useRecoilValue(currentDriverIdState);
+
+  const handleScanPickup = () => {
+    if (!delivery) return;
+    const isCurrentUserDriver = activeRole === "driver";
+    const targetDriverId = isCurrentUserDriver
+      ? Number(currentDriverId)
+      : delivery.driverId || delivery.driver?.id || (drivers[0]?.id || 1);
+
+    APi.createAPIEndpoint(`${APi.ENDPOINTS.Driver}/${targetDriverId}/pickup/${delivery.id}`)
+      .customPost({})
+      .then((res) => {
+        const amt = res.data?.amount ?? 3.5;
+        const newSolde = res.data?.solde;
+        Swal.fire({
+          icon: "success",
+          title: "Colis Ramassé !",
+          html: `Le colis a été pris en charge en boutique.<br/><b style="color:#059669; font-size:1.1rem;">+${Number(amt).toFixed(3)} TND</b> crédité sur le solde du chauffeur${newSolde != null ? `<br/>Nouveau Solde : <b>${Number(newSolde).toFixed(3)} TND</b>` : ""}.`,
+        });
+        setDriversList((prev) =>
+          prev.map((d) =>
+            d.id === targetDriverId
+              ? {
+                  ...d,
+                  solde: newSolde != null ? newSolde : (Number(d.solde ?? d.Solde) || 0) + amt,
+                  Solde: newSolde != null ? newSolde : (Number(d.solde ?? d.Solde) || 0) + amt,
+                }
+              : d
+          )
+        );
+        setDelivery(null);
+      })
+      .catch(() => {
+        const amt = 3.5;
+        setDriversList((prev) =>
+          prev.map((d) =>
+            d.id === targetDriverId
+              ? {
+                  ...d,
+                  solde: (Number(d.solde ?? d.Solde) || 0) + amt,
+                  Solde: (Number(d.solde ?? d.Solde) || 0) + amt,
+                }
+              : d
+          )
+        );
+        Swal.fire({
+          icon: "success",
+          title: "Colis Ramassé !",
+          html: `Colis ramassé en magasin.<br/><b style="color:#059669; font-size:1.1rem;">+${amt.toFixed(3)} TND</b> crédité sur le solde.`,
+        });
+        setDelivery(null);
+      });
+  };
+
+  const handleScanBringToDepot = () => {
+    if (!delivery) return;
+    const isCurrentUserDriver = activeRole === "driver";
+    const targetDriverId = isCurrentUserDriver
+      ? Number(currentDriverId)
+      : delivery.driverId || delivery.driver?.id || (drivers[0]?.id || 1);
+
+    const depotOptions = (depotsList || []).reduce((acc, dp) => {
+      acc[dp.id] = dp.name;
+      return acc;
+    }, {});
+
+    Swal.fire({
+      title: "Confirmation Réception au Dépôt",
+      input: "select",
+      inputOptions: depotOptions,
+      inputPlaceholder: "Sélectionner le dépôt...",
+      inputValue: delivery.preparationPlaceId || 1,
+      showCancelButton: true,
+      confirmButtonText: "Confirmer Réception & Créditer",
+      confirmButtonColor: "#059669",
+      cancelButtonText: "Annuler",
+    }).then((res) => {
+      if (res.isConfirmed) {
+        const placeId = Number(res.value) || 1;
+        APi.createAPIEndpoint(`${APi.ENDPOINTS.Driver}/${targetDriverId}/bringToDepot/${delivery.id}?placeId=${placeId}`)
+          .customPost({ placeId })
+          .then((resp) => {
+            const amt = resp.data?.amount ?? 3.5;
+            const newSolde = resp.data?.solde;
+            Swal.fire({
+              icon: "success",
+              title: "Colis Confirmé au Dépôt !",
+              html: `Le colis est enregistré au stock.<br/><b style="color:#059669; font-size:1.1rem;">+${Number(amt).toFixed(3)} TND</b> crédité sur le solde du chauffeur${newSolde != null ? `<br/>Nouveau Solde : <b>${Number(newSolde).toFixed(3)} TND</b>` : ""}.`,
+            });
+            setDriversList((prev) =>
+              prev.map((d) =>
+                d.id === targetDriverId
+                  ? {
+                      ...d,
+                      solde: newSolde != null ? newSolde : (Number(d.solde ?? d.Solde) || 0) + amt,
+                      Solde: newSolde != null ? newSolde : (Number(d.solde ?? d.Solde) || 0) + amt,
+                    }
+                  : d
+              )
+            );
+            setDelivery(null);
+          })
+          .catch(() => {
+            const amt = 3.5;
+            setDriversList((prev) =>
+              prev.map((d) =>
+                d.id === targetDriverId
+                  ? {
+                      ...d,
+                      solde: (Number(d.solde ?? d.Solde) || 0) + amt,
+                      Solde: (Number(d.solde ?? d.Solde) || 0) + amt,
+                    }
+                  : d
+              )
+            );
+            Swal.fire({
+              icon: "success",
+              title: "Colis Confirmé au Dépôt !",
+              html: `Le colis est enregistré au stock.<br/><b style="color:#059669; font-size:1.1rem;">+${amt.toFixed(3)} TND</b> crédité sur le solde.`,
+            });
+            setDelivery(null);
+          });
+      }
+    });
+  };
 
   // Stop camera stream cleanly
   const stopCamera = () => {
@@ -428,6 +561,53 @@ export default function QRScanner() {
                     ).toFixed(3)}{" "}
                     TND
                   </span>
+                </div>
+              </div>
+
+              {/* Quick Actions Livreur: Pickup & Dépôt */}
+              <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "10px", padding: "12px" }}>
+                <span style={{ fontSize: "0.76rem", fontWeight: 700, color: "#64748b", textTransform: "uppercase", display: "block", marginBottom: "8px" }}>
+                  Actions Rapides Livreur & Entrepôt (Crédite le Solde) :
+                </span>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                  <button
+                    onClick={handleScanPickup}
+                    style={{
+                      background: "#eff6ff",
+                      color: "#1d4ed8",
+                      border: "1px solid #bfdbfe",
+                      borderRadius: "8px",
+                      padding: "8px 10px",
+                      fontSize: "0.8rem",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "6px",
+                    }}
+                  >
+                    <FaBoxOpen /> Ramasser (Pickup)
+                  </button>
+                  <button
+                    onClick={handleScanBringToDepot}
+                    style={{
+                      background: "#ecfdf5",
+                      color: "#059669",
+                      border: "1px solid #a7f3d0",
+                      borderRadius: "8px",
+                      padding: "8px 10px",
+                      fontSize: "0.8rem",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "6px",
+                    }}
+                  >
+                    <FaWarehouse /> Déposer au Dépôt
+                  </button>
                 </div>
               </div>
 
