@@ -42,21 +42,14 @@ export default function Tarifs() {
       .fetchAll()
       .then((res) => {
         setLoading(false);
-        if (Array.isArray(res.data) && res.data.length > 0) {
+        if (Array.isArray(res.data)) {
           setTarifs(res.data);
-        } else if (res.data?.data && Array.isArray(res.data.data) && res.data.data.length > 0) {
+        } else if (Array.isArray(res.data?.data)) {
           setTarifs(res.data.data);
-        } else {
-          // If empty, seed default tariffs
-          setTarifs(DEFAULT_TARIFS);
         }
       })
       .catch(() => {
         setLoading(false);
-        // Fallback to local Recoil state
-        if (!tarifs || tarifs.length === 0) {
-          setTarifs(DEFAULT_TARIFS);
-        }
       });
   };
 

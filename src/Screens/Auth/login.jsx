@@ -575,61 +575,6 @@ export default function Login() {
               : "Boutique"}
           </Button>
         </form>
-
-        {/* Real API Endpoint Display */}
-        <div
-          style={{
-            marginTop: "20px",
-            paddingTop: "16px",
-            borderTop: "1px solid #f1f5f9",
-            display: "flex",
-            flexDirection: "column",
-            gap: "8px",
-            fontSize: "0.75rem",
-            color: "#64748b",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-              <FaServer style={{ color: "#6366f1" }} /> Endpoint d'authentification :
-            </span>
-            <code
-              style={{
-                background: "#f1f5f9",
-                padding: "3px 8px",
-                borderRadius: "6px",
-                fontSize: "0.72rem",
-                color:
-                  selectedRole === "admin"
-                    ? "#4338ca"
-                    : selectedRole === "depotAgent"
-                    ? "#b45309"
-                    : selectedRole === "driver"
-                    ? "#065f46"
-                    : "#1e40af",
-                fontWeight: 700,
-              }}
-            >
-              POST api/{selectedRole === "admin" || selectedRole === "depotAgent" ? "Auth/login" : selectedRole === "driver" ? "Auth/loginDriver" : "Auth/loginB2B"}
-            </code>
-          </div>
-
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <span style={{ color: "#94a3b8" }}>Serveur API :</span>
-            <code
-              style={{
-                background: "#f8fafc",
-                padding: "2px 6px",
-                borderRadius: "4px",
-                fontSize: "0.7rem",
-                color: "#64748b",
-              }}
-              title={BASE_URL}
-            >
-              {BASE_URL}
-            </code>
-          </div>
-        </div>
       </div>
     </div>
   );

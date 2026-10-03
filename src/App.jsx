@@ -24,6 +24,7 @@ import {
   FaWallet,
   FaMoneyCheckAlt,
   FaCalendarDay,
+  FaCommentDots,
 } from "react-icons/fa";
 import { BiTrip } from "react-icons/bi";
 import { MdOutlineDeliveryDining } from "react-icons/md";
@@ -43,6 +44,8 @@ import { DriversList } from "./Atoms/drivers.atom";
 import { StoresList } from "./Atoms/stores.atom";
 import { MyStore } from "./Atoms/store.atom";
 import { preparationPlacesState } from "./Atoms/preparationPlaces.atom";
+import { tarifsState } from "./Atoms/tarifs.atom";
+import { reclamationsState } from "./Atoms/reclamations.atom";
 import useB2B from "./hooks/useB2B";
 
 // Screens
@@ -64,6 +67,7 @@ import PreparationPlaces from "./Screens/PreparationPlaces";
 import Tarifs from "./Screens/Tarifs";
 import DriverPayments from "./Screens/DriverPayments";
 import StoreDailyRecap from "./Screens/StoreDailyRecap";
+import Reclamations from "./Screens/Reclamations";
 
 const App = () => {
   const [expand, setExpand] = useState(false);
@@ -74,26 +78,54 @@ const App = () => {
   const [currentDepotId, setCurrentDepotId] = useRecoilState(currentDepotIdState);
   const [driversList, setDriversList] = useRecoilState(DriversList);
   const [storesList, setStoresList] = useRecoilState(StoresList);
-  const depotsList = useRecoilValue(preparationPlacesState);
+  const [depotsList, setDepotsList] = useRecoilState(preparationPlacesState);
+  const [reclamationsList, setReclamationsList] = useRecoilState(reclamationsState);
+  const setTarifsList = useSetRecoilState(tarifsState);
   const setStore = useSetRecoilState(MyStore);
   useB2B();
 
   const location = useLocation();
   const history = useHistory();
 
-  // Load initial stores and drivers
+  // Load initial stores, drivers, depots, and tariffs from API
   useEffect(() => {
     APi.createAPIEndpoint(APi.ENDPOINTS.Driver, { page: 1, take: 1000 })
       .fetchAll()
       .then((res) => {
         if (res.data?.data) setDriversList(res.data.data);
+        else if (Array.isArray(res.data)) setDriversList(res.data);
       })
       .catch(() => {});
 
     APi.createAPIEndpoint(APi.ENDPOINTS.Store + "/getAll", {})
       .fetchAll()
       .then((res) => {
-        if (res.data) setStoresList(res.data);
+        if (Array.isArray(res.data)) setStoresList(res.data);
+        else if (Array.isArray(res.data?.data)) setStoresList(res.data.data);
+      })
+      .catch(() => {});
+
+    APi.createAPIEndpoint(APi.ENDPOINTS.PreparationPlace + "/getAll", {})
+      .fetchAll()
+      .then((res) => {
+        if (Array.isArray(res.data)) setDepotsList(res.data);
+        else if (Array.isArray(res.data?.data)) setDepotsList(res.data.data);
+      })
+      .catch(() => {});
+
+    APi.createAPIEndpoint(APi.ENDPOINTS.Tarif, { page: 1, take: 1000 })
+      .fetchAll()
+      .then((res) => {
+        if (Array.isArray(res.data)) setTarifsList(res.data);
+        else if (Array.isArray(res.data?.data)) setTarifsList(res.data.data);
+      })
+      .catch(() => {});
+
+    APi.createAPIEndpoint(APi.ENDPOINTS.Reclamation, {})
+      .fetchAll()
+      .then((res) => {
+        if (Array.isArray(res.data)) setReclamationsList(res.data);
+        else if (Array.isArray(res.data?.data)) setReclamationsList(res.data.data);
       })
       .catch(() => {});
   }, []);
@@ -171,6 +203,7 @@ const App = () => {
     if (path === "/tarifs") return "Grille Tarifaire & Commissions";
     if (path === "/driver_payments") return "Règlements & Paiements Livreurs";
     if (path === "/store_recap") return "Récapitulatif Journalier des Ventes";
+    if (path === "/reclamations") return isB2B ? "Mes Réclamations & Support" : "Réclamations Boutiques";
     return "Tawsil Logistics";
   };
 
@@ -253,27 +286,11 @@ const App = () => {
                 <div className="nav-group-title">ESPACE LIVREUR</div>
                 <Link
                   to="/deliveries"
-                  className={`nav-link-item ${location.pathname === "/deliveries" ? "active" : ""}`}
+                  className={`nav-link-item ${location.pathname === "/" || location.pathname === "/deliveries" ? "active" : ""}`}
                   onClick={() => setExpand(false)}
                 >
                   <span className="nav-icon"><BiTrip /></span>
                   <span className="nav-label">Mes Livraisons</span>
-                </Link>
-                <Link
-                  to="/delivred"
-                  className={`nav-link-item ${location.pathname === "/delivred" ? "active" : ""}`}
-                  onClick={() => setExpand(false)}
-                >
-                  <span className="nav-icon"><FaMoneyBillWave /></span>
-                  <span className="nav-label">Recouvrement Cash</span>
-                </Link>
-                <Link
-                  to="/driver_payments"
-                  className={`nav-link-item ${location.pathname === "/driver_payments" ? "active" : ""}`}
-                  onClick={() => setExpand(false)}
-                >
-                  <span className="nav-icon"><FaMoneyCheckAlt /></span>
-                  <span className="nav-label">Mes Règlements</span>
                 </Link>
                 <Link
                   to="/scan_qrcode"
@@ -289,7 +306,15 @@ const App = () => {
                   onClick={() => setExpand(false)}
                 >
                   <span className="nav-icon"><FaRoute /></span>
-                  <span className="nav-label">Trajet & Carte</span>
+                  <span className="nav-label">Trajet & Carte GPS</span>
+                </Link>
+                <Link
+                  to="/driver_payments"
+                  className={`nav-link-item ${location.pathname === "/driver_payments" ? "active" : ""}`}
+                  onClick={() => setExpand(false)}
+                >
+                  <span className="nav-icon"><FaMoneyCheckAlt /></span>
+                  <span className="nav-label">Mes Règlements & Solde</span>
                 </Link>
               </div>
             )}
@@ -305,6 +330,14 @@ const App = () => {
                 >
                   <span className="nav-icon"><FaChartPie /></span>
                   <span className="nav-label">Dashboard Boutique</span>
+                </Link>
+                <Link
+                  to="/deliveries"
+                  className={`nav-link-item ${location.pathname === "/deliveries" ? "active" : ""}`}
+                  onClick={() => setExpand(false)}
+                >
+                  <span className="nav-icon"><BiTrip /></span>
+                  <span className="nav-label">Nos Livraisons</span>
                 </Link>
                 <Link
                   to="/store_recap"
@@ -323,12 +356,12 @@ const App = () => {
                   <span className="nav-label">Informations Boutique</span>
                 </Link>
                 <Link
-                  to="/deliveries"
-                  className={`nav-link-item ${location.pathname === "/deliveries" ? "active" : ""}`}
+                  to="/reclamations"
+                  className={`nav-link-item ${location.pathname === "/reclamations" ? "active" : ""}`}
                   onClick={() => setExpand(false)}
                 >
-                  <span className="nav-icon"><BiTrip /></span>
-                  <span className="nav-label">Nos Livraisons</span>
+                  <span className="nav-icon"><FaCommentDots /></span>
+                  <span className="nav-label">Réclamations</span>
                 </Link>
               </div>
             )}
@@ -354,6 +387,14 @@ const App = () => {
                   <span className="nav-label">Livraisons du Dépôt</span>
                 </Link>
                 <Link
+                  to="/scan_qrcode"
+                  className={`nav-link-item ${location.pathname === "/scan_qrcode" ? "active" : ""}`}
+                  onClick={() => setExpand(false)}
+                >
+                  <span className="nav-icon"><FaQrcode /></span>
+                  <span className="nav-label">Scanner Réception Dépôt</span>
+                </Link>
+                <Link
                   to="/deliveries_not_paid"
                   className={`nav-link-item ${location.pathname === "/deliveries_not_paid" ? "active" : ""}`}
                   onClick={() => setExpand(false)}
@@ -368,22 +409,6 @@ const App = () => {
                 >
                   <span className="nav-icon"><FaMoneyCheckAlt /></span>
                   <span className="nav-label">Recouvrement Livreur (Solde)</span>
-                </Link>
-                <Link
-                  to="/scan_qrcode"
-                  className={`nav-link-item ${location.pathname === "/scan_qrcode" ? "active" : ""}`}
-                  onClick={() => setExpand(false)}
-                >
-                  <span className="nav-icon"><FaQrcode /></span>
-                  <span className="nav-label">Scanner Réception Dépôt</span>
-                </Link>
-                <Link
-                  to="/depots"
-                  className={`nav-link-item ${location.pathname === "/depots" ? "active" : ""}`}
-                  onClick={() => setExpand(false)}
-                >
-                  <span className="nav-icon"><FaWarehouse /></span>
-                  <span className="nav-label">Dépôts & Stockage</span>
                 </Link>
               </div>
             )}
@@ -402,28 +427,12 @@ const App = () => {
                     <span className="nav-label">Tableau de Bord</span>
                   </Link>
                   <Link
-                    to="/depot_agent"
-                    className={`nav-link-item ${location.pathname === "/depot_agent" ? "active" : ""}`}
-                    onClick={() => setExpand(false)}
-                  >
-                    <span className="nav-icon"><FaWarehouse /></span>
-                    <span className="nav-label">Console Agent Dépôt</span>
-                  </Link>
-                  <Link
                     to="/deliveries"
                     className={`nav-link-item ${location.pathname === "/deliveries" ? "active" : ""}`}
                     onClick={() => setExpand(false)}
                   >
                     <span className="nav-icon"><BiTrip /></span>
                     <span className="nav-label">Livraisons</span>
-                  </Link>
-                  <Link
-                    to="/deliveries_not_paid"
-                    className={`nav-link-item ${location.pathname === "/deliveries_not_paid" ? "active" : ""}`}
-                    onClick={() => setExpand(false)}
-                  >
-                    <span className="nav-icon"><FaMoneyBillWave /></span>
-                    <span className="nav-label">Livraisons Non Payées</span>
                   </Link>
                   <Link
                     to="/our_store"
@@ -449,17 +458,42 @@ const App = () => {
                     <span className="nav-icon"><FaTags /></span>
                     <span className="nav-label">Grille Tarifaire</span>
                   </Link>
+                  <Link
+                    to="/reclamations"
+                    className={`nav-link-item ${location.pathname === "/reclamations" ? "active" : ""}`}
+                    onClick={() => setExpand(false)}
+                    style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}
+                  >
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: "10px" }}>
+                      <span className="nav-icon"><FaCommentDots /></span>
+                      <span className="nav-label">Réclamations Boutiques</span>
+                    </span>
+                    {reclamationsList.filter((r) => Number(r.status) === 1).length > 0 && (
+                      <span
+                        style={{
+                          background: "#ef4444",
+                          color: "#ffffff",
+                          fontSize: "0.7rem",
+                          fontWeight: 800,
+                          padding: "1px 7px",
+                          borderRadius: "10px",
+                        }}
+                      >
+                        {reclamationsList.filter((r) => Number(r.status) === 1).length}
+                      </span>
+                    )}
+                  </Link>
                 </div>
 
                 <div className="nav-group">
                   <div className="nav-group-title">RÉSEAU, DÉPÔTS & UTILISATEURS</div>
                   <Link
-                    to="/drivers"
-                    className={`nav-link-item ${location.pathname === "/drivers" ? "active" : ""}`}
+                    to="/depots"
+                    className={`nav-link-item ${location.pathname === "/depots" ? "active" : ""}`}
                     onClick={() => setExpand(false)}
                   >
-                    <span className="nav-icon"><FaTruck /></span>
-                    <span className="nav-label">Livreurs</span>
+                    <span className="nav-icon"><FaWarehouse /></span>
+                    <span className="nav-label">Dépôts & Territoires</span>
                   </Link>
                   <Link
                     to="/depot_agents"
@@ -470,6 +504,14 @@ const App = () => {
                     <span className="nav-label">Agents de Dépôt</span>
                   </Link>
                   <Link
+                    to="/drivers"
+                    className={`nav-link-item ${location.pathname === "/drivers" ? "active" : ""}`}
+                    onClick={() => setExpand(false)}
+                  >
+                    <span className="nav-icon"><FaTruck /></span>
+                    <span className="nav-label">Livreurs</span>
+                  </Link>
+                  <Link
                     to="/driver_payments"
                     className={`nav-link-item ${location.pathname === "/driver_payments" ? "active" : ""}`}
                     onClick={() => setExpand(false)}
@@ -478,12 +520,12 @@ const App = () => {
                     <span className="nav-label">Recouvrement Livreur (Solde)</span>
                   </Link>
                   <Link
-                    to="/scan_qrcode"
-                    className={`nav-link-item ${location.pathname === "/scan_qrcode" ? "active" : ""}`}
+                    to="/stores"
+                    className={`nav-link-item ${location.pathname === "/stores" ? "active" : ""}`}
                     onClick={() => setExpand(false)}
                   >
-                    <span className="nav-icon"><FaQrcode /></span>
-                    <span className="nav-label">Scanner QR Code</span>
+                    <span className="nav-icon"><FaStore /></span>
+                    <span className="nav-label">Boutiques Partenaires</span>
                   </Link>
                   <Link
                     to="/customers"
@@ -492,22 +534,6 @@ const App = () => {
                   >
                     <span className="nav-icon"><FaUsers /></span>
                     <span className="nav-label">Clients B2C</span>
-                  </Link>
-                  <Link
-                    to="/stores"
-                    className={`nav-link-item ${location.pathname === "/stores" ? "active" : ""}`}
-                    onClick={() => setExpand(false)}
-                  >
-                    <span className="nav-icon"><FaStore /></span>
-                    <span className="nav-label">Boutiques</span>
-                  </Link>
-                  <Link
-                    to="/depots"
-                    className={`nav-link-item ${location.pathname === "/depots" ? "active" : ""}`}
-                    onClick={() => setExpand(false)}
-                  >
-                    <span className="nav-icon"><FaWarehouse /></span>
-                    <span className="nav-label">Dépôts & Stockage</span>
                   </Link>
                   <Link
                     to="/users"
@@ -701,31 +727,6 @@ const App = () => {
                   </div>
                 </div>
                 <Dropdown.Separator />
-                <Dropdown.Item
-                  onClick={() => {
-                    setActiveRole("admin");
-                    history.push("/");
-                  }}
-                >
-                  <FaUserShield style={{ marginRight: 8, color: "#7c3aed" }} /> Vue Administrateur
-                </Dropdown.Item>
-                <Dropdown.Item
-                  onClick={() => {
-                    setActiveRole("depotAgent");
-                    history.push("/depot_agent");
-                  }}
-                >
-                  <FaWarehouse style={{ marginRight: 8, color: "#d97706" }} /> Vue Agent de Dépôt
-                </Dropdown.Item>
-                <Dropdown.Item
-                  onClick={() => {
-                    setActiveRole("driver");
-                    history.push("/deliveries");
-                  }}
-                >
-                  <FaTruck style={{ marginRight: 8, color: "#059669" }} /> Vue Livreur
-                </Dropdown.Item>
-                <Dropdown.Separator />
                 <Dropdown.Item onClick={handleSignOut} style={{ color: "#dc2626" }}>
                   <FaSignOutAlt style={{ marginRight: 8 }} /> Déconnexion
                 </Dropdown.Item>
@@ -759,6 +760,7 @@ const App = () => {
               <Route path="/tarifs" component={isAdmin ? Tarifs : Deliveries} />
               <Route path="/driver_payments" component={DriverPayments} />
               <Route path="/store_recap" component={StoreDailyRecap} />
+              <Route path="/reclamations" component={Reclamations} />
               <Route
                 path="/*"
                 component={

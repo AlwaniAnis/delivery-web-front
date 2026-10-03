@@ -82,19 +82,14 @@ export default function DriverPayments() {
       .fetchAll()
       .then((res) => {
         setLoading(false);
-        if (Array.isArray(res.data) && res.data.length > 0) {
+        if (Array.isArray(res.data)) {
           setPayments(res.data);
-        } else if (res.data?.data && Array.isArray(res.data.data) && res.data.data.length > 0) {
+        } else if (Array.isArray(res.data?.data)) {
           setPayments(res.data.data);
-        } else if (!payments || payments.length === 0) {
-          setPayments(DEFAULT_DRIVER_PAYMENTS);
         }
       })
       .catch(() => {
         setLoading(false);
-        if (!payments || payments.length === 0) {
-          setPayments(DEFAULT_DRIVER_PAYMENTS);
-        }
       });
   };
 

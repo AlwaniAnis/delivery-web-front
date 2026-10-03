@@ -12,4 +12,5 @@ export const ENDPOINTS = {
   DepotAgent: "DepotAgent",
   Tarif: "Tarif",
   DriverPayment: "DriverPayment",
+  Reclamation: "Reclamation",
 };

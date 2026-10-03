@@ -95,17 +95,12 @@ export default function DepotAgents() {
       .fetchAll()
       .then((res) => {
         const list = res.data?.data || res.data;
-        if (Array.isArray(list) && list.length > 0) {
+        if (Array.isArray(list)) {
           persistAgents(list);
-        } else if (!agents || agents.length === 0) {
-          persistAgents(DEFAULT_DEPOT_AGENTS);
         }
         setState((prev) => ({ ...prev, loading: false }));
       })
       .catch(() => {
-        if (!agents || agents.length === 0) {
-          persistAgents(DEFAULT_DEPOT_AGENTS);
-        }
         setState((prev) => ({ ...prev, loading: false }));
       });
   };
@@ -478,36 +473,6 @@ export default function DepotAgents() {
                 }}
               >
                 <FaUserPlus size={11} /> {v}
-              </button>
-            ),
-          },
-          {
-            label: "Console Dépôt",
-            action: (dataKey) => {
-              const m = agents.find((el) => el.id === dataKey);
-              if (m) {
-                setCurrentDepotId(Number(m.preparationPlaceId || m.depotId || 1));
-              }
-              history.push("/depot_agent");
-            },
-            render: (v) => (
-              <button
-                style={{
-                  color: "#b45309",
-                  padding: "6px 10px",
-                  fontSize: "12px",
-                  background: "#fffbeb",
-                  border: "1px solid #fde68a",
-                  borderRadius: "6px",
-                  fontWeight: 700,
-                  cursor: "pointer",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "4px",
-                  marginLeft: "6px",
-                }}
-              >
-                <FaExternalLinkAlt size={10} /> {v}
               </button>
             ),
           },

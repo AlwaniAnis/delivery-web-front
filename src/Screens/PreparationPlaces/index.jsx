@@ -376,31 +376,15 @@ export default function PreparationPlaces() {
     setLoading(true);
     APi.createAPIEndpoint(APi.ENDPOINTS.PreparationPlace + "/getAll")
       .fetchAll()
-      .then(async (res) => {
+      .then((res) => {
         setLoading(false);
-        if (Array.isArray(res.data) && res.data.length > 0) {
-          setDepots(res.data);
-        } else {
-          setDepots(REAL_DEFAULT_DEPOTS);
-          for (const item of REAL_DEFAULT_DEPOTS) {
-            try {
-              await APi.createAPIEndpoint(APi.ENDPOINTS.PreparationPlace).create({
-                name: item.name,
-                code: item.code,
-                address: item.address,
-                phone: item.phone,
-                latitude: item.latitude,
-                longitude: item.longitude,
-                isActive: true,
-                remark: item.remark,
-              });
-            } catch (e) {}
-          }
+        const list = res.data?.data || res.data;
+        if (Array.isArray(list)) {
+          setDepots(list);
         }
       })
       .catch(() => {
         setLoading(false);
-        setDepots(REAL_DEFAULT_DEPOTS);
       });
   };
 

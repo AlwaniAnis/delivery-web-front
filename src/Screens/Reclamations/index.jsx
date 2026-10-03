@@ -1,0 +1,1221 @@
+import React, { useEffect, useState } from "react";
+import { useRecoilState, useRecoilValue } from "recoil";
+import { Button, Input, Modal, SelectPicker, Loader } from "rsuite";
+import Swal from "sweetalert2";
+import moment from "moment";
+import {
+  FaCommentDots,
+  FaPlus,
+  FaReply,
+  FaStore,
+  FaBoxOpen,
+  FaCheckCircle,
+  FaClock,
+  FaExclamationCircle,
+  FaSearch,
+  FaPaperPlane,
+  FaTrash,
+  FaUserShield,
+  FaFilter,
+} from "react-icons/fa";
+import { APi } from "../../Api";
+import { reclamationsState } from "../../Atoms/reclamations.atom";
+import { MyStore } from "../../Atoms/store.atom";
+import { StoresList } from "../../Atoms/stores.atom";
+import { activeRoleState, currentUserState, normalizeRole } from "../../Atoms/auth.atom";
+
+const RECLAMATION_CATEGORIES = [
+  { label: "Retard de livraison", value: "Retard de livraison" },
+  { label: "Montant / Encaissement COD", value: "Montant / Encaissement COD" },
+  { label: "Colis endommagé ou perdu", value: "Colis endommagé ou perdu" },
+  { label: "Modification adresse / téléphone client", value: "Modification Destinataire" },
+  { label: "Demande de retour colis", value: "Demande de retour colis" },
+  { label: "Autre réclamation", value: "Autre" },
+];
+
+const RECLAMATION_PRIORITIES = [
+  { label: "Normale", value: "Normale" },
+  { label: "Haute", value: "Haute" },
+  { label: "Urgente", value: "Urgente" },
+];
+
+const RECLAMATION_STATUSES = [
+  { value: 1, label: "En attente", bg: "#fef3c7", color: "#92400e", border: "#fde68a" },
+  { value: 2, label: "En cours de traitement", bg: "#e0e7ff", color: "#3730a3", border: "#c7d2fe" },
+  { value: 3, label: "Répondue / Résolue", bg: "#dcfce7", color: "#166534", border: "#bbf7d0" },
+  { value: 4, label: "Clôturée", bg: "#f1f5f9", color: "#475569", border: "#cbd5e1" },
+];
+
+export default function Reclamations() {
+  const [reclamations, setReclamations] = useRecoilState(reclamationsState);
+  const currentStore = useRecoilValue(MyStore);
+  const storesList = useRecoilValue(StoresList);
+  const activeRole = useRecoilValue(activeRoleState);
+  const currentUser = useRecoilValue(currentUserState);
+
+  const normalizedRole = normalizeRole(activeRole);
+  const isB2B = normalizedRole === "B2Bclient";
+  const isAdmin = !isB2B && normalizedRole === "admin";
+
+  const activeStoreId = Number(
+    currentStore?.id || currentUser?.storeId || currentUser?.eStoreId || 0
+  );
+
+  const [loading, setLoading] = useState(false);
+  const [deliveries, setDeliveries] = useState([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState(0);
+  const [storeFilter, setStoreFilter] = useState(isB2B ? activeStoreId : 0);
+
+  // Create Modal (Store or Admin)
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [formError, setFormError] = useState("");
+  const [newRec, setNewRec] = useState({
+    storeId: activeStoreId || storesList[0]?.id || 1,
+    deliveryId: null,
+    category: "Retard de livraison",
+    priority: "Normale",
+    subject: "",
+    message: "",
+  });
+
+  // Detail & Reply Modal (Admin replies / Store views & follows up)
+  const [selectedRec, setSelectedRec] = useState(null);
+  const [replyText, setReplyText] = useState("");
+  const [replyStatus, setReplyStatus] = useState(3);
+  const [submittingReply, setSubmittingReply] = useState(false);
+
+  const persistReclamations = (nextList) => {
+    setReclamations(nextList);
+    try {
+      localStorage.setItem("tawsil_reclamations", JSON.stringify(nextList));
+    } catch (e) {}
+  };
+
+  // Fetch Reclamations from API
+  const fetchReclamations = () => {
+    setLoading(true);
+    const params = {};
+    if (isB2B && activeStoreId) {
+      params.storeId = activeStoreId;
+    } else if (storeFilter) {
+      params.storeId = storeFilter;
+    }
+
+    APi.createAPIEndpoint(APi.ENDPOINTS.Reclamation, params)
+      .fetchAll()
+      .then((res) => {
+        setLoading(false);
+        const list = res.data?.data || res.data;
+        if (Array.isArray(list)) {
+          persistReclamations(list);
+        }
+      })
+      .catch(() => {
+        setLoading(false);
+      });
+  };
+
+  // Load Store's Deliveries so Store can link a parcel to a reclamation
+  const fetchStoreDeliveries = () => {
+    const query = { page: 1, take: 200 };
+    if (isB2B && activeStoreId) {
+      query.storeId = activeStoreId;
+    }
+    APi.createAPIEndpoint(APi.ENDPOINTS.Delivery, query)
+      .fetchAll()
+      .then((res) => {
+        const list = res.data?.data || res.data;
+        if (Array.isArray(list)) {
+          setDeliveries(list);
+        }
+      })
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    fetchReclamations();
+    fetchStoreDeliveries();
+  }, [activeStoreId, isB2B]);
+
+  // Create a new Reclamation
+  const handleCreateReclamation = () => {
+    if (!newRec.subject.trim()) {
+      setFormError("Veuillez saisir l'objet de la réclamation.");
+      return;
+    }
+    if (!newRec.message.trim()) {
+      setFormError("Veuillez décrire votre réclamation en détail.");
+      return;
+    }
+
+    const targetStoreId = isB2B
+      ? activeStoreId || currentStore?.id || 1
+      : Number(newRec.storeId || activeStoreId || storesList[0]?.id || 1);
+
+    const matchedStore =
+      storesList.find((s) => Number(s.id) === Number(targetStoreId)) || currentStore;
+    const storeName =
+      matchedStore?.name_fr ||
+      matchedStore?.name ||
+      currentUser?.fullName ||
+      `Boutique #${targetStoreId}`;
+
+    const matchedDelivery = deliveries.find(
+      (d) => Number(d.id) === Number(newRec.deliveryId)
+    );
+
+    const payload = {
+      storeId: targetStoreId,
+      eStoreId: targetStoreId,
+      storeName,
+      deliveryId: newRec.deliveryId || null,
+      deliveryCode: matchedDelivery?.qrCodeContent || matchedDelivery?.code || (newRec.deliveryId ? `#${newRec.deliveryId}` : null),
+      customerName: matchedDelivery?.customer?.fullName || null,
+      customerPhone: matchedDelivery?.customer?.phoneNumber || null,
+      category: newRec.category || "Autre",
+      priority: newRec.priority || "Normale",
+      subject: newRec.subject.trim(),
+      message: newRec.message.trim(),
+      status: 1, // En attente
+      adminReply: "",
+      createdDate: new Date().toISOString(),
+      replies: [
+        {
+          id: Date.now(),
+          senderRole: isB2B ? "store" : "admin",
+          senderName: storeName,
+          text: newRec.message.trim(),
+          date: new Date().toISOString(),
+        },
+      ],
+    };
+
+    APi.createAPIEndpoint(APi.ENDPOINTS.Reclamation)
+      .create(payload)
+      .then((res) => {
+        const created = res.data?.id ? { ...payload, ...res.data } : { ...payload, id: Date.now() };
+        persistReclamations([created, ...reclamations]);
+        setCreateModalOpen(false);
+        setFormError("");
+        setNewRec({
+          storeId: activeStoreId || storesList[0]?.id || 1,
+          deliveryId: null,
+          category: "Retard de livraison",
+          priority: "Normale",
+          subject: "",
+          message: "",
+        });
+        Swal.fire({
+          position: "top-end",
+          icon: "success",
+          title: "Réclamation envoyée avec succès !",
+          showConfirmButton: false,
+          timer: 1800,
+        });
+      })
+      .catch(() => {
+        const created = { ...payload, id: Date.now() };
+        persistReclamations([created, ...reclamations]);
+        setCreateModalOpen(false);
+        setFormError("");
+        setNewRec({
+          storeId: activeStoreId || storesList[0]?.id || 1,
+          deliveryId: null,
+          category: "Retard de livraison",
+          priority: "Normale",
+          subject: "",
+          message: "",
+        });
+        Swal.fire({
+          position: "top-end",
+          icon: "success",
+          title: "Réclamation enregistrée et transmise à l'administration !",
+          showConfirmButton: false,
+          timer: 1800,
+        });
+      });
+  };
+
+  // Open Reclamation Thread / Reply Modal
+  const openReclamationModal = (rec) => {
+    setSelectedRec(rec);
+    setReplyText("");
+    setReplyStatus(isAdmin ? (rec.status === 1 ? 3 : rec.status || 3) : rec.status || 1);
+  };
+
+  // Submit Reply (Admin official reply OR Store follow-up message)
+  const handleSendReply = () => {
+    if (!selectedRec) return;
+    if (!replyText.trim() && (!isAdmin || replyStatus === selectedRec.status)) {
+      Swal.fire("Attention", "Veuillez saisir un message de réponse.", "warning");
+      return;
+    }
+
+    setSubmittingReply(true);
+    const nowIso = new Date().toISOString();
+    const newReplyMsg = replyText.trim()
+      ? {
+          id: Date.now(),
+          senderRole: isAdmin ? "admin" : "store",
+          senderName: isAdmin
+            ? currentUser?.fullName || "Administration Tawsil"
+            : selectedRec.storeName || currentStore?.name_fr || "Boutique",
+          text: replyText.trim(),
+          date: nowIso,
+        }
+      : null;
+
+    const updatedReplies = newReplyMsg
+      ? [...(selectedRec.replies || []), newReplyMsg]
+      : selectedRec.replies || [];
+
+    const nextStatus = isAdmin ? Number(replyStatus || 3) : selectedRec.status === 3 ? 2 : selectedRec.status;
+
+    const updatedRec = {
+      ...selectedRec,
+      status: nextStatus,
+      adminReply: isAdmin && replyText.trim() ? replyText.trim() : selectedRec.adminReply,
+      repliedAt: isAdmin && replyText.trim() ? nowIso : selectedRec.repliedAt,
+      repliedBy: isAdmin ? currentUser?.fullName || "Admin" : selectedRec.repliedBy,
+      replies: updatedReplies,
+      updatedDate: nowIso,
+    };
+
+    const finalizeLocalUpdate = () => {
+      setSubmittingReply(false);
+      const nextList = reclamations.map((r) =>
+        r.id === selectedRec.id ? updatedRec : r
+      );
+      persistReclamations(nextList);
+      setSelectedRec(updatedRec);
+      setReplyText("");
+      Swal.fire({
+        position: "top-end",
+        icon: "success",
+        title: isAdmin
+          ? "Réponse envoyée à la boutique !"
+          : "Message ajouté à la réclamation !",
+        showConfirmButton: false,
+        timer: 1600,
+      });
+    };
+
+    APi.createAPIEndpoint(APi.ENDPOINTS.Reclamation)
+      .update(selectedRec.id, updatedRec)
+      .then(() => finalizeLocalUpdate())
+      .catch(() => finalizeLocalUpdate());
+  };
+
+  // Delete Reclamation
+  const handleDelete = (rec, e) => {
+    if (e) e.stopPropagation();
+    Swal.fire({
+      title: "Supprimer cette réclamation ?",
+      text: `Objet : "${rec.subject}"`,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#dc2626",
+      cancelButtonColor: "#64748b",
+      confirmButtonText: "Oui, supprimer",
+      cancelButtonText: "Annuler",
+    }).then((res) => {
+      if (res.isConfirmed) {
+        APi.createAPIEndpoint(APi.ENDPOINTS.Reclamation)
+          .delete(rec.id)
+          .then(() => {
+            persistReclamations(reclamations.filter((r) => r.id !== rec.id));
+            if (selectedRec?.id === rec.id) setSelectedRec(null);
+            Swal.fire("Supprimée", "La réclamation a été supprimée.", "success");
+          })
+          .catch(() => {
+            persistReclamations(reclamations.filter((r) => r.id !== rec.id));
+            if (selectedRec?.id === rec.id) setSelectedRec(null);
+            Swal.fire("Supprimée", "La réclamation a été retirée.", "success");
+          });
+      }
+    });
+  };
+
+  // Filter Reclamations for current role
+  const roleScopedReclamations = reclamations.filter((r) => {
+    if (isB2B && activeStoreId) {
+      return Number(r.storeId || r.eStoreId) === Number(activeStoreId);
+    }
+    if (isAdmin && storeFilter) {
+      return Number(r.storeId || r.eStoreId) === Number(storeFilter);
+    }
+    return true;
+  });
+
+  const filteredReclamations = roleScopedReclamations.filter((r) => {
+    if (statusFilter && Number(r.status) !== Number(statusFilter)) return false;
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase().trim();
+    const subj = (r.subject || "").toLowerCase();
+    const msg = (r.message || "").toLowerCase();
+    const code = (r.deliveryCode || "").toLowerCase();
+    const sName = (r.storeName || "").toLowerCase();
+    const cat = (r.category || "").toLowerCase();
+    return (
+      subj.includes(q) ||
+      msg.includes(q) ||
+      code.includes(q) ||
+      sName.includes(q) ||
+      cat.includes(q)
+    );
+  });
+
+  // KPIs
+  const totalCount = roleScopedReclamations.length;
+  const pendingCount = roleScopedReclamations.filter((r) => Number(r.status) === 1).length;
+  const inProgressCount = roleScopedReclamations.filter((r) => Number(r.status) === 2).length;
+  const resolvedCount = roleScopedReclamations.filter(
+    (r) => Number(r.status) === 3 || Number(r.status) === 4
+  ).length;
+
+  return (
+    <div style={{ padding: "16px", maxWidth: "1450px", margin: "0 auto" }}>
+      {/* Top Header Banner */}
+      <div
+        style={{
+          background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
+          color: "#fff",
+          borderRadius: "16px",
+          padding: "22px 24px",
+          marginBottom: "20px",
+          display: "flex",
+          flexWrap: "wrap",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: "16px",
+          boxShadow: "0 10px 25px -5px rgba(15, 23, 42, 0.3)",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+          <div
+            style={{
+              background: "linear-gradient(135deg, #4f46e5 0%, #2563eb 100%)",
+              width: "50px",
+              height: "50px",
+              borderRadius: "14px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "22px",
+              boxShadow: "0 4px 14px rgba(79, 70, 229, 0.4)",
+            }}
+          >
+            <FaCommentDots />
+          </div>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+              <h2 style={{ margin: 0, fontSize: "1.35rem", fontWeight: 800, color: "#fff" }}>
+                {isB2B
+                  ? "Mes Réclamations & Support Boutique"
+                  : "Gestion des Réclamations Boutiques"}
+              </h2>
+              <span
+                style={{
+                  background: isB2B ? "#2563eb" : "#7c3aed",
+                  color: "#fff",
+                  fontSize: "0.74rem",
+                  padding: "3px 10px",
+                  borderRadius: "20px",
+                  fontWeight: 700,
+                }}
+              >
+                {isB2B ? "Espace Boutique Partenaire" : "Support & Réponses Admin"}
+              </span>
+            </div>
+            <p style={{ margin: "4px 0 0", fontSize: "0.85rem", color: "#94a3b8" }}>
+              {isB2B
+                ? "Soumettez vos réclamations concernant vos colis ou encaissements et consultez les réponses de l'administration"
+                : "Consultez les réclamations envoyées par les boutiques partenaires et répondez directement à chaque demande"}
+            </p>
+          </div>
+        </div>
+
+        <Button
+          appearance="primary"
+          onClick={() => {
+            setFormError("");
+            setCreateModalOpen(true);
+          }}
+          style={{
+            background: "linear-gradient(135deg, #4f46e5 0%, #2563eb 100%)",
+            fontWeight: 800,
+            borderRadius: "10px",
+            padding: "10px 18px",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "8px",
+            boxShadow: "0 4px 12px rgba(37, 99, 235, 0.35)",
+          }}
+        >
+          <FaPlus /> Nouvelle Réclamation
+        </Button>
+      </div>
+
+      {/* KPI Summary Cards */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          gap: "14px",
+          marginBottom: "20px",
+        }}
+      >
+        <div
+          style={{
+            background: "#fff",
+            borderRadius: "14px",
+            border: "1px solid #e2e8f0",
+            padding: "16px 18px",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748b" }}>
+              TOTAL RÉCLAMATIONS
+            </span>
+            <FaCommentDots style={{ color: "#4f46e5" }} />
+          </div>
+          <div style={{ fontSize: "1.6rem", fontWeight: 900, color: "#0f172a", marginTop: "6px" }}>
+            {totalCount}
+          </div>
+          <small style={{ color: "#64748b", fontSize: "0.74rem" }}>
+            Tickets enregistrés
+          </small>
+        </div>
+
+        <div
+          style={{
+            background: "#fff",
+            borderRadius: "14px",
+            border: "1px solid #fde68a",
+            padding: "16px 18px",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#b45309" }}>
+              EN ATTENTE DE RÉPONSE
+            </span>
+            <FaClock style={{ color: "#d97706" }} />
+          </div>
+          <div style={{ fontSize: "1.6rem", fontWeight: 900, color: "#b45309", marginTop: "6px" }}>
+            {pendingCount}
+          </div>
+          <small style={{ color: "#b45309", fontSize: "0.74rem", fontWeight: 600 }}>
+            À traiter en priorité
+          </small>
+        </div>
+
+        <div
+          style={{
+            background: "#fff",
+            borderRadius: "14px",
+            border: "1px solid #c7d2fe",
+            padding: "16px 18px",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#3730a3" }}>
+              EN COURS DE TRAITEMENT
+            </span>
+            <FaExclamationCircle style={{ color: "#4f46e5" }} />
+          </div>
+          <div style={{ fontSize: "1.6rem", fontWeight: 900, color: "#3730a3", marginTop: "6px" }}>
+            {inProgressCount}
+          </div>
+          <small style={{ color: "#4338ca", fontSize: "0.74rem" }}>
+            Pris en charge par le support
+          </small>
+        </div>
+
+        <div
+          style={{
+            background: "#fff",
+            borderRadius: "14px",
+            border: "1px solid #bbf7d0",
+            padding: "16px 18px",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#15803d" }}>
+              RÉPONDUES & RÉSOLUES
+            </span>
+            <FaCheckCircle style={{ color: "#16a34a" }} />
+          </div>
+          <div style={{ fontSize: "1.6rem", fontWeight: 900, color: "#15803d", marginTop: "6px" }}>
+            {resolvedCount}
+          </div>
+          <small style={{ color: "#15803d", fontSize: "0.74rem", fontWeight: 600 }}>
+            Réponse transmise à la boutique
+          </small>
+        </div>
+      </div>
+
+      {/* Filter Bar */}
+      <div
+        style={{
+          background: "#fff",
+          borderRadius: "14px",
+          border: "1px solid #e2e8f0",
+          padding: "14px 18px",
+          marginBottom: "18px",
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "12px",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "center", flex: 1 }}>
+          <div style={{ position: "relative", minWidth: "250px", flex: 1 }}>
+            <FaSearch
+              style={{
+                position: "absolute",
+                left: "12px",
+                top: "50%",
+                transform: "translateY(-50%)",
+                color: "#94a3b8",
+              }}
+            />
+            <Input
+              placeholder="Rechercher par sujet, code colis, catégorie, boutique..."
+              value={searchQuery}
+              onChange={(val) => setSearchQuery(val)}
+              style={{ paddingLeft: "34px", borderRadius: "8px" }}
+            />
+          </div>
+
+          {isAdmin && (
+            <SelectPicker
+              data={[{ label: "Toutes les Boutiques", value: 0 }].concat(
+                storesList.map((s) => ({
+                  label: s.name_fr || s.name || `Boutique #${s.id}`,
+                  value: s.id,
+                }))
+              )}
+              value={storeFilter}
+              onChange={(val) => setStoreFilter(val || 0)}
+              cleanable={false}
+              style={{ width: "220px" }}
+            />
+          )}
+
+          <SelectPicker
+            data={[
+              { label: "Tous les statuts", value: 0 },
+              ...RECLAMATION_STATUSES.map((st) => ({
+                label: st.label,
+                value: st.value,
+              })),
+            ]}
+            value={statusFilter}
+            onChange={(val) => setStatusFilter(val || 0)}
+            cleanable={false}
+            searchable={false}
+            style={{ width: "200px" }}
+          />
+        </div>
+      </div>
+
+      {/* Reclamations Table / List */}
+      <div
+        style={{
+          background: "#fff",
+          borderRadius: "14px",
+          border: "1px solid #e2e8f0",
+          overflow: "hidden",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.02)",
+        }}
+      >
+        {loading ? (
+          <div style={{ padding: "50px 20px", textAlign: "center" }}>
+            <Loader size="md" content="Chargement des réclamations..." />
+          </div>
+        ) : filteredReclamations.length === 0 ? (
+          <div style={{ padding: "50px 20px", textAlign: "center", color: "#64748b" }}>
+            <FaCommentDots size={38} style={{ color: "#cbd5e1", marginBottom: "10px" }} />
+            <div style={{ fontWeight: 700, fontSize: "0.95rem", color: "#334155" }}>
+              Aucune réclamation trouvée
+            </div>
+            <p style={{ margin: "4px 0 0", fontSize: "0.82rem" }}>
+              {isB2B
+                ? "Cliquez sur « Nouvelle Réclamation » pour contacter l'administration."
+                : "Aucune réclamation boutique ne correspond aux critères sélectionnés."}
+            </p>
+          </div>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+              <thead>
+                <tr style={{ background: "#f8fafc", borderBottom: "2px solid #e2e8f0" }}>
+                  <th style={{ padding: "12px 16px", fontSize: "0.78rem", fontWeight: 800, color: "#475569" }}>
+                    DATE & BOUTIQUE
+                  </th>
+                  <th style={{ padding: "12px 16px", fontSize: "0.78rem", fontWeight: 800, color: "#475569" }}>
+                    CATÉGORIE & COLIS LIÉ
+                  </th>
+                  <th style={{ padding: "12px 16px", fontSize: "0.78rem", fontWeight: 800, color: "#475569" }}>
+                    SUJET & MESSAGE
+                  </th>
+                  <th style={{ padding: "12px 16px", fontSize: "0.78rem", fontWeight: 800, color: "#475569" }}>
+                    RÉPONSE ADMIN
+                  </th>
+                  <th style={{ padding: "12px 16px", fontSize: "0.78rem", fontWeight: 800, color: "#475569" }}>
+                    STATUT
+                  </th>
+                  <th style={{ padding: "12px 16px", fontSize: "0.78rem", fontWeight: 800, color: "#475569", textAlign: "right" }}>
+                    ACTIONS
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredReclamations.map((rec, idx) => {
+                  const st =
+                    RECLAMATION_STATUSES.find((s) => s.value === Number(rec.status)) ||
+                    RECLAMATION_STATUSES[0];
+                  const hasReply = Boolean(rec.adminReply?.trim());
+
+                  return (
+                    <tr
+                      key={rec.id || idx}
+                      onClick={() => openReclamationModal(rec)}
+                      style={{
+                        borderBottom: "1px solid #f1f5f9",
+                        cursor: "pointer",
+                        background: idx % 2 === 0 ? "#ffffff" : "#fbfcfe",
+                      }}
+                    >
+                      {/* Date & Store */}
+                      <td style={{ padding: "14px 16px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px", fontWeight: 800, color: "#0f172a", fontSize: "0.86rem" }}>
+                          <FaStore style={{ color: "#2563eb" }} size={12} />
+                          <span>{rec.storeName || `Boutique #${rec.storeId || 1}`}</span>
+                        </div>
+                        <div style={{ fontSize: "0.74rem", color: "#64748b", marginTop: "2px" }}>
+                          {rec.createdDate
+                            ? moment(rec.createdDate).format("DD/MM/YYYY à HH:mm")
+                            : "Aujourd'hui"}
+                        </div>
+                      </td>
+
+                      {/* Category & Linked Delivery */}
+                      <td style={{ padding: "14px 16px" }}>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                          <span
+                            style={{
+                              background: "#eff6ff",
+                              color: "#1d4ed8",
+                              border: "1px solid #bfdbfe",
+                              padding: "2px 8px",
+                              borderRadius: "6px",
+                              fontSize: "0.74rem",
+                              fontWeight: 700,
+                              width: "fit-content",
+                            }}
+                          >
+                            {rec.category || "Réclamation"}
+                          </span>
+                          {rec.deliveryCode && (
+                            <span
+                              style={{
+                                fontFamily: "monospace",
+                                fontSize: "0.75rem",
+                                fontWeight: 700,
+                                color: "#334155",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "4px",
+                              }}
+                            >
+                              <FaBoxOpen size={11} style={{ color: "#4f46e5" }} />
+                              Colis: {rec.deliveryCode}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Subject & Message */}
+                      <td style={{ padding: "14px 16px", maxWidth: "320px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                          <span style={{ fontWeight: 800, color: "#0f172a", fontSize: "0.88rem" }}>
+                            {rec.subject}
+                          </span>
+                          {rec.priority === "Urgente" && (
+                            <span
+                              style={{
+                                background: "#fee2e2",
+                                color: "#dc2626",
+                                fontSize: "0.66rem",
+                                fontWeight: 800,
+                                padding: "1px 6px",
+                                borderRadius: "4px",
+                              }}
+                            >
+                              URGENT
+                            </span>
+                          )}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: "0.78rem",
+                            color: "#475569",
+                            marginTop: "3px",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {rec.message}
+                        </div>
+                      </td>
+
+                      {/* Admin Reply Preview */}
+                      <td style={{ padding: "14px 16px", maxWidth: "280px" }}>
+                        {hasReply ? (
+                          <div
+                            style={{
+                              background: "#f0fdf4",
+                              border: "1px solid #bbf7d0",
+                              borderRadius: "8px",
+                              padding: "6px 10px",
+                              fontSize: "0.78rem",
+                              color: "#166534",
+                            }}
+                          >
+                            <div style={{ fontWeight: 800, fontSize: "0.7rem", marginBottom: "2px", display: "flex", alignItems: "center", gap: "4px" }}>
+                              <FaUserShield size={10} /> Réponse Admin :
+                            </div>
+                            <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {rec.adminReply}
+                            </div>
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: "0.76rem", color: "#94a3b8", fontStyle: "italic" }}>
+                            En attente de réponse...
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Status Badge */}
+                      <td style={{ padding: "14px 16px" }}>
+                        <span
+                          style={{
+                            background: st.bg,
+                            color: st.color,
+                            border: `1px solid ${st.border}`,
+                            padding: "4px 10px",
+                            borderRadius: "20px",
+                            fontSize: "0.75rem",
+                            fontWeight: 800,
+                            display: "inline-block",
+                          }}
+                        >
+                          {st.label}
+                        </span>
+                      </td>
+
+                      {/* Actions */}
+                      <td style={{ padding: "14px 16px", textAlign: "right" }}>
+                        <div
+                          style={{ display: "inline-flex", gap: "6px", alignItems: "center" }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <button
+                            onClick={() => openReclamationModal(rec)}
+                            style={{
+                              background: isAdmin ? "#4f46e5" : "#eff6ff",
+                              color: isAdmin ? "#ffffff" : "#1d4ed8",
+                              border: isAdmin ? "none" : "1px solid #bfdbfe",
+                              borderRadius: "8px",
+                              padding: "6px 12px",
+                              fontSize: "0.78rem",
+                              fontWeight: 700,
+                              cursor: "pointer",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "5px",
+                            }}
+                          >
+                            <FaReply size={11} />
+                            {isAdmin ? "Répondre" : "Consulter"}
+                          </button>
+
+                          <button
+                            onClick={(e) => handleDelete(rec, e)}
+                            style={{
+                              background: "#fef2f2",
+                              color: "#dc2626",
+                              border: "1px solid #fecaca",
+                              borderRadius: "8px",
+                              padding: "6px 8px",
+                              cursor: "pointer",
+                            }}
+                            title="Supprimer"
+                          >
+                            <FaTrash size={11} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* MODAL 1: CREATE NEW RECLAMATION */}
+      <Modal
+        size="md"
+        open={createModalOpen}
+        onClose={() => setCreateModalOpen(false)}
+      >
+        <Modal.Header>
+          <Modal.Title style={{ fontWeight: 800 }}>
+            Nouvelle Réclamation Boutique
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+            {isAdmin && (
+              <div>
+                <label style={{ fontWeight: 700, fontSize: "0.82rem", color: "#334155", marginBottom: "4px", display: "block" }}>
+                  Boutique Concernée * :
+                </label>
+                <SelectPicker
+                  data={storesList.map((s) => ({
+                    label: s.name_fr || s.name || `Boutique #${s.id}`,
+                    value: s.id,
+                  }))}
+                  block
+                  value={newRec.storeId}
+                  onChange={(val) => setNewRec((prev) => ({ ...prev, storeId: val }))}
+                />
+              </div>
+            )}
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+              <div>
+                <label style={{ fontWeight: 700, fontSize: "0.82rem", color: "#334155", marginBottom: "4px", display: "block" }}>
+                  Catégorie de Réclamation * :
+                </label>
+                <SelectPicker
+                  data={RECLAMATION_CATEGORIES}
+                  block
+                  cleanable={false}
+                  searchable={false}
+                  value={newRec.category}
+                  onChange={(val) => setNewRec((prev) => ({ ...prev, category: val }))}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontWeight: 700, fontSize: "0.82rem", color: "#334155", marginBottom: "4px", display: "block" }}>
+                  Priorité :
+                </label>
+                <SelectPicker
+                  data={RECLAMATION_PRIORITIES}
+                  block
+                  cleanable={false}
+                  searchable={false}
+                  value={newRec.priority}
+                  onChange={(val) => setNewRec((prev) => ({ ...prev, priority: val }))}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label style={{ fontWeight: 700, fontSize: "0.82rem", color: "#334155", marginBottom: "4px", display: "block" }}>
+                Colis / Livraison Concerné(e) (Optionnel) :
+              </label>
+              <SelectPicker
+                data={[{ label: "— Réclamation générale (Aucun colis spécifique) —", value: null }].concat(
+                  deliveries.map((d) => ({
+                    label: `#${d.qrCodeContent || d.id} — ${d.customer?.fullName || "Client"} (${d.customer?.phoneNumber || "—"})`,
+                    value: d.id,
+                  }))
+                )}
+                block
+                searchable={true}
+                placeholder="Sélectionner un colis..."
+                value={newRec.deliveryId}
+                onChange={(val) => setNewRec((prev) => ({ ...prev, deliveryId: val }))}
+              />
+            </div>
+
+            <div>
+              <label style={{ fontWeight: 700, fontSize: "0.82rem", color: "#334155", marginBottom: "4px", display: "block" }}>
+                Objet / Sujet de la Réclamation * :
+              </label>
+              <Input
+                placeholder="Ex: Retard de livraison sur le colis #1045, Changement de numéro client..."
+                value={newRec.subject}
+                onChange={(val) => setNewRec((prev) => ({ ...prev, subject: val }))}
+              />
+            </div>
+
+            <div>
+              <label style={{ fontWeight: 700, fontSize: "0.82rem", color: "#334155", marginBottom: "4px", display: "block" }}>
+                Description Détaillée * :
+              </label>
+              <Input
+                as="textarea"
+                rows={4}
+                placeholder="Décrivez précisément votre demande ou le problème rencontré..."
+                value={newRec.message}
+                onChange={(val) => setNewRec((prev) => ({ ...prev, message: val }))}
+              />
+            </div>
+
+            {formError && (
+              <div
+                style={{
+                  background: "#fef2f2",
+                  border: "1px solid #fecaca",
+                  color: "#dc2626",
+                  padding: "8px 12px",
+                  borderRadius: "8px",
+                  fontSize: "0.8rem",
+                  fontWeight: 600,
+                }}
+              >
+                {formError}
+              </div>
+            )}
+          </div>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button onClick={() => setCreateModalOpen(false)} appearance="subtle">
+            Annuler
+          </Button>
+          <Button
+            onClick={handleCreateReclamation}
+            appearance="primary"
+            style={{ background: "#4f46e5", fontWeight: 700 }}
+          >
+            <FaPaperPlane style={{ marginRight: 6 }} /> Envoyer la Réclamation
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      {/* MODAL 2: VIEW & REPLY TO RECLAMATION */}
+      <Modal
+        size="md"
+        open={Boolean(selectedRec)}
+        onClose={() => setSelectedRec(null)}
+      >
+        <Modal.Header>
+          <Modal.Title style={{ fontWeight: 800 }}>
+            Détails & Suivi de la Réclamation
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {selectedRec && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+              {/* Header Info Box */}
+              <div
+                style={{
+                  background: "#f8fafc",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "12px",
+                  padding: "14px",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "10px", flexWrap: "wrap" }}>
+                  <div>
+                    <span
+                      style={{
+                        background: "#eff6ff",
+                        color: "#1d4ed8",
+                        fontSize: "0.72rem",
+                        fontWeight: 800,
+                        padding: "2px 8px",
+                        borderRadius: "6px",
+                      }}
+                    >
+                      {selectedRec.category}
+                    </span>
+                    <h4 style={{ margin: "6px 0 4px", fontSize: "1.05rem", fontWeight: 800, color: "#0f172a" }}>
+                      {selectedRec.subject}
+                    </h4>
+                    <div style={{ fontSize: "0.78rem", color: "#64748b" }}>
+                      Boutique : <strong style={{ color: "#1e293b" }}>{selectedRec.storeName}</strong> ·{" "}
+                      {selectedRec.createdDate
+                        ? moment(selectedRec.createdDate).format("DD/MM/YYYY HH:mm")
+                        : ""}
+                    </div>
+                  </div>
+
+                  {selectedRec.deliveryCode && (
+                    <div
+                      style={{
+                        background: "#fff",
+                        border: "1px solid #cbd5e1",
+                        borderRadius: "8px",
+                        padding: "6px 10px",
+                        fontSize: "0.78rem",
+                      }}
+                    >
+                      <div style={{ fontWeight: 800, color: "#4f46e5", fontFamily: "monospace" }}>
+                        Colis {selectedRec.deliveryCode}
+                      </div>
+                      {selectedRec.customerName && (
+                        <div style={{ fontSize: "0.72rem", color: "#475569" }}>
+                          {selectedRec.customerName} {selectedRec.customerPhone ? `(${selectedRec.customerPhone})` : ""}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Conversation Thread */}
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "10px",
+                  maxHeight: "280px",
+                  overflowY: "auto",
+                  padding: "4px",
+                }}
+              >
+                {(selectedRec.replies && selectedRec.replies.length > 0
+                  ? selectedRec.replies
+                  : [
+                      {
+                        id: 1,
+                        senderRole: "store",
+                        senderName: selectedRec.storeName || "Boutique",
+                        text: selectedRec.message,
+                        date: selectedRec.createdDate,
+                      },
+                      ...(selectedRec.adminReply
+                        ? [
+                            {
+                              id: 2,
+                              senderRole: "admin",
+                              senderName: selectedRec.repliedBy || "Administration",
+                              text: selectedRec.adminReply,
+                              date: selectedRec.repliedAt,
+                            },
+                          ]
+                        : []),
+                    ]
+                ).map((msg, mIdx) => {
+                  const fromAdmin = msg.senderRole === "admin";
+                  return (
+                    <div
+                      key={msg.id || mIdx}
+                      style={{
+                        alignSelf: fromAdmin ? "flex-end" : "flex-start",
+                        maxWidth: "88%",
+                        background: fromAdmin ? "#f0fdf4" : "#eff6ff",
+                        border: fromAdmin ? "1px solid #bbf7d0" : "1px solid #bfdbfe",
+                        borderRadius: "12px",
+                        padding: "10px 14px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          gap: "12px",
+                          marginBottom: "4px",
+                          fontSize: "0.72rem",
+                          fontWeight: 800,
+                          color: fromAdmin ? "#166534" : "#1e40af",
+                        }}
+                      >
+                        <span>
+                          {fromAdmin ? `🛡️ ${msg.senderName || "Administration"}` : `🏪 ${msg.senderName || "Boutique"}`}
+                        </span>
+                        <span style={{ fontWeight: 500, opacity: 0.75 }}>
+                          {msg.date ? moment(msg.date).format("DD/MM HH:mm") : ""}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: "0.85rem", color: "#0f172a", whiteSpace: "pre-wrap" }}>
+                        {msg.text}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Reply Input Box */}
+              <div
+                style={{
+                  background: "#f8fafc",
+                  border: "1px solid #cbd5e1",
+                  borderRadius: "12px",
+                  padding: "12px",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "10px",
+                }}
+              >
+                {isAdmin && (
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px" }}>
+                    <label style={{ fontSize: "0.8rem", fontWeight: 800, color: "#334155" }}>
+                      Mettre à jour le statut :
+                    </label>
+                    <SelectPicker
+                      data={RECLAMATION_STATUSES.map((st) => ({
+                        label: st.label,
+                        value: st.value,
+                      }))}
+                      cleanable={false}
+                      searchable={false}
+                      value={replyStatus}
+                      onChange={(val) => setReplyStatus(val)}
+                      style={{ width: "220px" }}
+                    />
+                  </div>
+                )}
+
+                <div>
+                  <label style={{ fontSize: "0.8rem", fontWeight: 800, color: "#334155", marginBottom: "4px", display: "block" }}>
+                    {isAdmin
+                      ? "Réponse de l'Administration à la Boutique :"
+                      : "Ajouter un message / précision :"}
+                  </label>
+                  <Input
+                    as="textarea"
+                    rows={3}
+                    placeholder={
+                      isAdmin
+                        ? "Saisissez votre réponse pour la boutique partenaire..."
+                        : "Ajouter un complément d'information..."
+                    }
+                    value={replyText}
+                    onChange={(val) => setReplyText(val)}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button onClick={() => setSelectedRec(null)} appearance="subtle">
+            Fermer
+          </Button>
+          <Button
+            onClick={handleSendReply}
+            loading={submittingReply}
+            appearance="primary"
+            style={{ background: "#059669", fontWeight: 700 }}
+          >
+            <FaReply style={{ marginRight: 6 }} />
+            {isAdmin ? "Envoyer la Réponse" : "Envoyer le Message"}
+          </Button>
+        </Modal.Footer>
+      </Modal>
+    </div>
+  );
+}
