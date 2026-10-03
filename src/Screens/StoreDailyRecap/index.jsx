@@ -34,6 +34,7 @@ import { MyStore } from "../../Atoms/store.atom";
 import { StoresList } from "../../Atoms/stores.atom";
 import { activeRoleState, currentUserState, normalizeRole } from "../../Atoms/auth.atom";
 import useB2B from "../../hooks/useB2B";
+import Swal from "sweetalert2";
 
 moment.locale("fr");
 
@@ -66,6 +67,67 @@ export default function StoreDailyRecap() {
   const [dayDeliveries, setDayDeliveries] = useState([]);
   const [loadingDayDetails, setLoadingDayDetails] = useState(false);
   const [dayDetailsSearch, setDayDetailsSearch] = useState("");
+
+  // Track which days have been marked as "Reçu" (amount picked up by the store from the depot)
+  const [receivedDaysMap, setReceivedDaysMap] = useState(() => {
+    try {
+      const saved = localStorage.getItem("tawsil_store_recap_received");
+      return saved ? JSON.parse(saved) : {};
+    } catch (e) {
+      return {};
+    }
+  });
+
+  const isDayReceived = (item) => {
+    if (item?.isReceived || item?.IsReceived || item?.state === "received" || item?.status === 2) {
+      return true;
+    }
+    const dayKey = `${selectedStoreId}_${moment(item?.day || item?.Day).format("YYYY-MM-DD")}`;
+    return Boolean(receivedDaysMap[dayKey]);
+  };
+
+  const handleMarkDayReceived = (item, e) => {
+    if (e) e.stopPropagation();
+    const dayDate = item?.day || item?.Day;
+    const dayStr = moment(dayDate).format("YYYY-MM-DD");
+    const formattedDate = moment(dayDate).format("DD/MM/YYYY");
+    const dayKey = `${selectedStoreId}_${dayStr}`;
+    const amountVal = Number(item?.totalPaid ?? item?.TotalPaid ?? item?.totalAmount ?? item?.TotalAmount) || 0;
+
+    APi.createAPIEndpoint(`${APi.ENDPOINTS.Store}/receiveRecapDay`)
+      .customPost({
+        storeId: selectedStoreId,
+        date: dayStr,
+        isReceived: true,
+      })
+      .catch(() => {});
+
+    const nextMap = { ...receivedDaysMap, [dayKey]: new Date().toISOString() };
+    setReceivedDaysMap(nextMap);
+    try {
+      localStorage.setItem("tawsil_store_recap_received", JSON.stringify(nextMap));
+    } catch (err) {}
+
+    setRecapDays((prev) =>
+      prev.map((d) =>
+        moment(d.day || d.Day).format("YYYY-MM-DD") === dayStr
+          ? { ...d, isReceived: true, state: "received" }
+          : d
+      )
+    );
+
+    if (selectedDay && moment(selectedDay.day || selectedDay.Day).format("YYYY-MM-DD") === dayStr) {
+      setSelectedDay((prev) => (prev ? { ...prev, isReceived: true, state: "received" } : prev));
+    }
+
+    Swal.fire({
+      icon: "success",
+      title: "Montant du Jour Reçu !",
+      html: `La boutique a confirmé la réception du montant du <b>${formattedDate}</b> (<b>${amountVal.toFixed(3)} TND</b>) auprès du dépôt.`,
+      timer: 2000,
+      showConfirmButton: false,
+    });
+  };
 
   // Sync selectedStoreId when currentStore or user changes
   useEffect(() => {
@@ -721,6 +783,9 @@ export default function StoreDailyRecap() {
                   <th style={{ padding: "12px 18px", fontSize: "0.8rem", fontWeight: 800, color: "#475569" }}>
                     TAUX RECOUVREMENT
                   </th>
+                  <th style={{ padding: "12px 18px", fontSize: "0.8rem", fontWeight: 800, color: "#475569" }}>
+                    ÉTAT RETRAIT DÉPÔT
+                  </th>
                   <th style={{ padding: "12px 18px", fontSize: "0.8rem", fontWeight: 800, color: "#475569", textAlign: "right" }}>
                     ACTIONS
                   </th>
@@ -736,6 +801,7 @@ export default function StoreDailyRecap() {
                   const due = Number(item.totalDue ?? item.TotalDue) || 0;
                   const count = Number(item.deliveriesCount ?? item.DeliveriesCount) || 0;
                   const rate = total > 0 ? Math.round((paid / total) * 100) : 0;
+                  const received = isDayReceived(item);
 
                   return (
                     <tr
@@ -870,29 +936,92 @@ export default function StoreDailyRecap() {
                         </div>
                       </td>
 
+                      {/* State: Reçu du Dépôt vs En attente */}
+                      <td style={{ padding: "14px 18px" }}>
+                        {received ? (
+                          <span
+                            style={{
+                              background: "#dcfce7",
+                              color: "#166534",
+                              border: "1px solid #bbf7d0",
+                              padding: "4px 10px",
+                              borderRadius: "20px",
+                              fontSize: "0.76rem",
+                              fontWeight: 800,
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "5px",
+                            }}
+                          >
+                            <FaCheckCircle size={11} /> Reçu du Dépôt
+                          </span>
+                        ) : (
+                          <span
+                            style={{
+                              background: "#fef3c7",
+                              color: "#92400e",
+                              border: "1px solid #fde68a",
+                              padding: "4px 10px",
+                              borderRadius: "20px",
+                              fontSize: "0.76rem",
+                              fontWeight: 700,
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "5px",
+                            }}
+                          >
+                            <FaClock size={11} /> En attente au Dépôt
+                          </span>
+                        )}
+                      </td>
+
                       {/* Action */}
                       <td style={{ padding: "14px 18px", textAlign: "right" }}>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openDayDetails(item);
-                          }}
-                          style={{
-                            background: "#eff6ff",
-                            color: "#1d4ed8",
-                            border: "1px solid #bfdbfe",
-                            borderRadius: "8px",
-                            padding: "6px 12px",
-                            fontSize: "0.78rem",
-                            fontWeight: 700,
-                            cursor: "pointer",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: "6px",
-                          }}
-                        >
-                          <FaEye size={12} /> Détails des Colis
-                        </button>
+                        <div style={{ display: "inline-flex", alignItems: "center", gap: "8px", justifyContent: "flex-end" }}>
+                          {!received && (
+                            <button
+                              onClick={(e) => handleMarkDayReceived(item, e)}
+                              style={{
+                                background: "#059669",
+                                color: "#ffffff",
+                                border: "none",
+                                borderRadius: "8px",
+                                padding: "6px 12px",
+                                fontSize: "0.78rem",
+                                fontWeight: 700,
+                                cursor: "pointer",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "5px",
+                                boxShadow: "0 2px 6px rgba(5, 150, 105, 0.25)",
+                              }}
+                              title="Confirmer que la boutique a récupéré le montant de ce jour auprès du dépôt"
+                            >
+                              <FaCheckCircle size={12} /> Reçu
+                            </button>
+                          )}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openDayDetails(item);
+                            }}
+                            style={{
+                              background: "#eff6ff",
+                              color: "#1d4ed8",
+                              border: "1px solid #bfdbfe",
+                              borderRadius: "8px",
+                              padding: "6px 12px",
+                              fontSize: "0.78rem",
+                              fontWeight: 700,
+                              cursor: "pointer",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "6px",
+                            }}
+                          >
+                            <FaEye size={12} /> Détails des Colis
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -1122,6 +1251,15 @@ export default function StoreDailyRecap() {
         </Modal.Body>
 
         <Modal.Footer>
+          {selectedDay && !isDayReceived(selectedDay) && (
+            <Button
+              onClick={(e) => handleMarkDayReceived(selectedDay, e)}
+              appearance="primary"
+              style={{ background: "#059669", fontWeight: 700, marginRight: "8px" }}
+            >
+              <FaCheckCircle style={{ marginRight: 6 }} /> Marquer Reçu du Dépôt
+            </Button>
+          )}
           <Button onClick={() => window.print()} appearance="primary">
             <FaPrint style={{ marginRight: 6 }} /> Imprimer le Récapitulatif du Jour
           </Button>

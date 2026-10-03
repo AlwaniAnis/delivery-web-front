@@ -6,6 +6,8 @@ import { APi } from "../../Api/";
 import { exportAddAtom } from "../../Atoms/exportAdd.atom";
 import { DriversList } from "../../Atoms/drivers.atom";
 import { StoresList } from "../../Atoms/stores.atom";
+import { DepotAgentsList } from "../../Atoms/depotAgents.atom";
+import { preparationPlacesState } from "../../Atoms/preparationPlaces.atom";
 import ExportAdd from "../../Components/Common/ExportAdd";
 import Grid from "../../Components/Grid";
 import AddEdit from "./AddEdit.component";
@@ -13,6 +15,7 @@ import {
   FaUserShield,
   FaTruck,
   FaStore,
+  FaWarehouse,
   FaSearch,
   FaTimes,
   FaUsers,
@@ -24,6 +27,8 @@ export default function Users() {
   const [state, setState] = useRecoilState(exportAddAtom);
   const drivers = useRecoilValue(DriversList);
   const stores = useRecoilValue(StoresList);
+  const depotAgents = useRecoilValue(DepotAgentsList);
+  const depots = useRecoilValue(preparationPlacesState);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("all"); // 'all' | 'admin' | 'driver' | 'B2Bclient'
@@ -137,7 +142,8 @@ export default function Users() {
 
   // Filter accounts by search query and role
   const filteredUsers = data.filter((u) => {
-    if (roleFilter !== "all" && u.position !== roleFilter) return false;
+    const userRolePos = String(u.position || u.role || "").trim().toLowerCase();
+    if (roleFilter !== "all" && userRolePos !== roleFilter.toLowerCase()) return false;
 
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase().trim();
@@ -148,7 +154,7 @@ export default function Users() {
     const fullName = `${firstName} ${lastName}`.trim().toLowerCase();
     const email = (u.email || "").toLowerCase();
     const phone = (u.phoneNumber || "").toLowerCase();
-    const role = (u.role || "").toLowerCase();
+    const role = String(u.role || u.position || "").toLowerCase();
 
     let driverName = "";
     if (u.driverId) {
@@ -162,6 +168,13 @@ export default function Users() {
       if (s) storeName = (s.name_fr || "").toLowerCase();
     }
 
+    let depotAgentName = "";
+    if (u.depotAgentId || u.preparationPlaceId) {
+      const a = depotAgents.find((el) => el.id === Number(u.depotAgentId));
+      const dp = depots.find((el) => el.id === Number(u.preparationPlaceId || a?.preparationPlaceId));
+      depotAgentName = `${a?.firstName || ""} ${a?.lastName || ""} ${dp?.name || ""}`.toLowerCase();
+    }
+
     return (
       userName.includes(q) ||
       fullName.includes(q) ||
@@ -169,7 +182,8 @@ export default function Users() {
       phone.includes(q) ||
       role.includes(q) ||
       driverName.includes(q) ||
-      storeName.includes(q)
+      storeName.includes(q) ||
+      depotAgentName.includes(q)
     );
   });
 
@@ -192,9 +206,11 @@ export default function Users() {
     },
     {
       value: "position",
+      value2: "role",
       name: "Rôle & Accès",
-      render: (role) => {
-        if (role.toLowerCase() === "admin") {
+      render: (position, roleVal) => {
+        const r = String(position || roleVal || "").toLowerCase();
+        if (r === "admin") {
           return (
             <span
               style={{
@@ -213,7 +229,26 @@ export default function Users() {
             </span>
           );
         }
-        if (role.toLowerCase()   === "driver") {
+        if (r === "depotagent" || r.includes("depot")) {
+          return (
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "5px",
+                padding: "3px 10px",
+                borderRadius: "6px",
+                background: "#fef3c7",
+                color: "#b45309",
+                fontSize: "0.8rem",
+                fontWeight: 700,
+              }}
+            >
+              <FaWarehouse size={12} /> Agent de Dépôt
+            </span>
+          );
+        }
+        if (r === "driver") {
           return (
             <span
               style={{
@@ -246,7 +281,7 @@ export default function Users() {
               fontWeight: 700,
             }}
           >
-            <FaStore size={12} />  B2B
+            <FaStore size={12} /> B2B
           </span>
         );
       },
@@ -255,17 +290,30 @@ export default function Users() {
       value: "position",
       value2: "driverId",
       value3: "storeId",
+      value4: "role",
       name: "Affectation Profil",
-      render: (role, driverId, storeId) => {
-        if (role.toLowerCase() === "driver") {
-          const d = drivers.find((el) => el.id === Number(driverId));
+      render: (position, driverId, storeId, roleVal, row) => {
+        const r = String(position || roleVal || "").toLowerCase();
+        if (r === "depotagent" || r.includes("depot")) {
+          const agent = depotAgents.find((el) => el.id === Number(row?.depotAgentId));
+          const placeId = Number(row?.preparationPlaceId || row?.depotId || agent?.preparationPlaceId || 1);
+          const dep = depots.find((el) => el.id === placeId);
           return (
-            <span style={{ fontSize: "0.85rem", color: "#334155" }}>
-              {d ? `${d.name || `${d.firstName} ${d.lastName}`} (${d.carNumber || "Auto"})` : `Livreur #${driverId || "Non assigné"}`}
+            <span style={{ fontSize: "0.85rem", color: "#334155", fontWeight: 600 }}>
+              {agent ? `${agent.firstName || ""} ${agent.lastName || ""} · ` : ""}
+              <span style={{ color: "#b45309" }}>{dep ? dep.name : `Dépôt #${placeId}`}</span>
             </span>
           );
         }
-        if (role.toLowerCase() === "b2bclient") {
+        if (r === "driver") {
+          const d = drivers.find((el) => el.id === Number(driverId));
+          return (
+            <span style={{ fontSize: "0.85rem", color: "#334155" }}>
+              {d ? `${d.name || `${d.firstName || ""} ${d.lastName || ""}`.trim()} (${d.carNumber || "Auto"})` : `Livreur #${driverId || "Non assigné"}`}
+            </span>
+          );
+        }
+        if (r === "b2bclient" || r === "b2b") {
           const s = stores.find((el) => el.id === Number(storeId));
           return (
             <span style={{ fontSize: "0.85rem", color: "#334155" }}>
@@ -301,6 +349,7 @@ export default function Users() {
             <AddEdit
               drivers={drivers}
               stores={stores}
+              depotAgents={depotAgents}
               error={error}
               model={model}
               _setmodel={setModel}
@@ -387,6 +436,7 @@ export default function Users() {
             {[
               { id: "all", label: "Tous" },
               { id: "Admin", label: "Admins" },
+              { id: "DepotAgent", label: "Agents Dépôt" },
               { id: "Driver", label: "Livreurs" },
               { id: "B2Bclient", label: "Boutiques B2B" },
             ].map((btn) => (

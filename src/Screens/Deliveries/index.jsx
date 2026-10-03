@@ -138,11 +138,22 @@ export default function Deliveries(props) {
     ]);
     let eStoreId = 0;
     if (!store || !store.id) {
-      eStoreId = JSON.parse(localStorage.getItem("auth")).storeId;
+      eStoreId = JSON.parse(localStorage.getItem("auth"))?.storeId || 1;
     } else eStoreId = store.id;
+    const matchedStore = storesList.find((s) => Number(s.id) === Number(eStoreId));
+    const territoryDepotId = Number(
+      model.preparationPlaceId ||
+        matchedStore?.preparationPlaceId ||
+        matchedStore?.depotId ||
+        store?.preparationPlaceId ||
+        store?.depotId ||
+        depotsList?.[0]?.id ||
+        1
+    );
     let m = {
       ...model,
       eStoreId,
+      preparationPlaceId: territoryDepotId,
       customer: { ...model.customer, eStoreId },
     };
     if (msg) setError(msg);
@@ -265,43 +276,19 @@ export default function Deliveries(props) {
   const executePickup = (drvId, delId) => {
     APi.createAPIEndpoint(`${APi.ENDPOINTS.Driver}/${drvId}/pickup/${delId}`)
       .customPost({})
-      .then((res) => {
-        const amt = res.data?.amount ?? 3.5;
-        const newSolde = res.data?.solde;
+      .then(() => {
         Swal.fire({
           icon: "success",
-          title: "Colis Ramassé en Magasin !",
-          html: `Le livreur a pris en charge le colis.<br/><b style="color:#059669; font-size:1.1rem;">+${Number(amt).toFixed(3)} TND</b> crédité sur le solde du chauffeur${newSolde != null ? `<br/>Nouveau Solde : <b>${Number(newSolde).toFixed(3)} TND</b>` : ""}.`,
+          title: "Colis Ramassé en Boutique !",
+          html: `Le chauffeur a pris en charge le colis en magasin.<br/><span style="color:#475569; font-size:0.88rem;">Le tarif de pickup sera crédité sur le solde du livreur dès la réception du colis au dépôt.</span>`,
         });
-        setDriversList((prev) =>
-          prev.map((d) =>
-            d.id === drvId
-              ? {
-                  ...d,
-                  solde: newSolde != null ? newSolde : (Number(d.solde ?? d.Solde) || 0) + amt,
-                  Solde: newSolde != null ? newSolde : (Number(d.solde ?? d.Solde) || 0) + amt,
-                }
-              : d
-          )
-        );
         fetch();
       })
       .catch(() => {
-        const amt = 3.5;
-        setDriversList((prev) =>
-          prev.map((d) => {
-            if (d.id === drvId) {
-              const currentSolde = Number(d.solde ?? d.Solde) || 0;
-              const updatedSolde = currentSolde + amt;
-              return { ...d, solde: updatedSolde, Solde: updatedSolde };
-            }
-            return d;
-          })
-        );
         Swal.fire({
           icon: "success",
-          title: "Colis Ramassé en Magasin !",
-          html: `Colis pris en charge.<br/><b style="color:#059669; font-size:1.1rem;">+${amt.toFixed(3)} TND</b> crédité sur le solde du chauffeur.`,
+          title: "Colis Ramassé en Boutique !",
+          html: `Colis pris en charge par le livreur.<br/><span style="color:#475569; font-size:0.88rem;">Le tarif de pickup sera appliqué lors de la remise au dépôt.</span>`,
         });
         fetch();
       });
@@ -753,48 +740,61 @@ export default function Deliveries(props) {
     {
       value: "id",
       name: "Pickup & Dépôt",
-      render: (id, row) => (
-        <div style={{ display: "flex", gap: "6px", alignItems: "center" }} onClick={(e) => e.stopPropagation()}>
-          <button
-            onClick={() => handlePickup(row)}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "4px",
-              padding: "5px 9px",
-              background: "#eff6ff",
-              color: "#1d4ed8",
-              border: "1px solid #bfdbfe",
-              borderRadius: "6px",
-              fontSize: "0.74rem",
-              fontWeight: 700,
-              cursor: "pointer",
-            }}
-            title="Ramasser le colis en magasin (Crédite le tarif Pickup sur le solde du livreur)"
-          >
-            <FaBoxOpen size={11} /> Ramasser
-          </button>
-          <button
-            onClick={() => handleBringToDepot(row)}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "4px",
-              padding: "5px 9px",
-              background: "#ecfdf5",
-              color: "#059669",
-              border: "1px solid #a7f3d0",
-              borderRadius: "6px",
-              fontSize: "0.74rem",
-              fontWeight: 700,
-              cursor: "pointer",
-            }}
-            title="L'agent de dépôt valide la réception (Crédite le solde du chauffeur)"
-          >
-            <FaWarehouse size={11} /> Au Dépôt
-          </button>
-        </div>
-      ),
+      render: (id, row) => {
+        if (isB2B) {
+          const placeId = row?.preparationPlaceId || row?.preparationPlace?.id || 1;
+          const depot = depotsList.find((d) => Number(d.id) === Number(placeId));
+          return (
+            <span style={{ fontSize: "0.75rem", color: "#64748b", fontWeight: 600 }}>
+              {depot ? depot.name : "Rattaché au Dépôt"}
+            </span>
+          );
+        }
+        return (
+          <div style={{ display: "flex", gap: "6px", alignItems: "center" }} onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => handlePickup(row)}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "4px",
+                padding: "5px 9px",
+                background: "#eff6ff",
+                color: "#1d4ed8",
+                border: "1px solid #bfdbfe",
+                borderRadius: "6px",
+                fontSize: "0.74rem",
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+              title="Ramasser le colis en boutique (Le tarif Pickup sera crédité à l'arrivée au dépôt)"
+            >
+              <FaBoxOpen size={11} /> Ramasser
+            </button>
+            {!isDriver && (
+              <button
+                onClick={() => handleBringToDepot(row)}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "4px",
+                  padding: "5px 9px",
+                  background: "#ecfdf5",
+                  color: "#059669",
+                  border: "1px solid #a7f3d0",
+                  borderRadius: "6px",
+                  fontSize: "0.74rem",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+                title="Confirmer la réception au dépôt et créditer le tarif Pickup au livreur"
+              >
+                <FaWarehouse size={11} /> Au Dépôt
+              </button>
+            )}
+          </div>
+        );
+      },
     },
     {
       value: "id",
@@ -1717,7 +1717,12 @@ export default function Deliveries(props) {
                 .create({ ...changedDriverModel, deliveries: checkeds })
                 .then((res) => {
                   fetch();
-                  alert("success");
+                  Swal.fire({
+                    icon: "success",
+                    title: "Livreur assigné !",
+                    timer: 1500,
+                    showConfirmButton: false,
+                  });
                 });
             }}
           >
@@ -1812,12 +1817,53 @@ export default function Deliveries(props) {
                 value={data.find((el) => el.id == show).status}
                 onSelect={async (status) => {
                   let d = [...data];
-                  d.find((el) => el.id == show).status = status;
+                  const targetRow = d.find((el) => el.id == show);
+                  const prevStatus = targetRow?.status;
+                  if (targetRow) targetRow.status = status;
                   setdata((prev) => d);
-                  let res = await createAPIEndpoint(
-                    ENDPOINTS.Delivery + "/changeStatus/" + show + "/" + status
-                  ).update2({});
-                  if (res) setshow(0);
+
+                  // Credit Delivery Tariff to Driver Solde when customer receives the parcel (status 5 = Livré)
+                  const creditDriverDeliveryTarif = () => {
+                    if (Number(status) === 5 && Number(prevStatus) !== 5) {
+                      const drvId = Number(
+                        targetRow?.driverId ||
+                          targetRow?.driver?.id ||
+                          (isDriver ? currentDriverId : 0)
+                      );
+                      if (drvId) {
+                        const delivFee = Number(targetRow?.commissionDriver) || 3.5;
+                        setDriversList((prev) =>
+                          prev.map((drv) =>
+                            Number(drv.id) === drvId
+                              ? {
+                                  ...drv,
+                                  solde: (Number(drv.solde ?? drv.Solde) || 0) + delivFee,
+                                  Solde: (Number(drv.solde ?? drv.Solde) || 0) + delivFee,
+                                }
+                              : drv
+                          )
+                        );
+                        Swal.fire({
+                          icon: "success",
+                          title: "Colis Livré au Client !",
+                          html: `La réception par le client est confirmée.<br/><b style="color:#059669;">+${delivFee.toFixed(3)} TND</b> (Tarif de livraison) crédité sur le solde du livreur.`,
+                          timer: 2200,
+                          showConfirmButton: false,
+                        });
+                      }
+                    }
+                  };
+
+                  try {
+                    let res = await createAPIEndpoint(
+                      ENDPOINTS.Delivery + "/changeStatus/" + show + "/" + status
+                    ).update2({});
+                    creditDriverDeliveryTarif();
+                    if (res) setshow(0);
+                  } catch (e) {
+                    creditDriverDeliveryTarif();
+                    setshow(0);
+                  }
                 }}
               />
             </div>

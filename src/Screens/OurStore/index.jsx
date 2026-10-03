@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Button, Input, TagInput } from "rsuite";
+import { Button, Input, SelectPicker, TagInput } from "rsuite";
 import { useRecoilValue } from "recoil";
 import {
   FaStore,
@@ -15,16 +15,20 @@ import {
   FaTrash,
   FaCheckCircle,
   FaCalendarDay,
+  FaWarehouse,
 } from "react-icons/fa";
 import Swal from "sweetalert2";
 import { createAPIEndpoint } from "../../Api/authenticated.requests";
 import { ENDPOINTS } from "../../Api/enpoints";
 import { MyStore } from "../../Atoms/store.atom";
+import { preparationPlacesState } from "../../Atoms/preparationPlaces.atom";
 
 export default function OurStore() {
   const store = useRecoilValue(MyStore);
+  const depotsList = useRecoilValue(preparationPlacesState);
   const [model, setmodel] = useState({
     contacts: [],
+    preparationPlaceId: 1,
   });
   const [saving, setSaving] = useState(false);
 
@@ -239,6 +243,32 @@ export default function OurStore() {
               value={model.name_fr || ""}
               onChange={(name_fr) => setmodel((prev) => ({ ...prev, name_fr }))}
             />
+          </div>
+
+          <div>
+            <label style={{ fontSize: "0.85rem", fontWeight: 700, color: "#065f46", marginBottom: "6px", display: "flex", alignItems: "center", gap: "6px" }}>
+              <FaWarehouse style={{ color: "#059669" }} /> Dépôt du Territoire (Obligatoire) * :
+            </label>
+            <SelectPicker
+              data={(depotsList || []).map((d) => ({
+                label: `${d.name} (${d.code || `DEP-${d.id}`})`,
+                value: d.id,
+              }))}
+              block
+              cleanable={false}
+              searchable={true}
+              value={Number(model.preparationPlaceId || model.depotId || depotsList?.[0]?.id || 1)}
+              onSelect={(val) =>
+                setmodel((prev) => ({
+                  ...prev,
+                  preparationPlaceId: val,
+                  depotId: val,
+                }))
+              }
+            />
+            <small style={{ color: "#64748b", fontSize: "0.75rem", display: "block", marginTop: "4px" }}>
+              Toutes les livraisons créées par cette boutique sont automatiquement rattachées à ce dépôt.
+            </small>
           </div>
 
           <div>

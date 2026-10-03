@@ -8,6 +8,7 @@ import {
   currentUserState,
   activeRoleState,
   currentDriverIdState,
+  currentDepotIdState,
   normalizeRole,
 } from "../../Atoms/auth.atom";
 import {
@@ -18,6 +19,7 @@ import {
   FaUserShield,
   FaTruck,
   FaStore,
+  FaWarehouse,
   FaCheckCircle,
 } from "react-icons/fa";
 
@@ -26,8 +28,9 @@ export default function Login() {
   const setCurrentUser = useSetRecoilState(currentUserState);
   const setActiveRole = useSetRecoilState(activeRoleState);
   const setCurrentDriverId = useSetRecoilState(currentDriverIdState);
+  const setCurrentDepotId = useSetRecoilState(currentDepotIdState);
 
-  // Selected Profile: 'admin' | 'driver' | 'B2Bclient'
+  // Selected Profile: 'admin' | 'driver' | 'B2Bclient' | 'depotAgent'
   const [selectedRole, setSelectedRole] = useState("admin");
 
   const [model, setModel] = useState({
@@ -43,8 +46,8 @@ export default function Login() {
   };
 
   const handleLoginSuccess = (userData) => {
-    const rawRole = userData?.role || userData?.user?.role || selectedRole;
-    const userRole = normalizeRole(rawRole);
+    const rawRole = userData?.role || userData?.position || userData?.user?.role || selectedRole;
+    const userRole = selectedRole === "depotAgent" ? "depotAgent" : normalizeRole(rawRole);
     const finalizedUser = {
       ...userData,
       role: userRole,
@@ -52,6 +55,7 @@ export default function Login() {
       fullName: userData?.fullName || userData?.name || userData?.userName || model.username,
       driverId: userData?.driverId || userData?.id || null,
       storeId: userData?.storeId || null,
+      preparationPlaceId: userData?.preparationPlaceId || userData?.depotId || 1,
       token: userData?.token || (typeof userData === "string" ? userData : null),
       isMainStore: userRole === "admin",
     };
@@ -64,6 +68,10 @@ export default function Login() {
       setCurrentDriverId(finalizedUser.driverId);
     } else {
       setCurrentDriverId(null);
+    }
+
+    if (userRole === "depotAgent") {
+      setCurrentDepotId(finalizedUser.preparationPlaceId || 1);
     }
 
     setLogged(true);
@@ -201,8 +209,8 @@ export default function Login() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(3, 1fr)",
-              gap: "10px",
+              gridTemplateColumns: "repeat(4, 1fr)",
+              gap: "8px",
             }}
           >
             {/* Admin Option */}
@@ -216,7 +224,7 @@ export default function Login() {
                     : "1.5px solid #e2e8f0",
                 background:
                   selectedRole === "admin" ? "#f5f3ff" : "#f8fafc",
-                padding: "14px 10px",
+                padding: "12px 6px",
                 textAlign: "center",
                 cursor: "pointer",
                 transition: "all 0.15s ease",
@@ -236,16 +244,16 @@ export default function Login() {
               )}
               <div
                 style={{
-                  width: "38px",
-                  height: "38px",
+                  width: "36px",
+                  height: "36px",
                   borderRadius: "10px",
                   background: selectedRole === "admin" ? "#4f46e5" : "#e2e8f0",
                   color: selectedRole === "admin" ? "#fff" : "#475569",
                   display: "inline-flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  fontSize: "17px",
-                  marginBottom: "8px",
+                  fontSize: "16px",
+                  marginBottom: "6px",
                 }}
               >
                 <FaUserShield />
@@ -253,7 +261,7 @@ export default function Login() {
               <div
                 style={{
                   fontWeight: 800,
-                  fontSize: "0.85rem",
+                  fontSize: "0.8rem",
                   color: selectedRole === "admin" ? "#312e81" : "#1e293b",
                 }}
               >
@@ -261,13 +269,79 @@ export default function Login() {
               </div>
               <div
                 style={{
-                  fontSize: "0.7rem",
+                  fontSize: "0.66rem",
                   color: selectedRole === "admin" ? "#6366f1" : "#64748b",
                   marginTop: "2px",
                   fontWeight: 600,
                 }}
               >
                 + Boutique
+              </div>
+            </div>
+
+            {/* Depot Agent Option */}
+            <div
+              onClick={() => handleSelectRole("depotAgent")}
+              style={{
+                borderRadius: "14px",
+                border:
+                  selectedRole === "depotAgent"
+                    ? "2px solid #d97706"
+                    : "1.5px solid #e2e8f0",
+                background:
+                  selectedRole === "depotAgent" ? "#fffbeb" : "#f8fafc",
+                padding: "12px 6px",
+                textAlign: "center",
+                cursor: "pointer",
+                transition: "all 0.15s ease",
+                position: "relative",
+              }}
+            >
+              {selectedRole === "depotAgent" && (
+                <FaCheckCircle
+                  style={{
+                    position: "absolute",
+                    top: "8px",
+                    right: "8px",
+                    color: "#d97706",
+                    fontSize: "13px",
+                  }}
+                />
+              )}
+              <div
+                style={{
+                  width: "36px",
+                  height: "36px",
+                  borderRadius: "10px",
+                  background: selectedRole === "depotAgent" ? "#d97706" : "#e2e8f0",
+                  color: selectedRole === "depotAgent" ? "#fff" : "#475569",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "16px",
+                  marginBottom: "6px",
+                }}
+              >
+                <FaWarehouse />
+              </div>
+              <div
+                style={{
+                  fontWeight: 800,
+                  fontSize: "0.8rem",
+                  color: selectedRole === "depotAgent" ? "#92400e" : "#1e293b",
+                }}
+              >
+                Agent Dépôt
+              </div>
+              <div
+                style={{
+                  fontSize: "0.66rem",
+                  color: selectedRole === "depotAgent" ? "#d97706" : "#64748b",
+                  marginTop: "2px",
+                  fontWeight: 600,
+                }}
+              >
+                Stock & Dispatch
               </div>
             </div>
 
@@ -282,7 +356,7 @@ export default function Login() {
                     : "1.5px solid #e2e8f0",
                 background:
                   selectedRole === "driver" ? "#ecfdf5" : "#f8fafc",
-                padding: "14px 10px",
+                padding: "12px 6px",
                 textAlign: "center",
                 cursor: "pointer",
                 transition: "all 0.15s ease",
@@ -302,16 +376,16 @@ export default function Login() {
               )}
               <div
                 style={{
-                  width: "38px",
-                  height: "38px",
+                  width: "36px",
+                  height: "36px",
                   borderRadius: "10px",
                   background: selectedRole === "driver" ? "#10b981" : "#e2e8f0",
                   color: selectedRole === "driver" ? "#fff" : "#475569",
                   display: "inline-flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  fontSize: "17px",
-                  marginBottom: "8px",
+                  fontSize: "16px",
+                  marginBottom: "6px",
                 }}
               >
                 <FaTruck />
@@ -319,7 +393,7 @@ export default function Login() {
               <div
                 style={{
                   fontWeight: 800,
-                  fontSize: "0.85rem",
+                  fontSize: "0.8rem",
                   color: selectedRole === "driver" ? "#065f46" : "#1e293b",
                 }}
               >
@@ -327,7 +401,7 @@ export default function Login() {
               </div>
               <div
                 style={{
-                  fontSize: "0.7rem",
+                  fontSize: "0.66rem",
                   color: selectedRole === "driver" ? "#059669" : "#64748b",
                   marginTop: "2px",
                   fontWeight: 600,
@@ -348,7 +422,7 @@ export default function Login() {
                     : "1.5px solid #e2e8f0",
                 background:
                   selectedRole === "B2Bclient" ? "#eff6ff" : "#f8fafc",
-                padding: "14px 10px",
+                padding: "12px 6px",
                 textAlign: "center",
                 cursor: "pointer",
                 transition: "all 0.15s ease",
@@ -368,16 +442,16 @@ export default function Login() {
               )}
               <div
                 style={{
-                  width: "38px",
-                  height: "38px",
+                  width: "36px",
+                  height: "36px",
                   borderRadius: "10px",
                   background: selectedRole === "B2Bclient" ? "#3b82f6" : "#e2e8f0",
                   color: selectedRole === "B2Bclient" ? "#fff" : "#475569",
                   display: "inline-flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  fontSize: "17px",
-                  marginBottom: "8px",
+                  fontSize: "16px",
+                  marginBottom: "6px",
                 }}
               >
                 <FaStore />
@@ -385,7 +459,7 @@ export default function Login() {
               <div
                 style={{
                   fontWeight: 800,
-                  fontSize: "0.85rem",
+                  fontSize: "0.8rem",
                   color: selectedRole === "B2Bclient" ? "#1e3a8a" : "#1e293b",
                 }}
               >
@@ -393,7 +467,7 @@ export default function Login() {
               </div>
               <div
                 style={{
-                  fontSize: "0.7rem",
+                  fontSize: "0.66rem",
                   color: selectedRole === "B2Bclient" ? "#2563eb" : "#64748b",
                   marginTop: "2px",
                   fontWeight: 600,
@@ -476,6 +550,8 @@ export default function Login() {
               background:
                 selectedRole === "admin"
                   ? "#4f46e5"
+                  : selectedRole === "depotAgent"
+                  ? "#d97706"
                   : selectedRole === "driver"
                   ? "#10b981"
                   : "#2563eb",
@@ -492,6 +568,8 @@ export default function Login() {
             Se Connecter en tant que{" "}
             {selectedRole === "admin"
               ? "Administrateur"
+              : selectedRole === "depotAgent"
+              ? "Agent de Dépôt"
               : selectedRole === "driver"
               ? "Livreur"
               : "Boutique"}
@@ -524,13 +602,15 @@ export default function Login() {
                 color:
                   selectedRole === "admin"
                     ? "#4338ca"
+                    : selectedRole === "depotAgent"
+                    ? "#b45309"
                     : selectedRole === "driver"
                     ? "#065f46"
                     : "#1e40af",
                 fontWeight: 700,
               }}
             >
-              POST api/{selectedRole === "admin" ? "Auth/login" : selectedRole === "driver" ? "Auth/loginDriver" : "Auth/loginB2B"}
+              POST api/{selectedRole === "admin" || selectedRole === "depotAgent" ? "Auth/login" : selectedRole === "driver" ? "Auth/loginDriver" : "Auth/loginB2B"}
             </code>
           </div>
 

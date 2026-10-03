@@ -1,5 +1,8 @@
 import { useState } from "react";
-import { Button, Input, Message, TagInput } from "rsuite";
+import { useRecoilValue } from "recoil";
+import { Button, Input, Message, SelectPicker, TagInput } from "rsuite";
+import { FaWarehouse } from "react-icons/fa";
+import { preparationPlacesState } from "../../Atoms/preparationPlaces.atom";
 import Responsive from "../../Components/Responsive";
 
 function AddEdit({
@@ -8,8 +11,10 @@ function AddEdit({
 
   model = {
     contacts: [],
+    preparationPlaceId: 1,
   },
 }) {
+  const depotsList = useRecoilValue(preparationPlacesState);
   const [contact, setcontact] = useState({
     address: "",
     phones: "",
@@ -18,7 +23,7 @@ function AddEdit({
   });
   return (
     <>
-      <label>Nom :</label>
+      <label style={{ fontWeight: 700, display: "block", marginBottom: "4px" }}>Nom de la Boutique * :</label>
       <Input
         onChange={(name_fr) => {
           setmodel((prev) => {
@@ -27,7 +32,35 @@ function AddEdit({
         }}
         value={model.name_fr}
       />
-      <label>Matricule Fiscale :</label>
+
+      <div style={{ marginTop: "12px", marginBottom: "12px" }}>
+        <label style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px", color: "#065f46" }}>
+          <FaWarehouse style={{ color: "#059669" }} /> Dépôt du Territoire (Obligatoire) * :
+        </label>
+        <SelectPicker
+          data={(depotsList || []).map((d) => ({
+            label: `${d.name} (${d.code || `DEP-${d.id}`})`,
+            value: d.id,
+          }))}
+          block
+          cleanable={false}
+          searchable={true}
+          placeholder="Sélectionner le dépôt de rattachement..."
+          value={Number(model.preparationPlaceId || model.depotId || depotsList?.[0]?.id || 1)}
+          onSelect={(val) => {
+            setmodel((prev) => ({
+              ...prev,
+              preparationPlaceId: val,
+              depotId: val,
+            }));
+          }}
+        />
+        <small style={{ color: "#64748b", fontSize: "0.75rem", display: "block", marginTop: "3px" }}>
+          La boutique appartient au territoire de ce dépôt : toutes ses livraisons y sont automatiquement rattachées.
+        </small>
+      </div>
+
+      <label style={{ fontWeight: 700, display: "block", marginBottom: "4px" }}>Matricule Fiscale :</label>
       <Input
         onChange={(taxCode) => {
           setmodel((prev) => {

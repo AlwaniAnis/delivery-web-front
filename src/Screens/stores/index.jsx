@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from "react";
-import { useRecoilState } from "recoil";
+import { useRecoilState, useRecoilValue } from "recoil";
 import { Button, Input, Modal } from "rsuite";
 import Pagination from "rsuite/Pagination";
 import Swal from "sweetalert2";
-import { FaStore, FaPhoneAlt, FaEnvelope, FaMapMarkerAlt, FaFileInvoice } from "react-icons/fa";
+import { FaStore, FaPhoneAlt, FaEnvelope, FaMapMarkerAlt, FaFileInvoice, FaWarehouse } from "react-icons/fa";
 import { APi } from "../../Api/";
 import { exportAddAtom } from "../../Atoms/exportAdd.atom";
+import { preparationPlacesState } from "../../Atoms/preparationPlaces.atom";
 import ExportAdd from "../../Components/Common/ExportAdd";
 import Filter from "../../Components/Common/Filter";
 import Grid from "../../Components/Grid";
@@ -14,6 +15,7 @@ import AddEdit from "./AddEdit.component";
 import ResetPassword from "../Auth/ResetPassword";
 export default function Stores(props) {
   // STATE
+  const depotsList = useRecoilValue(preparationPlacesState);
   const [data, setdata] = useState([]);
   const [totalCount, settotalCount] = useState(0);
   const [filterModel, setfilterModel] = useState({ q: "", page: 1, take: 20 });
@@ -21,6 +23,7 @@ export default function Stores(props) {
   const [error, setError] = useState("");
   const [model, setmodel] = useState({
     contacts: [],
+    preparationPlaceId: 1,
   });
   const [userModel, setuserModel] = useState({
     email: "",
@@ -38,6 +41,7 @@ export default function Stores(props) {
   const reset = () => {
     setmodel({
       contacts: [],
+      preparationPlaceId: depotsList?.[0]?.id || 1,
     });
     setError("");
   };
@@ -63,10 +67,19 @@ export default function Stores(props) {
       });
   };
   const save = () => {
+    const placeId = Number(model.preparationPlaceId || model.depotId || depotsList?.[0]?.id || 1);
+    if (!placeId) {
+      setError("Veuillez sélectionner le Dépôt du Territoire de la boutique.");
+      return;
+    }
     setstate((prev) => {
       return { ...prev, loading: true };
     });
-    let m = { ...model };
+    let m = {
+      ...model,
+      preparationPlaceId: placeId,
+      depotId: placeId,
+    };
 
     m.contacts = m.contacts.map((el) => {
       delete el.id;
@@ -200,7 +213,36 @@ export default function Stores(props) {
             ),
           },
         ]}
-        columns={columns}
+        columns={columns.map((col) =>
+          col.value === "preparationPlaceId"
+            ? {
+                ...col,
+                render: (val, row) => {
+                  const placeId = Number(val || row?.preparationPlaceId || row?.depotId || 1);
+                  const depot = depotsList.find((d) => Number(d.id) === placeId) || depotsList[0];
+                  return (
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "5px",
+                        background: "#ecfdf5",
+                        color: "#065f46",
+                        border: "1px solid #a7f3d0",
+                        padding: "3px 9px",
+                        borderRadius: "6px",
+                        fontSize: "0.78rem",
+                        fontWeight: 700,
+                      }}
+                    >
+                      <FaWarehouse size={11} style={{ color: "#059669" }} />
+                      {depot?.name || "Dépôt Central Tunis"}
+                    </span>
+                  );
+                },
+              }
+            : col
+        )}
         rows={data}
       />
       <div style={{ padding: 20, background: "#fff" }}>
@@ -309,6 +351,10 @@ const columns = [
         </div>
       </div>
     ),
+  },
+  {
+    value: "preparationPlaceId",
+    name: "Dépôt du Territoire",
   },
   {
     value: "taxCode",

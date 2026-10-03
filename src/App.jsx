@@ -36,11 +36,13 @@ import {
   currentUserState,
   activeRoleState,
   currentDriverIdState,
+  currentDepotIdState,
   normalizeRole,
 } from "./Atoms/auth.atom";
 import { DriversList } from "./Atoms/drivers.atom";
 import { StoresList } from "./Atoms/stores.atom";
 import { MyStore } from "./Atoms/store.atom";
+import { preparationPlacesState } from "./Atoms/preparationPlaces.atom";
 import useB2B from "./hooks/useB2B";
 
 // Screens
@@ -49,6 +51,8 @@ import Home from "./Screens/Dashboard";
 import Deliveries from "./Screens/Deliveries";
 import NotPaidDeliveries from "./Screens/NotPaid";
 import Drivers from "./Screens/Drivers";
+import DepotAgents from "./Screens/DepotAgents";
+import DepotAgentWorkspace from "./Screens/DepotAgentWorkspace";
 import Customers from "./Screens/Customers";
 import Stores from "./Screens/stores";
 import OurStore from "./Screens/OurStore";
@@ -67,8 +71,10 @@ const App = () => {
   const [currentUser, setCurrentUser] = useRecoilState(currentUserState);
   const [activeRole, setActiveRole] = useRecoilState(activeRoleState);
   const [currentDriverId, setCurrentDriverId] = useRecoilState(currentDriverIdState);
+  const [currentDepotId, setCurrentDepotId] = useRecoilState(currentDepotIdState);
   const [driversList, setDriversList] = useRecoilState(DriversList);
   const [storesList, setStoresList] = useRecoilState(StoresList);
+  const depotsList = useRecoilValue(preparationPlacesState);
   const setStore = useSetRecoilState(MyStore);
   useB2B();
 
@@ -109,6 +115,9 @@ const App = () => {
         if (parsed.driverId) {
           setCurrentDriverId(parsed.driverId);
         }
+        if (parsed.preparationPlaceId || parsed.depotId) {
+          setCurrentDepotId(parsed.preparationPlaceId || parsed.depotId);
+        }
         setLogged(true);
       } catch (e) {
         setLogged(false);
@@ -125,12 +134,15 @@ const App = () => {
   const currentRole = normalizeRole(activeRole);
   const isDriver = currentRole === "driver";
   const isB2B = currentRole === "B2Bclient";
-  const isAdmin = !isDriver && !isB2B;
+  const isDepotAgent = currentRole === "depotAgent";
+  const isAdmin = !isDriver && !isB2B && !isDepotAgent;
 
   const currentDriver = driversList.find((d) => d.id === Number(currentDriverId)) || {
     name: currentUser?.fullName || currentUser?.userName || "Livreur",
     carNumber: currentUser?.carNumber || "Véhicule de service",
   };
+
+  const currentDepot = depotsList.find((d) => Number(d.id) === Number(currentDepotId)) || depotsList[0];
 
   // Auth Guard
   if (!logged) {
@@ -140,7 +152,11 @@ const App = () => {
   // Titles mapping
   const getPageTitle = () => {
     const path = location.pathname;
-    if (path === "/" || path === "/dashboard") return "Tableau de Bord";
+    if (path === "/" || path === "/dashboard") {
+      return isDepotAgent ? "Console Agent de Dépôt" : "Tableau de Bord";
+    }
+    if (path === "/depot_agent") return "Console Agent de Dépôt";
+    if (path === "/depot_agents") return "Gestion des Agents de Dépôt";
     if (path === "/deliveries") return activeRole === "driver" ? "Mes Livraisons" : "Toutes les Livraisons";
     if (path === "/deliveries_not_paid") return "Livraisons Non Payées";
     if (path === "/delivred") return "Recouvrement & Colis Livrés";
@@ -179,12 +195,26 @@ const App = () => {
           {/* Active Profile Pill in Sidebar */}
           <div className="sidebar-role-indicator">
             <div className="role-avatar">
-              {isDriver ? <FaTruck /> : isB2B ? <FaStore /> : <FaUserShield />}
+              {isDriver ? (
+                <FaTruck />
+              ) : isB2B ? (
+                <FaStore />
+              ) : isDepotAgent ? (
+                <FaWarehouse />
+              ) : (
+                <FaUserShield />
+              )}
             </div>
             <div className="role-details">
               <span className="role-name">{currentUser.fullName || currentUser.userName || "Utilisateur"}</span>
               <span className="role-badge-text">
-                {isDriver ? "Profil Livreur" : isB2B ? "Espace Boutique B2B" : "Direction / Admin"}
+                {isDriver
+                  ? "Profil Livreur"
+                  : isB2B
+                  ? "Espace Boutique B2B"
+                  : isDepotAgent
+                  ? `Agent Dépôt · ${currentDepot?.name || "Tunis"}`
+                  : "Direction / Admin"}
               </span>
             </div>
           </div>
@@ -282,7 +312,7 @@ const App = () => {
                   onClick={() => setExpand(false)}
                 >
                   <span className="nav-icon"><FaCalendarDay /></span>
-                  <span className="nav-label">Récap Journalier</span>
+                  <span className="nav-label">Récap Journalier Boutique</span>
                 </Link>
                 <Link
                   to="/our_store"
@@ -300,6 +330,29 @@ const App = () => {
                   <span className="nav-icon"><BiTrip /></span>
                   <span className="nav-label">Nos Livraisons</span>
                 </Link>
+              </div>
+            )}
+
+            {/* DEPOT AGENT ROLE NAV */}
+            {isDepotAgent && (
+              <div className="nav-group">
+                <div className="nav-group-title">ESPACE AGENT DÉPÔT</div>
+                <Link
+                  to="/depot_agent"
+                  className={`nav-link-item ${location.pathname === "/" || location.pathname === "/depot_agent" ? "active" : ""}`}
+                  onClick={() => setExpand(false)}
+                >
+                  <span className="nav-icon"><FaWarehouse /></span>
+                  <span className="nav-label">Console Agent Dépôt</span>
+                </Link>
+                <Link
+                  to="/deliveries"
+                  className={`nav-link-item ${location.pathname === "/deliveries" ? "active" : ""}`}
+                  onClick={() => setExpand(false)}
+                >
+                  <span className="nav-icon"><BiTrip /></span>
+                  <span className="nav-label">Livraisons du Dépôt</span>
+                </Link>
                 <Link
                   to="/deliveries_not_paid"
                   className={`nav-link-item ${location.pathname === "/deliveries_not_paid" ? "active" : ""}`}
@@ -307,6 +360,30 @@ const App = () => {
                 >
                   <span className="nav-icon"><FaMoneyBillWave /></span>
                   <span className="nav-label">Livraisons Non Payées</span>
+                </Link>
+                <Link
+                  to="/driver_payments"
+                  className={`nav-link-item ${location.pathname === "/driver_payments" ? "active" : ""}`}
+                  onClick={() => setExpand(false)}
+                >
+                  <span className="nav-icon"><FaMoneyCheckAlt /></span>
+                  <span className="nav-label">Recouvrement Livreur (Solde)</span>
+                </Link>
+                <Link
+                  to="/scan_qrcode"
+                  className={`nav-link-item ${location.pathname === "/scan_qrcode" ? "active" : ""}`}
+                  onClick={() => setExpand(false)}
+                >
+                  <span className="nav-icon"><FaQrcode /></span>
+                  <span className="nav-label">Scanner Réception Dépôt</span>
+                </Link>
+                <Link
+                  to="/depots"
+                  className={`nav-link-item ${location.pathname === "/depots" ? "active" : ""}`}
+                  onClick={() => setExpand(false)}
+                >
+                  <span className="nav-icon"><FaWarehouse /></span>
+                  <span className="nav-label">Dépôts & Stockage</span>
                 </Link>
               </div>
             )}
@@ -323,6 +400,14 @@ const App = () => {
                   >
                     <span className="nav-icon"><FaChartPie /></span>
                     <span className="nav-label">Tableau de Bord</span>
+                  </Link>
+                  <Link
+                    to="/depot_agent"
+                    className={`nav-link-item ${location.pathname === "/depot_agent" ? "active" : ""}`}
+                    onClick={() => setExpand(false)}
+                  >
+                    <span className="nav-icon"><FaWarehouse /></span>
+                    <span className="nav-label">Console Agent Dépôt</span>
                   </Link>
                   <Link
                     to="/deliveries"
@@ -367,35 +452,7 @@ const App = () => {
                 </div>
 
                 <div className="nav-group">
-                  <div className="nav-group-title">OUTILS LIVREUR (ACCÈS DIRECT)</div>
-                  <Link
-                    to="/scan_qrcode"
-                    className={`nav-link-item ${location.pathname === "/scan_qrcode" ? "active" : ""}`}
-                    onClick={() => setExpand(false)}
-                  >
-                    <span className="nav-icon"><FaQrcode /></span>
-                    <span className="nav-label">Scanner QR Code</span>
-                  </Link>
-                  <Link
-                    to="/maps"
-                    className={`nav-link-item ${location.pathname === "/maps" ? "active" : ""}`}
-                    onClick={() => setExpand(false)}
-                  >
-                    <span className="nav-icon"><FaRoute /></span>
-                    <span className="nav-label">Trajet & Carte</span>
-                  </Link>
-                  <Link
-                    to="/delivred"
-                    className={`nav-link-item ${location.pathname === "/delivred" ? "active" : ""}`}
-                    onClick={() => setExpand(false)}
-                  >
-                    <span className="nav-icon"><FaMoneyBillWave /></span>
-                    <span className="nav-label">Recouvrement Livreur</span>
-                  </Link>
-                </div>
-
-                <div className="nav-group">
-                  <div className="nav-group-title">RÉSEAU & UTILISATEURS</div>
+                  <div className="nav-group-title">RÉSEAU, DÉPÔTS & UTILISATEURS</div>
                   <Link
                     to="/drivers"
                     className={`nav-link-item ${location.pathname === "/drivers" ? "active" : ""}`}
@@ -405,12 +462,28 @@ const App = () => {
                     <span className="nav-label">Livreurs</span>
                   </Link>
                   <Link
+                    to="/depot_agents"
+                    className={`nav-link-item ${location.pathname === "/depot_agents" ? "active" : ""}`}
+                    onClick={() => setExpand(false)}
+                  >
+                    <span className="nav-icon"><FaWarehouse /></span>
+                    <span className="nav-label">Agents de Dépôt</span>
+                  </Link>
+                  <Link
                     to="/driver_payments"
                     className={`nav-link-item ${location.pathname === "/driver_payments" ? "active" : ""}`}
                     onClick={() => setExpand(false)}
                   >
                     <span className="nav-icon"><FaMoneyCheckAlt /></span>
-                    <span className="nav-label">Règlements Livreurs</span>
+                    <span className="nav-label">Recouvrement Livreur (Solde)</span>
+                  </Link>
+                  <Link
+                    to="/scan_qrcode"
+                    className={`nav-link-item ${location.pathname === "/scan_qrcode" ? "active" : ""}`}
+                    onClick={() => setExpand(false)}
+                  >
+                    <span className="nav-icon"><FaQrcode /></span>
+                    <span className="nav-label">Scanner QR Code</span>
                   </Link>
                   <Link
                     to="/customers"
@@ -496,6 +569,29 @@ const App = () => {
                 >
                   <FaUserShield style={{ color: "#7c3aed" }} />
                   <span className="header-role-label">Administrateur · Boutique Principale</span>
+                </div>
+              )}
+
+              {isDepotAgent && (
+                <div
+                  className="header-role-badge"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    background: "#fffbeb",
+                    border: "1px solid #fde68a",
+                    color: "#92400e",
+                    padding: "6px 14px",
+                    borderRadius: "10px",
+                    fontSize: "0.82rem",
+                    fontWeight: 700,
+                  }}
+                >
+                  <FaWarehouse style={{ color: "#d97706" }} />
+                  <span className="header-role-label">
+                    Agent Dépôt · <strong>{currentDepot?.name || "Tunis"}</strong>
+                  </span>
                 </div>
               )}
 
@@ -588,6 +684,8 @@ const App = () => {
                       color:
                         isAdmin
                           ? "#7c3aed"
+                          : isDepotAgent
+                          ? "#d97706"
                           : isDriver
                           ? "#059669"
                           : "#2563eb",
@@ -595,11 +693,38 @@ const App = () => {
                   >
                     {isAdmin
                       ? "Compte Administrateur / Boutique"
+                      : isDepotAgent
+                      ? "Agent de Dépôt Assigné"
                       : isDriver
                       ? "Chauffeur - Livreur Assigné"
                       : "Boutique Partenaire B2B"}
                   </div>
                 </div>
+                <Dropdown.Separator />
+                <Dropdown.Item
+                  onClick={() => {
+                    setActiveRole("admin");
+                    history.push("/");
+                  }}
+                >
+                  <FaUserShield style={{ marginRight: 8, color: "#7c3aed" }} /> Vue Administrateur
+                </Dropdown.Item>
+                <Dropdown.Item
+                  onClick={() => {
+                    setActiveRole("depotAgent");
+                    history.push("/depot_agent");
+                  }}
+                >
+                  <FaWarehouse style={{ marginRight: 8, color: "#d97706" }} /> Vue Agent de Dépôt
+                </Dropdown.Item>
+                <Dropdown.Item
+                  onClick={() => {
+                    setActiveRole("driver");
+                    history.push("/deliveries");
+                  }}
+                >
+                  <FaTruck style={{ marginRight: 8, color: "#059669" }} /> Vue Livreur
+                </Dropdown.Item>
                 <Dropdown.Separator />
                 <Dropdown.Item onClick={handleSignOut} style={{ color: "#dc2626" }}>
                   <FaSignOutAlt style={{ marginRight: 8 }} /> Déconnexion
@@ -611,7 +736,15 @@ const App = () => {
           {/* App Body Content */}
           <Content className="tawsil-body-content">
             <Switch>
-              <Route exact path="/" component={isDriver ? Deliveries : Home} />
+              <Route
+                exact
+                path="/"
+                component={
+                  isDriver ? Deliveries : isDepotAgent ? DepotAgentWorkspace : Home
+                }
+              />
+              <Route path="/depot_agent" component={DepotAgentWorkspace} />
+              <Route path="/depot_agents" component={DepotAgents} />
               <Route path="/deliveries" component={Deliveries} />
               <Route path="/deliveries_not_paid" component={NotPaidDeliveries} />
               <Route path="/delivred" component={Delivred} />
@@ -626,7 +759,12 @@ const App = () => {
               <Route path="/tarifs" component={isAdmin ? Tarifs : Deliveries} />
               <Route path="/driver_payments" component={DriverPayments} />
               <Route path="/store_recap" component={StoreDailyRecap} />
-              <Route path="/*" component={isDriver ? Deliveries : Home} />
+              <Route
+                path="/*"
+                component={
+                  isDriver ? Deliveries : isDepotAgent ? DepotAgentWorkspace : Home
+                }
+              />
             </Switch>
           </Content>
         </Container>

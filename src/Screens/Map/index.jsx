@@ -15,11 +15,17 @@ import {
   FaTimesCircle,
   FaClock,
 } from "react-icons/fa";
-import { useRecoilValue } from "recoil";
+import { useRecoilState, useRecoilValue } from "recoil";
 import { APi } from "../../Api";
-import { getCoordinatesForDelivery } from "../../Helpers/geocoding";
+import {
+  getCoordinatesForDelivery,
+  getDepotCoordinates,
+  sortDeliveriesByNearest,
+} from "../../Helpers/geocoding";
 import { preparationPlacesState } from "../../Atoms/preparationPlaces.atom";
 import { activeRoleState, currentDriverIdState } from "../../Atoms/auth.atom";
+import { DriversList } from "../../Atoms/drivers.atom";
+import { tarifsState } from "../../Atoms/tarifs.atom";
 import Swal from "sweetalert2";
 
 export default function MyMap() {
@@ -31,6 +37,8 @@ export default function MyMap() {
   const activeRole = useRecoilValue(activeRoleState);
   const globalDriverId = useRecoilValue(currentDriverIdState);
   const depots = useRecoilValue(preparationPlacesState);
+  const [driversList, setDriversList] = useRecoilState(DriversList);
+  const tarifsList = useRecoilValue(tarifsState);
 
   const [deliveries, setDeliveries] = useState([]);
   const [selectedStop, setSelectedStop] = useState(null);
@@ -40,7 +48,8 @@ export default function MyMap() {
   const [loading, setLoading] = useState(false);
   const [filterStatus, setFilterStatus] = useState("all"); // 'all' | 'pending' | 'delivered'
   const [selectedDepotFilter, setSelectedDepotFilter] = useState("all");
-  const [viewScope, setViewScope] = useState(activeRole === "driver" ? "driver" : "all");
+  const [originMode, setOriginMode] = useState("depot"); // 'depot' (start of day from warehouse) | 'gps' (from driver's current position)
+  const [viewScope] = useState("driver");
   const [mapReady, setMapReady] = useState(false);
 
   // Responsive state for mobile driver usage
@@ -202,6 +211,43 @@ export default function MyMap() {
     return () => navigator.geolocation.clearWatch(watchId);
   }, []);
 
+  // Compute active depot coordinates and Nearest-Neighbor ("الأقرب فالأقرب") ordered stops
+  const activeDepotObj =
+    selectedDepotFilter !== "all"
+      ? depots.find((d) => Number(d.id) === Number(selectedDepotFilter)) || depots[0]
+      : depots[0];
+  const activeDepotCoords = getDepotCoordinates(activeDepotObj);
+
+  const activeOriginPoint =
+    originMode === "gps" && driverLocation
+      ? { lat: driverLocation.lat, lng: driverLocation.lng, label: "Ma Position GPS" }
+      : {
+          lat: activeDepotCoords.lat,
+          lng: activeDepotCoords.lng,
+          label: activeDepotObj?.name || "Dépôt Central",
+        };
+
+  const depotFilteredDeliveries = deliveries.filter((d) => {
+    if (selectedDepotFilter !== "all") {
+      const pId = d.preparationPlaceId || d.preparationPlace?.id;
+      if (Number(selectedDepotFilter) !== Number(pId)) return false;
+    }
+    return true;
+  });
+
+  const sortedDeliveries = sortDeliveriesByNearest(
+    depotFilteredDeliveries,
+    activeOriginPoint,
+    activeDepotCoords,
+    driverLocation
+  );
+
+  const visibleDeliveries = sortedDeliveries.filter((d) => {
+    if (filterStatus === "pending") return d.status !== 5;
+    if (filterStatus === "delivered") return d.status === 5;
+    return true;
+  });
+
   // Update Markers, Route Polyline, and Depot Pins
   useEffect(() => {
     if (!mapReady || !mapInstanceRef.current) return;
@@ -217,13 +263,7 @@ export default function MyMap() {
 
     // 1. Add All Dépôts
     depots.forEach((dp) => {
-      let dpCoords = { lat: 36.8431, lng: 10.2033 };
-      if (
-        dp.name?.toLowerCase().includes("sousse") ||
-        dp.code?.toLowerCase().includes("sousse")
-      ) {
-        dpCoords = { lat: 35.8256, lng: 10.6369 };
-      }
+      const dpCoords = getDepotCoordinates(dp);
 
       const depotIcon = L.divIcon({
         className: "custom-depot-icon",
@@ -326,28 +366,22 @@ export default function MyMap() {
       bounds.extend([driverLocation.lat, driverLocation.lng]);
     }
 
-    // 3. Filter stops based on status and depot filter
-    const visibleStops = deliveries.filter((d) => {
-      if (filterStatus === "pending" && d.status === 5) return false;
-      if (filterStatus === "delivered" && d.status !== 5) return false;
-
-      if (selectedDepotFilter !== "all") {
-        const pId = d.preparationPlaceId || d.preparationPlace?.id;
-        if (Number(selectedDepotFilter) !== Number(pId)) return false;
-      }
-
-      return true;
-    });
-
-    // 4. Build Polyline Route Coordinates
+    // 3. Build Polyline Route Coordinates starting from Depot or Driver GPS (Nearest-by-Nearest)
     const routeCoords = [];
-    if (driverLocation) {
+    if (originMode === "gps" && driverLocation) {
       routeCoords.push([driverLocation.lat, driverLocation.lng]);
+    } else if (activeDepotCoords) {
+      routeCoords.push([activeDepotCoords.lat, activeDepotCoords.lng]);
+      if (driverLocation) {
+        routeCoords.push([driverLocation.lat, driverLocation.lng]);
+      }
     }
 
-    visibleStops.forEach((item, index) => {
-      const coords = getCoordinatesForDelivery(item);
-      routeCoords.push([coords.lat, coords.lng]);
+    visibleDeliveries.forEach((item, index) => {
+      const coords = item._coords || getCoordinatesForDelivery(item);
+      if (item.status !== 5) {
+        routeCoords.push([coords.lat, coords.lng]);
+      }
 
       const isSelected = selectedStop?.id === item.id;
       const isDelivered = item.status === 5;
@@ -359,11 +393,7 @@ export default function MyMap() {
       else if (isFailed) markerBg = "#ef4444";
       else if (isPostponed) markerBg = "#f59e0b";
 
-      const totalAmt = (
-        item.coliItems?.reduce((s, it) => s + it.qty * it.unitPrice, 0) ||
-        item.totalPrice ||
-        0
-      ).toFixed(3);
+      const stepNumber = item._stepOrder || index + 1;
 
       const stopIcon = L.divIcon({
         className: "custom-stop-marker",
@@ -388,7 +418,7 @@ export default function MyMap() {
               border: 2px solid white;
               box-shadow: 0 4px 10px rgba(0,0,0,0.3);
             ">
-              ${isDelivered ? "✓" : index + 1}
+              ${isDelivered ? "✓" : stepNumber}
             </div>
           </div>
         `,
@@ -396,9 +426,19 @@ export default function MyMap() {
         iconAnchor: [18, 18],
       });
 
-      const marker = L.marker([coords.lat, coords.lng], { icon: stopIcon }).addTo(
-        markersLayer
-      );
+      const marker = L.marker([coords.lat, coords.lng], { icon: stopIcon })
+        .bindPopup(`
+          <div style="font-weight: 800; color: #0f172a; font-size: 13px;">
+            Étape #${stepNumber} : ${item.customer?.fullName || "Client"}
+          </div>
+          <div style="font-size: 11px; color: #475569; margin-top: 3px;">
+            📍 ${item.customer?.address || ""}, ${item.customer?.city || "Tunis"}
+          </div>
+          <div style="font-size: 11px; font-weight: 700; color: #2563eb; margin-top: 5px;">
+            +${item._distFromPrevKm ?? 0} km (${item._prevLabel || "Dépôt"}) • Total: ${item._cumulativeDistKm ?? 0} km
+          </div>
+        `)
+        .addTo(markersLayer);
 
       marker.on("click", () => {
         setSelectedStop(item);
@@ -412,7 +452,7 @@ export default function MyMap() {
       L.polyline(routeCoords, {
         color: "#4f46e5",
         weight: 4,
-        opacity: 0.8,
+        opacity: 0.85,
         dashArray: "8, 8",
         lineCap: "round",
       }).addTo(routeLayer);
@@ -427,6 +467,7 @@ export default function MyMap() {
     driverLocation,
     filterStatus,
     selectedDepotFilter,
+    originMode,
     depots,
     selectedStop,
   ]);
@@ -479,13 +520,50 @@ export default function MyMap() {
     mapInstanceRef.current.flyTo([coords.lat, coords.lng], 15, { duration: 1 });
   };
 
-  // Update Status API
+  // Update Status API (Credits Delivery Tariff when customer receives parcel -> status 5)
   const updateStopStatus = (deliveryId, newStatus) => {
-    APi.createAPIEndpoint(
-      APi.ENDPOINTS.Delivery + "/changeStatus/" + deliveryId + "/" + newStatus
-    )
-      .update2({})
-      .then(() => {
+    const targetDel = deliveries.find((d) => d.id === deliveryId);
+    const prevStatus = targetDel?.status;
+
+    const finalizeStatusUpdate = () => {
+      if (Number(newStatus) === 5 && Number(prevStatus) !== 5 && targetDel) {
+        const assignedDrvId = Number(
+          targetDel.driverId || targetDel.driver?.id || globalDriverId || 0
+        );
+        const matchedTarif =
+          tarifsList.find(
+            (t) => Number(t.id) === Number(targetDel.tarifId || targetDel.tarif?.id)
+          ) ||
+          tarifsList.find((t) => t.isDefault) ||
+          tarifsList[0];
+        const delFee = Number(
+          targetDel.deliveryPrice ?? matchedTarif?.deliveryPrice ?? 5.0
+        );
+
+        if (assignedDrvId && delFee > 0) {
+          setDriversList((prev) =>
+            prev.map((drv) => {
+              if (Number(drv.id) === assignedDrvId) {
+                const currentSolde = Number(drv.solde ?? drv.Solde) || 0;
+                const updatedSolde = Number((currentSolde + delFee).toFixed(3));
+                APi.createAPIEndpoint(APi.ENDPOINTS.Driver)
+                  .update(drv.id, { ...drv, solde: updatedSolde, Solde: updatedSolde })
+                  .catch(() => {});
+                return { ...drv, solde: updatedSolde, Solde: updatedSolde };
+              }
+              return drv;
+            })
+          );
+        }
+
+        Swal.fire({
+          position: "top-end",
+          icon: "success",
+          title: `Colis Livré ! Tarif livraison (+${delFee.toFixed(3)} TND) crédité au Solde`,
+          showConfirmButton: false,
+          timer: 2200,
+        });
+      } else {
         Swal.fire({
           position: "top-end",
           icon: "success",
@@ -493,19 +571,22 @@ export default function MyMap() {
           showConfirmButton: false,
           timer: 1500,
         });
+      }
+    };
+
+    APi.createAPIEndpoint(
+      APi.ENDPOINTS.Delivery + "/changeStatus/" + deliveryId + "/" + newStatus
+    )
+      .update2({})
+      .then(() => {
+        finalizeStatusUpdate();
         fetchDeliveries();
       })
       .catch(() => {
         setDeliveries((prev) =>
           prev.map((d) => (d.id === deliveryId ? { ...d, status: newStatus } : d))
         );
-        Swal.fire({
-          position: "top-end",
-          icon: "success",
-          title: "Statut mis à jour !",
-          showConfirmButton: false,
-          timer: 1500,
-        });
+        finalizeStatusUpdate();
       });
   };
 
@@ -534,12 +615,6 @@ export default function MyMap() {
     : `https://waze.com/ul?q=${encodeURIComponent(
         selectedStop?.customer?.address || "Tunis"
       )}`;
-
-  const visibleDeliveries = deliveries.filter((d) => {
-    if (filterStatus === "pending") return d.status !== 5;
-    if (filterStatus === "delivered") return d.status === 5;
-    return true;
-  });
 
   return (
     <div
@@ -859,6 +934,57 @@ export default function MyMap() {
               ))}
             </select>
           </div>
+
+          {/* Nearest-Neighbor Origin Toggle ("الأقرب فالأقرب من المخزن ثم من مكانه") */}
+          <div
+            style={{
+              display: "flex",
+              gap: "4px",
+              background: "#eef2ff",
+              border: "1px solid #c7d2fe",
+              padding: "3px",
+              borderRadius: "8px",
+              width: isMobile ? "100%" : "auto",
+            }}
+          >
+            <button
+              onClick={() => setOriginMode("depot")}
+              style={{
+                flex: isMobile ? 1 : "auto",
+                background: originMode === "depot" ? "#4f46e5" : "transparent",
+                color: originMode === "depot" ? "#ffffff" : "#4338ca",
+                fontWeight: 700,
+                border: "none",
+                borderRadius: "6px",
+                padding: "6px 10px",
+                fontSize: "0.76rem",
+                cursor: "pointer",
+              }}
+              title="Ordonner du plus proche au plus proche en partant du Dépôt (Début de journée)"
+            >
+              🏬 Départ Dépôt (Plus proche)
+            </button>
+            <button
+              onClick={() => {
+                setOriginMode("gps");
+                if (!driverLocation) centerOnCurrentLocation();
+              }}
+              style={{
+                flex: isMobile ? 1 : "auto",
+                background: originMode === "gps" ? "#059669" : "transparent",
+                color: originMode === "gps" ? "#ffffff" : "#047857",
+                fontWeight: 700,
+                border: "none",
+                borderRadius: "6px",
+                padding: "6px 10px",
+                fontSize: "0.76rem",
+                cursor: "pointer",
+              }}
+              title="Ordonner du plus proche au plus proche depuis votre position GPS actuelle"
+            >
+              🚚 Depuis Ma Position GPS
+            </button>
+          </div>
         </div>
 
         {/* Live GPS locate button */}
@@ -918,16 +1044,23 @@ export default function MyMap() {
                 alignItems: "center",
               }}
             >
-              <h4
-                style={{
-                  margin: 0,
-                  fontSize: "0.95rem",
-                  fontWeight: 800,
-                  color: "#0f172a",
-                }}
-              >
-                Arrêts de la Tournée ({visibleDeliveries.length})
-              </h4>
+              <div>
+                <h4
+                  style={{
+                    margin: 0,
+                    fontSize: "0.95rem",
+                    fontWeight: 800,
+                    color: "#0f172a",
+                  }}
+                >
+                  Ordre de Passage : Plus Proche ({visibleDeliveries.length})
+                </h4>
+                <div style={{ fontSize: "0.72rem", color: "#4f46e5", fontWeight: 700, marginTop: "2px" }}>
+                  {originMode === "gps" && driverLocation
+                    ? "🚚 Trié depuis votre position GPS ➔ Plus proche en plus proche"
+                    : `🏬 Trié depuis ${activeDepotObj?.name || "le Dépôt"} ➔ Plus proche en plus proche`}
+                </div>
+              </div>
               <span
                 style={{
                   fontSize: "0.75rem",
@@ -935,7 +1068,7 @@ export default function MyMap() {
                   fontWeight: 600,
                 }}
               >
-                {pendingCount} en attente
+                {pendingCount} restants
               </span>
             </div>
 
@@ -953,6 +1086,8 @@ export default function MyMap() {
               {visibleDeliveries.map((item, index) => {
                 const isSelected = selectedStop?.id === item.id;
                 const isDelivered = item.status === 5;
+                const stepNum = item._stepOrder || index + 1;
+                const isFirstPending = !isDelivered && stepNum === 1;
                 const totalAmt = (
                   item.coliItems?.reduce((s, it) => s + it.qty * it.unitPrice, 0) ||
                   item.totalPrice ||
@@ -966,12 +1101,16 @@ export default function MyMap() {
                     style={{
                       background: isSelected
                         ? "#eff6ff"
+                        : isFirstPending
+                        ? "#f0fdf4"
                         : isDelivered
                         ? "#f8fafc"
                         : "#fff",
                       borderRadius: "12px",
                       border: isSelected
                         ? "2px solid #3b82f6"
+                        : isFirstPending
+                        ? "2px solid #10b981"
                         : isDelivered
                         ? "1px solid #e2e8f0"
                         : "1px solid #cbd5e1",
@@ -989,6 +1128,8 @@ export default function MyMap() {
                           borderRadius: "50%",
                           background: isDelivered
                             ? "#10b981"
+                            : isFirstPending
+                            ? "#059669"
                             : isSelected
                             ? "#3b82f6"
                             : "#0f172a",
@@ -1002,7 +1143,7 @@ export default function MyMap() {
                           marginTop: "2px",
                         }}
                       >
-                        {isDelivered ? "✓" : index + 1}
+                        {isDelivered ? "✓" : stepNum}
                       </div>
 
                       <div style={{ flex: 1, minWidth: 0 }}>
@@ -1011,6 +1152,8 @@ export default function MyMap() {
                             display: "flex",
                             justifyContent: "space-between",
                             alignItems: "center",
+                            gap: "4px",
+                            flexWrap: "wrap",
                           }}
                         >
                           <span
@@ -1022,18 +1165,34 @@ export default function MyMap() {
                           >
                             {item.customer?.fullName || "Client"}
                           </span>
-                          <span
-                            style={{
-                              fontSize: "0.72rem",
-                              fontWeight: 700,
-                              color: isDelivered ? "#059669" : "#d97706",
-                              background: isDelivered ? "#d1fae5" : "#fef3c7",
-                              padding: "2px 6px",
-                              borderRadius: "4px",
-                            }}
-                          >
-                            {isDelivered ? "Livré" : "À Livrer"}
-                          </span>
+                          <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+                            {isFirstPending && (
+                              <span
+                                style={{
+                                  fontSize: "0.68rem",
+                                  fontWeight: 800,
+                                  color: "#ffffff",
+                                  background: "#059669",
+                                  padding: "2px 7px",
+                                  borderRadius: "10px",
+                                }}
+                              >
+                                ⚡ Le plus proche
+                              </span>
+                            )}
+                            <span
+                              style={{
+                                fontSize: "0.72rem",
+                                fontWeight: 700,
+                                color: isDelivered ? "#059669" : "#d97706",
+                                background: isDelivered ? "#d1fae5" : "#fef3c7",
+                                padding: "2px 6px",
+                                borderRadius: "4px",
+                              }}
+                            >
+                              {isDelivered ? "Livré" : `Étape #${stepNum}`}
+                            </span>
+                          </div>
                         </div>
 
                         <div
@@ -1048,6 +1207,56 @@ export default function MyMap() {
                         >
                           📍 {item.customer?.address || ""},{" "}
                           {item.customer?.deleg || ""} {item.customer?.city || "Tunis"}
+                        </div>
+
+                        {/* Nearest-Neighbor Distance Badges */}
+                        <div
+                          style={{
+                            display: "flex",
+                            flexWrap: "wrap",
+                            gap: "6px",
+                            marginTop: "6px",
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontSize: "0.7rem",
+                              fontWeight: 700,
+                              color: "#1d4ed8",
+                              background: "#eff6ff",
+                              border: "1px solid #bfdbfe",
+                              padding: "1px 6px",
+                              borderRadius: "4px",
+                            }}
+                          >
+                            🛣️ +{item._distFromPrevKm ?? 0} km ({item._prevLabel || "Dépôt"})
+                          </span>
+                          <span
+                            style={{
+                              fontSize: "0.7rem",
+                              fontWeight: 600,
+                              color: "#475569",
+                              background: "#f1f5f9",
+                              padding: "1px 6px",
+                              borderRadius: "4px",
+                            }}
+                          >
+                            🏬 {item._distFromDepotKm ?? 0} km du dépôt
+                          </span>
+                          {item._distFromDriverKm != null && (
+                            <span
+                              style={{
+                                fontSize: "0.7rem",
+                                fontWeight: 700,
+                                color: "#059669",
+                                background: "#ecfdf5",
+                                padding: "1px 6px",
+                                borderRadius: "4px",
+                              }}
+                            >
+                              🚚 {item._distFromDriverKm} km de vous
+                            </span>
+                          )}
                         </div>
 
                         <div

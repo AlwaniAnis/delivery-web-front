@@ -26,7 +26,7 @@ export default class DeliveryModel {
   qrCodeContent = "";
   customer = new CustomerModel();
   driverId = null;
-  preparationPlaceId = null;
+  preparationPlaceId = 1;
   tarifId = null;
   tarifDelivery = 0;
   commissionDriver = 0;

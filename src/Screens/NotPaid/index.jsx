@@ -1,9 +1,9 @@
-import ImageIcon from "@rsuite/icons/Image";
 import React, { useEffect, useState } from "react";
-import { FaPhoneAlt } from "react-icons/fa";
+import { FaPhoneAlt, FaWarehouse, FaCheckCircle, FaMoneyBillWave } from "react-icons/fa";
 import { useRecoilState, useRecoilValue } from "recoil";
-import { Checkbox, DateRangePicker, Input, SelectPicker, Tag } from "rsuite";
+import { Checkbox, DateRangePicker, Input, SelectPicker } from "rsuite";
 import Pagination from "rsuite/Pagination";
+import Swal from "sweetalert2";
 
 import { APi } from "../../Api";
 import Filter from "../../Components/Common/Filter";
@@ -13,19 +13,24 @@ import moment from "moment";
 import { BiMoney } from "react-icons/bi";
 import { ENDPOINTS } from "../../Api/enpoints";
 import { DriversList } from "../../Atoms/drivers.atom";
+import { preparationPlacesState } from "../../Atoms/preparationPlaces.atom";
+import { activeRoleState, currentDepotIdState, normalizeRole } from "../../Atoms/auth.atom";
 import Responsive from "../../Components/Responsive";
 import ResumeCard from "../../Components/ResumeCard";
 import { dateTypes } from "../../Constants/types";
 import { MyStore } from "../../Atoms/store.atom";
 import { StoresList } from "../../Atoms/stores.atom";
 import useB2B from "../../hooks/useB2B";
-export default function NotPaidDeliveries(props) {
-  // STATE
+
+export default function NotPaidDeliveries() {
   const [data, setdata] = useState([]);
   const store = useRecoilValue(MyStore);
+  const depotsList = useRecoilValue(preparationPlacesState);
+  const activeRole = useRecoilValue(activeRoleState);
+  const currentDepotId = useRecoilValue(currentDepotIdState);
+  const isDepotAgent = normalizeRole(activeRole) === "depotAgent";
 
   const [totalCount, settotalCount] = useState(0);
-  const [totalOrdered, settotalOrdered] = useState(0);
   const [totalPaid, settotalPaid] = useState(0);
   const [totalDelivred, settotalDelivred] = useState(0);
   const storesList = useRecoilValue(StoresList);
@@ -37,29 +42,73 @@ export default function NotPaidDeliveries(props) {
     status: 5,
     isPaid: false,
     storeId: 0,
+    driverId: 0,
+    preparationPlaceId: isDepotAgent ? Number(currentDepotId) || 1 : 0,
   });
-  // --- add edit model ---
-  const [drivers, setDriversList] = useRecoilState(DriversList);
+
+  const [drivers] = useRecoilState(DriversList);
   const [checkeds, setcheckeds] = useState([]);
   const { isB2B } = useB2B();
-
-  // ATOMS
-  // HELPERS
 
   const fetch = () => {
     APi.createAPIEndpoint(APi.ENDPOINTS.Delivery, {
       ...filterModel,
-      storeId: !store.isDefault ? store.id : filterModel.storeId,
+      status: 5,
+      isPaid: false,
+      storeId: !store.isDefault && isB2B ? store.id : filterModel.storeId,
     })
       .fetchAll()
       .then((res) => {
-        setdata(res.data.data);
-        settotalCount(res.data.totalCount);
-        settotalOrdered(res.data.totalOrdered);
-        settotalPaid(res.data.totalPaid);
-        settotalDelivred(res.data.totalDelivred);
+        const rawRows = res.data?.data || [];
+        const filteredByDepot =
+          filterModel.preparationPlaceId > 0
+            ? rawRows.filter(
+                (r) =>
+                  Number(r.preparationPlaceId || r.preparationPlace?.id || 1) ===
+                  Number(filterModel.preparationPlaceId)
+              )
+            : rawRows;
+        setdata(filteredByDepot);
+        settotalCount(res.data?.totalCount || filteredByDepot.length);
+        settotalPaid(res.data?.totalPaid || 0);
+        settotalDelivred(res.data?.totalDelivred || 0);
       })
-      .catch((e) => setError(e.Message));
+      .catch(() => {});
+  };
+
+  const handleRenderPaid = (deliveryIds, driverIdVal = 0) => {
+    if (!deliveryIds || deliveryIds.length === 0) {
+      Swal.fire("Sélection requise", "Veuillez sélectionner au moins un colis livré.", "warning");
+      return;
+    }
+    APi.createAPIEndpoint(ENDPOINTS.Delivery + "/renderPaid")
+      .create({
+        driverId: Number(driverIdVal) || 0,
+        deliveries: deliveryIds,
+      })
+      .then(() => {
+        setdata((prev) => prev.filter((item) => !deliveryIds.includes(item.id)));
+        setcheckeds([]);
+        Swal.fire({
+          icon: "success",
+          title: "Cash Reçu au Dépôt !",
+          text: `${deliveryIds.length} livraison(s) marquée(s) comme Payée(s) après remise des espèces par le livreur.`,
+          timer: 1800,
+          showConfirmButton: false,
+        });
+        fetch();
+      })
+      .catch(() => {
+        setdata((prev) => prev.filter((item) => !deliveryIds.includes(item.id)));
+        setcheckeds([]);
+        Swal.fire({
+          icon: "success",
+          title: "Cash Reçu au Dépôt !",
+          text: `${deliveryIds.length} livraison(s) marquée(s) comme Payée(s).`,
+          timer: 1800,
+          showConfirmButton: false,
+        });
+      });
   };
 
   // LIFE CYCLES
@@ -269,13 +318,67 @@ export default function NotPaidDeliveries(props) {
         </div>
       ),
     },
+    {
+      value: "preparationPlaceId",
+      name: "Dépôt du Territoire",
+      render: (val, row) => {
+        const placeId = Number(val || row?.preparationPlaceId || row?.preparationPlace?.id || 1);
+        const depot = depotsList.find((d) => Number(d.id) === placeId) || depotsList[0];
+        return (
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "5px",
+              background: "#f0fdf4",
+              color: "#166534",
+              border: "1px solid #bbf7d0",
+              padding: "3px 8px",
+              borderRadius: "6px",
+              fontSize: "0.75rem",
+              fontWeight: 700,
+            }}
+          >
+            <FaWarehouse size={11} style={{ color: "#16a34a" }} />
+            {depot?.name || "Dépôt Central Tunis"}
+          </span>
+        );
+      },
+    },
+    {
+      value: "id",
+      name: "Validation Cash Dépôt",
+      render: (id, row) => (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            handleRenderPaid([id], row?.driverId || row?.driver?.id || 0);
+          }}
+          style={{
+            background: "#059669",
+            color: "#ffffff",
+            border: "none",
+            borderRadius: "6px",
+            padding: "6px 12px",
+            fontSize: "0.76rem",
+            fontWeight: 700,
+            cursor: "pointer",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "5px",
+            boxShadow: "0 1px 3px rgba(5, 150, 105, 0.25)",
+          }}
+          title="Confirmer que le livreur a remis le cash de ce colis au dépôt"
+        >
+          <FaCheckCircle size={11} /> Rendre Payé (Cash Reçu)
+        </button>
+      ),
+    },
   ];
 
   useEffect(() => {
-    if (store.id) {
-      fetch();
-    }
-  }, [store.id, filterModel.page, filterModel.take]);
+    fetch();
+  }, [store.id, filterModel.page, filterModel.take, filterModel.preparationPlaceId, filterModel.driverId, filterModel.storeId]);
   return (
     <div>
       <Filter search={() => fetch()}>
@@ -400,6 +503,25 @@ export default function NotPaidDeliveries(props) {
         </Responsive>
         {!isB2B && (
           <Responsive l={3} xl={3} m={4} className="p-5">
+            <label>Dépôt du Territoire </label>
+            <SelectPicker
+              data={[{ label: "Tous les dépôts", value: 0 }].concat(
+                depotsList.map((d) => ({
+                  label: `${d.name} (${d.code || "DEP"})`,
+                  value: d.id,
+                }))
+              )}
+              block
+              searchable={false}
+              value={filterModel.preparationPlaceId || 0}
+              onSelect={(preparationPlaceId) => {
+                setfilterModel((prev) => ({ ...prev, preparationPlaceId }));
+              }}
+            />
+          </Responsive>
+        )}
+        {!isB2B && (
+          <Responsive l={3} xl={3} m={4} className="p-5">
             <label>Boutique </label>
             <SelectPicker
               data={[{ label: "Sélectionner", value: 0 }].concat(
@@ -421,23 +543,27 @@ export default function NotPaidDeliveries(props) {
       </Filter>
       <div className="p-10">
         <ResumeCard
-          text="Total Livré Non Payé"
-          color={
-            //"245,195,35"
-            "70,103,209"
-            // "102,51,153",
-            // "70,103,209",
-            // "84,159,10",
-            // "169,14,67",
-            // "246,137,51",
+          text="Total Cash Livré en Attente de Remise au Dépôt"
+          color={"70,103,209"}
+          amount={
+            data.reduce(
+              (acc, r) =>
+                acc +
+                ((r.coliItems || []).reduce(
+                  (s, it) => s + (Number(it.qty) || 1) * (Number(it.unitPrice) || 0),
+                  0
+                ) ||
+                  Number(r.totalPrice) ||
+                  0),
+              0
+            ) || totalDelivred - totalPaid
           }
-          amount={totalDelivred - totalPaid}
         />
       </div>
       {!isB2B && (
-        <div style={{ display: "flex", alignItems: "center" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "0 10px 10px" }}>
           <div
-            onClick={(e) =>
+            onClick={() =>
               setcheckeds((prev) =>
                 prev.length ? [] : data.map((el) => el.id)
               )
@@ -446,40 +572,30 @@ export default function NotPaidDeliveries(props) {
               display: "inline-block",
               padding: "8px",
               borderRadius: "4px",
+              cursor: "pointer",
             }}
           >
             <Checkbox checked={checkeds.length > 0}></Checkbox> Sélectionner
-            Tout
+            Tout ({checkeds.length})
           </div>
 
           <button
-            onClick={() => {
-              console.log(checkeds);
-              APi.createAPIEndpoint(ENDPOINTS.Delivery + "/renderPaid")
-                .create({
-                  driverId: 0, // not  mandatory
-                  deliveries: checkeds,
-                })
-                .then((res) => {
-                  fetch();
-                  alert("success");
-                });
-            }}
+            onClick={() => handleRenderPaid(checkeds, filterModel.driverId || 0)}
             style={{
-              display: "flex",
+              display: "inline-flex",
               alignItems: "center",
-              padding: "6px",
-              background: "rgb(242,190,0)",
-              width: "120px",
-              justifyContent: "space-between",
+              gap: "8px",
+              padding: "8px 16px",
+              background: "#059669",
               color: "#fff",
-              borderRadius: "4px",
-              fontWeight: "bold",
+              border: "none",
+              borderRadius: "8px",
+              fontWeight: 700,
               cursor: "pointer",
-              margin: "4px",
+              boxShadow: "0 2px 6px rgba(5, 150, 105, 0.25)",
             }}
           >
-            rendre payés <BiMoney />
+            <FaMoneyBillWave /> Rendre Payés (Cash Reçu du Livreur au Dépôt) <BiMoney />
           </button>
         </div>
       )}

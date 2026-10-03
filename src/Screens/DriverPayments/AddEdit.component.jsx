@@ -1,11 +1,12 @@
 import React from "react";
 import { Input, Message, SelectPicker } from "rsuite";
-import { FaUserTie, FaMoneyBillWave, FaCalendarAlt, FaCommentAlt, FaBoxOpen } from "react-icons/fa";
+import { FaUserTie, FaMoneyBillWave, FaCalendarAlt, FaCommentAlt, FaWallet } from "react-icons/fa";
 
-function AddEdit({ _setmodel, error, model = {}, drivers = [], deliveries = [] }) {
+function AddEdit({ _setmodel, error, model = {}, drivers = [] }) {
   const driverIdVal = Number(model.driverId ?? model.DriverId) || 0;
   const amountVal = Number(model.amount ?? model.Amount) || 0;
-  const deliveryIdVal = model.deliveryId ?? model.DeliveryId ?? null;
+  const selectedDriver = drivers.find((d) => Number(d.id) === driverIdVal);
+  const currentSolde = Number(selectedDriver?.solde ?? selectedDriver?.Solde) || 0;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
@@ -35,6 +36,59 @@ function AddEdit({ _setmodel, error, model = {}, drivers = [], deliveries = [] }
         />
       </div>
 
+      {/* Selected Driver Solde Banner (No need to track exact colis) */}
+      {selectedDriver && (
+        <div
+          style={{
+            background: "#f0fdf4",
+            border: "1.5px solid #bbf7d0",
+            borderRadius: "10px",
+            padding: "12px 14px",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: "10px",
+          }}
+        >
+          <div>
+            <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "#166534", display: "flex", alignItems: "center", gap: "5px" }}>
+              <FaWallet /> SOLDE ACTUEL DU LIVREUR
+            </div>
+            <div style={{ fontSize: "1.25rem", fontWeight: 900, color: "#15803d", fontFamily: "monospace" }}>
+              {currentSolde.toFixed(3)} TND
+            </div>
+            <span style={{ fontSize: "0.72rem", color: "#475569" }}>
+              Cumul des tarifs de ramassage (dépôt) et de livraison (reçu par client)
+            </span>
+          </div>
+          {currentSolde > 0 && (
+            <button
+              type="button"
+              onClick={() =>
+                _setmodel((prev) => ({
+                  ...prev,
+                  amount: Number(currentSolde.toFixed(3)),
+                  Amount: Number(currentSolde.toFixed(3)),
+                }))
+              }
+              style={{
+                background: "#059669",
+                color: "#fff",
+                border: "none",
+                borderRadius: "8px",
+                padding: "7px 12px",
+                fontSize: "0.78rem",
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              Verser tout le solde ({currentSolde.toFixed(3)} TND)
+            </button>
+          )}
+        </div>
+      )}
+
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
         {/* Amount */}
         <div>
@@ -57,7 +111,7 @@ function AddEdit({ _setmodel, error, model = {}, drivers = [], deliveries = [] }
             }}
           />
           <small style={{ color: "#059669", fontSize: "0.75rem", marginTop: "3px", fontWeight: 700, display: "block" }}>
-            {amountVal > 0 ? `${amountVal.toFixed(3)} TND à verser` : "Saisir le montant"}
+            {amountVal > 0 ? `${amountVal.toFixed(3)} TND à verser au livreur` : "Saisir le montant à payer"}
           </small>
         </div>
 
@@ -86,35 +140,6 @@ function AddEdit({ _setmodel, error, model = {}, drivers = [], deliveries = [] }
         </div>
       </div>
 
-      {/* Optional Delivery Link */}
-      <div>
-        <label style={{ fontWeight: 700, fontSize: "0.85rem", color: "#334155", marginBottom: "4px", display: "flex", alignItems: "center", gap: "6px" }}>
-          <FaBoxOpen style={{ color: "#f59e0b" }} /> Colis / Livraison Associé(e) (Optionnel) :
-        </label>
-        <SelectPicker
-          data={[{ label: "— Aucun (Paiement général / Solde tournées) —", value: 0 }].concat(
-            deliveries.map((del) => ({
-              label: `Colis #${del.qrCodeContent || del.id} (${del.customer?.fullName || "Client"} - ${(Number(del.cost) || 0).toFixed(3)} TND)`,
-              value: del.id,
-            }))
-          )}
-          block
-          searchable={true}
-          placeholder="Rechercher par code colis ou client..."
-          value={deliveryIdVal || 0}
-          onSelect={(val) => {
-            _setmodel((prev) => ({
-              ...prev,
-              deliveryId: val === 0 ? null : val,
-              DeliveryId: val === 0 ? null : val,
-            }));
-          }}
-        />
-        <small style={{ color: "#64748b", fontSize: "0.74rem", marginTop: "3px", display: "block" }}>
-          Si ce versement est lié au règlement spécifique d'un colis ou d'une course unitaire.
-        </small>
-      </div>
-
       {/* Comment / Motif */}
       <div>
         <label style={{ fontWeight: 700, fontSize: "0.85rem", color: "#334155", marginBottom: "4px", display: "flex", alignItems: "center", gap: "6px" }}>
@@ -123,7 +148,7 @@ function AddEdit({ _setmodel, error, model = {}, drivers = [], deliveries = [] }
         <Input
           as="textarea"
           rows={3}
-          placeholder="Ex: Virement bancaire n° 98234, Paiement espèces commissions semaine 42, Avance sur frais de carburant..."
+          placeholder="Ex: Paiement du solde en espèces au dépôt, Virement bancaire..."
           value={model.comment || model.Comment || ""}
           onChange={(comment) => {
             _setmodel((prev) => ({

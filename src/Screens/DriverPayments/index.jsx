@@ -418,35 +418,30 @@ export default function DriverPayments() {
       },
     },
     {
-      value: "deliveryId",
-      value2: "DeliveryId",
-      name: "Colis / Course Lié(e)",
+      value: "driverId",
+      value2: "DriverId",
+      name: "Solde Actuel du Livreur",
       render: (dId, DId) => {
-        const id = dId ?? DId;
-        if (!id) {
-          return (
-            <span style={{ fontSize: "0.75rem", color: "#94a3b8", fontStyle: "italic" }}>
-              Global / Sans colis
-            </span>
-          );
-        }
+        const id = Number(dId ?? DId);
+        const d = drivers.find((drv) => drv.id === id);
+        const soldeVal = Number(d?.solde ?? d?.Solde) || 0;
         return (
           <span
             style={{
-              background: "#fef3c7",
-              color: "#92400e",
-              border: "1px solid #fde68a",
-              padding: "2px 8px",
+              background: "#f8fafc",
+              color: "#0f172a",
+              border: "1px solid #cbd5e1",
+              padding: "3px 9px",
               borderRadius: "6px",
-              fontSize: "0.75rem",
-              fontWeight: 700,
+              fontSize: "0.82rem",
+              fontWeight: 800,
               display: "inline-flex",
               alignItems: "center",
-              gap: "4px",
+              gap: "5px",
               fontFamily: "monospace",
             }}
           >
-            <FaBoxOpen size={10} /> Colis #{id}
+            <FaWallet size={11} style={{ color: "#2563eb" }} /> {soldeVal.toFixed(3)} TND
           </span>
         );
       },
@@ -599,6 +594,96 @@ export default function DriverPayments() {
           </div>
         )}
       </div>
+
+      {/* QUICK DRIVER SOLDE CARDS FOR ADMIN & DEPOT AGENT */}
+      {!isDriver && drivers.length > 0 && (
+        <div
+          style={{
+            background: "#ffffff",
+            borderRadius: "14px",
+            border: "1px solid #e2e8f0",
+            padding: "16px 18px",
+            marginBottom: "18px",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", flexWrap: "wrap", gap: "8px" }}>
+            <div>
+              <h4 style={{ margin: 0, fontSize: "0.95rem", fontWeight: 800, color: "#0f172a" }}>
+                💰 Soldes Actuels des Livreurs (Règlement Direct sans suivi de colis)
+              </h4>
+              <span style={{ fontSize: "0.76rem", color: "#64748b" }}>
+                Le solde cumule automatiquement les tarifs de pickup (à la remise au dépôt) et de livraison (à la réception client). Cliquez sur « Payer » pour régler un livreur.
+              </span>
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+              gap: "10px",
+            }}
+          >
+            {drivers.map((drv) => {
+              const drvName = drv.name || `${drv.firstName || ""} ${drv.lastName || ""}`.trim() || `Livreur #${drv.id}`;
+              const drvSolde = Number(drv.solde ?? drv.Solde) || 0;
+              return (
+                <div
+                  key={drv.id}
+                  style={{
+                    border: "1px solid #e2e8f0",
+                    borderRadius: "10px",
+                    padding: "10px 12px",
+                    background: "#f8fafc",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: "8px",
+                  }}
+                >
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: "0.85rem", color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {drvName}
+                    </div>
+                    <div style={{ fontSize: "0.88rem", fontWeight: 900, color: drvSolde > 0 ? "#059669" : "#64748b", fontFamily: "monospace" }}>
+                      Solde: {drvSolde.toFixed(3)} TND
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setModel({
+                        id: 0,
+                        driverId: drv.id,
+                        DriverId: drv.id,
+                        amount: drvSolde > 0 ? Number(drvSolde.toFixed(3)) : 0,
+                        Amount: drvSolde > 0 ? Number(drvSolde.toFixed(3)) : 0,
+                        date: new Date().toISOString().split("T")[0],
+                        Date: new Date().toISOString().split("T")[0],
+                        comment: `Règlement du solde livreur (${drvName})`,
+                        Comment: `Règlement du solde livreur (${drvName})`,
+                      });
+                      setState((prev) => ({ ...prev, open: true }));
+                    }}
+                    style={{
+                      background: "#059669",
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: "7px",
+                      padding: "6px 10px",
+                      fontSize: "0.75rem",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      flexShrink: 0,
+                    }}
+                  >
+                    Payer
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* FILTER & SEARCH BAR */}
       <div

@@ -79,6 +79,7 @@ export default function Tarifs() {
     const payload = {
       ...model,
       tarifDelivery: Number(model.tarifDelivery) || 0,
+      pickupPrice: Number(model.pickupPrice) || 0,
       commissionDriver: Number(model.commissionDriver) || 0,
     };
 
@@ -246,8 +247,28 @@ export default function Tarifs() {
       ),
     },
     {
+      value: "pickupPrice",
+      name: "Tarif Pickup Livreur",
+      render: (val) => (
+        <span
+          style={{
+            fontWeight: 800,
+            fontSize: "0.95rem",
+            color: "#d97706",
+            background: "#fffbeb",
+            border: "1px solid #fde68a",
+            padding: "4px 8px",
+            borderRadius: "6px",
+            display: "inline-block",
+          }}
+        >
+          {(Number(val ?? 1.5)).toFixed(3)} TND
+        </span>
+      ),
+    },
+    {
       value: "commissionDriver",
-      name: "Commission Livreur",
+      name: "Tarif Livraison Livreur",
       render: (val) => (
         <span
           style={{
@@ -268,9 +289,12 @@ export default function Tarifs() {
     {
       value: "tarifDelivery",
       value2: "commissionDriver",
+      value3: "pickupPrice",
       name: "Marge Nette Agence",
-      render: (delivery, comm) => {
-        const diff = (Number(delivery) || 0) - (Number(comm) || 0);
+      render: (delivery, comm, pickup) => {
+        const diff =
+          (Number(delivery) || 0) -
+          ((Number(comm) || 0) + (Number(pickup ?? 1.5) || 0));
         return (
           <span
             style={{

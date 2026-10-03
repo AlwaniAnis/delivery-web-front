@@ -628,8 +628,8 @@ export default function PreparationPlaces() {
               color: "#fff",
               border: "none",
               borderRadius: "10px",
-              padding: "10px 18px",
-              fontSize: "0.9rem",
+              padding: "10px 16px",
+              fontSize: "0.86rem",
               fontWeight: 700,
               cursor: "pointer",
               display: "inline-flex",
@@ -641,14 +641,52 @@ export default function PreparationPlaces() {
             <FaBoxOpen /> Confirmer Colis au Dépôt
           </button>
           <button
+            onClick={() => history.push("/store_recap")}
+            style={{
+              background: "rgba(255,255,255,0.1)",
+              color: "#fff",
+              border: "1px solid rgba(255,255,255,0.25)",
+              borderRadius: "10px",
+              padding: "10px 14px",
+              fontSize: "0.84rem",
+              fontWeight: 700,
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "6px",
+            }}
+            title="Comptabilité et récapitulatif de fin de journée pour les boutiques"
+          >
+            <FaMoneyBillWave /> Clôture Boutiques (Fin de Journée)
+          </button>
+          <button
+            onClick={() => history.push("/driver_payments")}
+            style={{
+              background: "rgba(255,255,255,0.1)",
+              color: "#fff",
+              border: "1px solid rgba(255,255,255,0.25)",
+              borderRadius: "10px",
+              padding: "10px 14px",
+              fontSize: "0.84rem",
+              fontWeight: 700,
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "6px",
+            }}
+            title="Comptabilité et règlement des soldes des chauffeurs livreurs"
+          >
+            <FaTruck /> Comptabilité Livreurs
+          </button>
+          <button
             onClick={handleAddNew}
             style={{
               background: "linear-gradient(135deg, #4f46e5 0%, #4338ca 100%)",
               color: "#fff",
               border: "none",
               borderRadius: "10px",
-              padding: "10px 20px",
-              fontSize: "0.9rem",
+              padding: "10px 18px",
+              fontSize: "0.88rem",
               fontWeight: 700,
               cursor: "pointer",
               display: "inline-flex",

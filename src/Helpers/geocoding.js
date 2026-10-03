@@ -141,3 +141,102 @@ export function calculateDistanceKm(lat1, lon1, lat2, lon2) {
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return Number((R * c).toFixed(1));
 }
+
+/**
+ * Resolves coordinates for a depot / preparation place
+ */
+export function getDepotCoordinates(depot) {
+  if (depot?.latitude && depot?.longitude) {
+    return { lat: Number(depot.latitude), lng: Number(depot.longitude) };
+  }
+  const nameOrCode = `${depot?.name || ""} ${depot?.code || ""} ${depot?.address || ""}`.toLowerCase();
+  if (nameOrCode.includes("sousse")) {
+    return { lat: 35.8256, lng: 10.6369 };
+  }
+  if (nameOrCode.includes("sfax")) {
+    return { lat: 34.7406, lng: 10.7603 };
+  }
+  return { lat: 36.8431, lng: 10.2033 }; // Dépôt Central Tunis (Charguia / Ariana)
+}
+
+/**
+ * Sorts deliveries using Nearest-Neighbor ("الأقرب فالأقرب") algorithm:
+ * Starts from the chosen origin (Depot at start of day OR Driver's live GPS position)
+ * and iteratively visits the closest next stop.
+ */
+export function sortDeliveriesByNearest(deliveries = [], originPoint, depotPoint, driverLocation = null) {
+  if (!Array.isArray(deliveries) || deliveries.length === 0) return [];
+
+  const startPos = originPoint || depotPoint || { lat: 36.8431, lng: 10.2033, label: "Dépôt" };
+  const refDepot = depotPoint || { lat: 36.8431, lng: 10.2033 };
+
+  const enriched = deliveries.map((d) => {
+    const coords = getCoordinatesForDelivery(d);
+    const distFromDepot = calculateDistanceKm(refDepot.lat, refDepot.lng, coords.lat, coords.lng);
+    const distFromDriver = driverLocation
+      ? calculateDistanceKm(driverLocation.lat, driverLocation.lng, coords.lat, coords.lng)
+      : null;
+    return {
+      ...d,
+      _coords: coords,
+      _distFromDepotKm: distFromDepot,
+      _distFromDriverKm: distFromDriver,
+    };
+  });
+
+  // Pending stops first (ordered nearest-by-nearest), delivered stops after
+  const unvisited = enriched.filter((d) => d.status !== 5);
+  const completed = enriched.filter((d) => d.status === 5);
+
+  const orderedPending = [];
+  let currentPos = { lat: startPos.lat, lng: startPos.lng };
+  let prevLabel = startPos.label || "Dépôt";
+  let cumulativeKm = 0;
+  let stepCounter = 1;
+
+  while (unvisited.length > 0) {
+    let bestIdx = 0;
+    let bestDist = Infinity;
+
+    for (let i = 0; i < unvisited.length; i++) {
+      const candidate = unvisited[i];
+      const dist = calculateDistanceKm(
+        currentPos.lat,
+        currentPos.lng,
+        candidate._coords.lat,
+        candidate._coords.lng
+      );
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestIdx = i;
+      }
+    }
+
+    const [nextStop] = unvisited.splice(bestIdx, 1);
+    const legDist = Number(bestDist.toFixed(1));
+    cumulativeKm = Number((cumulativeKm + legDist).toFixed(1));
+
+    orderedPending.push({
+      ...nextStop,
+      _stepOrder: stepCounter,
+      _distFromPrevKm: legDist,
+      _prevLabel: prevLabel,
+      _cumulativeDistKm: cumulativeKm,
+    });
+
+    currentPos = nextStop._coords;
+    prevLabel = `Étape #${stepCounter}`;
+    stepCounter++;
+  }
+
+  const orderedCompleted = completed.map((d, idx) => ({
+    ...d,
+    _stepOrder: orderedPending.length + idx + 1,
+    _distFromPrevKm: d._distFromDepotKm,
+    _prevLabel: "Dépôt",
+    _cumulativeDistKm: cumulativeKm,
+  }));
+
+  return [...orderedPending, ...orderedCompleted];
+}
+

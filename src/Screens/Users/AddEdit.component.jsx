@@ -1,20 +1,29 @@
 import React from "react";
 import { Input, Message, SelectPicker } from "rsuite";
+import { useRecoilValue } from "recoil";
+import { preparationPlacesState } from "../../Atoms/preparationPlaces.atom";
+import { DepotAgentsList } from "../../Atoms/depotAgents.atom";
 
 const roleOptions = [
   { label: "Administrateur (Direction & Dispatch)", value: "admin" },
+  { label: "Agent de Dépôt (Stock, Pickups & Affectation)", value: "depotAgent" },
   { label: "Livreur (Driver App)", value: "driver" },
   { label: "Client Boutique (Espace B2B)", value: "B2Bclient" },
 ];
 
-function AddEdit({ _setmodel, error, model, drivers = [], stores = [] }) {
+function AddEdit({ _setmodel, error, model, drivers = [], stores = [], depotAgents = [] }) {
+  const depots = useRecoilValue(preparationPlacesState);
+  const recoilDepotAgents = useRecoilValue(DepotAgentsList);
+  const agentsList = depotAgents && depotAgents.length > 0 ? depotAgents : recoilDepotAgents;
   const roleValue = String(model.role || model.position || "driver").trim().toLowerCase();
   const selectedRole =
     roleValue === "b2bclient" || roleValue === "b2b"
       ? "B2Bclient"
-      : roleValue === "admin"
-        ? "admin"
-        : "driver";
+      : roleValue === "depotagent" || roleValue === "agentdepot" || roleValue.includes("depot")
+        ? "depotAgent"
+        : roleValue === "admin"
+          ? "admin"
+          : "driver";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
@@ -30,12 +39,24 @@ function AddEdit({ _setmodel, error, model, drivers = [], stores = [] }) {
           cleanable={false}
           onChange={(role) => {
             const position =
-              role === "driver" ? "Driver" : role === "B2Bclient" ? "B2Bclient" : "Admin";
+              role === "driver"
+                ? "Driver"
+                : role === "B2Bclient"
+                  ? "B2Bclient"
+                  : role === "depotAgent"
+                    ? "DepotAgent"
+                    : "Admin";
             _setmodel((prev) => ({
               ...prev,
               role,
               position,
-              ...(role === "driver" ? { storeId: undefined } : { driverId: undefined }),
+              ...(role === "driver"
+                ? { storeId: undefined, preparationPlaceId: undefined }
+                : role === "B2Bclient"
+                  ? { driverId: undefined, preparationPlaceId: undefined }
+                  : role === "depotAgent"
+                    ? { driverId: undefined, storeId: undefined, preparationPlaceId: prev.preparationPlaceId || 1 }
+                    : { driverId: undefined, storeId: undefined, preparationPlaceId: undefined }),
             }));
           }}
         />
@@ -108,7 +129,66 @@ function AddEdit({ _setmodel, error, model, drivers = [], stores = [] }) {
         />
       </div>
 
-      {model.role === "driver" && (
+      {selectedRole === "depotAgent" && (
+        <>
+          <div>
+            <label style={{ fontWeight: 600, fontSize: "0.85rem", color: "#b45309" }}>
+              Associer au Profil Agent de Dépôt :
+            </label>
+            <SelectPicker
+              data={(agentsList || []).map((a) => {
+                const placeId = Number(a.preparationPlaceId || a.depotId || 1);
+                const dep = (depots || []).find((d) => d.id === placeId);
+                return {
+                  label: `${a.firstName || ""} ${a.lastName || ""} (${dep ? dep.name : `Dépôt #${placeId}`})`,
+                  value: a.id,
+                };
+              })}
+              block
+              placeholder="Sélectionner l'agent de dépôt..."
+              value={model.depotAgentId}
+              onChange={(depotAgentId) => {
+                const matched = (agentsList || []).find((el) => el.id === depotAgentId);
+                const placeId = matched ? Number(matched.preparationPlaceId || matched.depotId || 1) : 1;
+                _setmodel((prev) => ({
+                  ...prev,
+                  depotAgentId,
+                  preparationPlaceId: placeId,
+                  depotId: placeId,
+                  firstName: prev.firstName || matched?.firstName,
+                  lastName: prev.lastName || matched?.lastName,
+                  phoneNumber: prev.phoneNumber || matched?.phone1,
+                  email: prev.email || matched?.email,
+                  userName: prev.userName || matched?.userName || matched?.email,
+                }));
+              }}
+            />
+          </div>
+
+          <div>
+            <label style={{ fontWeight: 600, fontSize: "0.85rem", color: "#b45309" }}>
+              Dépôt / Entrepôt d'Affectation :
+            </label>
+            <SelectPicker
+              data={(depots || []).map((d) => ({
+                label: `${d.name} (${d.code || `DEP-${d.id}`})`,
+                value: d.id,
+              }))}
+              block
+              value={model.preparationPlaceId || model.depotId || 1}
+              onChange={(preparationPlaceId) => {
+                _setmodel((prev) => ({
+                  ...prev,
+                  preparationPlaceId,
+                  depotId: preparationPlaceId,
+                }));
+              }}
+            />
+          </div>
+        </>
+      )}
+
+      {selectedRole === "driver" && (
         <div>
           <label style={{ fontWeight: 600, fontSize: "0.85rem", color: "#166534" }}>
             Associer au Profil Livreur / Véhicule :
@@ -134,7 +214,7 @@ function AddEdit({ _setmodel, error, model, drivers = [], stores = [] }) {
         </div>
       )}
 
-      {model.role === "B2Bclient" && (
+      {selectedRole === "B2Bclient" && (
         <div>
           <label style={{ fontWeight: 600, fontSize: "0.85rem", color: "#1e40af" }}>
             Associer à la Boutique B2B :

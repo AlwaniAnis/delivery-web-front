@@ -1,11 +1,12 @@
 import React from "react";
 import { Input, Message } from "rsuite";
-import { FaTag, FaMoneyBillWave, FaTruck, FaPercentage, FaInfoCircle } from "react-icons/fa";
+import { FaTag, FaMoneyBillWave, FaTruck, FaPercentage, FaInfoCircle, FaWarehouse } from "react-icons/fa";
 
 function AddEdit({ _setmodel, error, model = {} }) {
   const deliveryFee = Number(model.tarifDelivery) || 0;
+  const pickupFee = Number(model.pickupPrice) || 0;
   const driverComm = Number(model.commissionDriver) || 0;
-  const netMargin = deliveryFee - driverComm;
+  const netMargin = deliveryFee - (pickupFee + driverComm);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
@@ -20,32 +21,54 @@ function AddEdit({ _setmodel, error, model = {} }) {
         />
       </div>
 
+      <div>
+        <label style={{ fontWeight: 700, fontSize: "0.85rem", color: "#334155", marginBottom: "4px", display: "flex", alignItems: "center", gap: "6px" }}>
+          <FaMoneyBillWave style={{ color: "#059669" }} /> Tarif Facturé Boutique (TND) * :
+        </label>
+        <Input
+          type="number"
+          step="0.100"
+          min={0}
+          placeholder="Ex: 7.000"
+          value={model.tarifDelivery ?? ""}
+          onChange={(val) =>
+            _setmodel((prev) => ({
+              ...prev,
+              tarifDelivery: parseFloat(val) || 0,
+            }))
+          }
+        />
+        <small style={{ color: "#64748b", fontSize: "0.74rem", marginTop: "3px", display: "block" }}>
+          Montant facturé à la boutique pour la livraison (seul montant visible par la boutique).
+        </small>
+      </div>
+
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
         <div>
-          <label style={{ fontWeight: 700, fontSize: "0.85rem", color: "#334155", marginBottom: "4px", display: "flex", alignItems: "center", gap: "6px" }}>
-            <FaMoneyBillWave style={{ color: "#059669" }} /> Tarif Facturé Boutique (TND) * :
+          <label style={{ fontWeight: 700, fontSize: "0.82rem", color: "#334155", marginBottom: "4px", display: "flex", alignItems: "center", gap: "6px" }}>
+            <FaWarehouse style={{ color: "#d97706" }} /> Tarif Pickup Livreur (TND) * :
           </label>
           <Input
             type="number"
             step="0.100"
             min={0}
-            placeholder="Ex: 7.000"
-            value={model.tarifDelivery ?? ""}
+            placeholder="Ex: 1.500"
+            value={model.pickupPrice ?? ""}
             onChange={(val) =>
               _setmodel((prev) => ({
                 ...prev,
-                tarifDelivery: parseFloat(val) || 0,
+                pickupPrice: parseFloat(val) || 0,
               }))
             }
           />
-          <small style={{ color: "#64748b", fontSize: "0.74rem", marginTop: "3px", display: "block" }}>
-            Montant payé par la boutique ou le client pour la livraison.
+          <small style={{ color: "#64748b", fontSize: "0.72rem", marginTop: "3px", display: "block" }}>
+            Crédité au livreur lorsqu'il dépose le colis au dépôt.
           </small>
         </div>
 
         <div>
-          <label style={{ fontWeight: 700, fontSize: "0.85rem", color: "#334155", marginBottom: "4px", display: "flex", alignItems: "center", gap: "6px" }}>
-            <FaTruck style={{ color: "#2563eb" }} /> Commission Livreur (TND) * :
+          <label style={{ fontWeight: 700, fontSize: "0.82rem", color: "#334155", marginBottom: "4px", display: "flex", alignItems: "center", gap: "6px" }}>
+            <FaTruck style={{ color: "#2563eb" }} /> Tarif Livraison Livreur (TND) * :
           </label>
           <Input
             type="number"
@@ -60,8 +83,8 @@ function AddEdit({ _setmodel, error, model = {} }) {
               }))
             }
           />
-          <small style={{ color: "#64748b", fontSize: "0.74rem", marginTop: "3px", display: "block" }}>
-            Part reversée au chauffeur livreur par colis livré.
+          <small style={{ color: "#64748b", fontSize: "0.72rem", marginTop: "3px", display: "block" }}>
+            Crédité au livreur lorsque le client reçoit le colis.
           </small>
         </div>
       </div>
@@ -85,7 +108,7 @@ function AddEdit({ _setmodel, error, model = {} }) {
               Marge Nette Plateforme (Tawsil)
             </div>
             <div style={{ fontSize: "0.72rem", color: "#64748b" }}>
-              Tarif Livraison - Commission Chauffeur
+              Tarif Boutique - (Pickup Livreur + Livraison Livreur)
             </div>
           </div>
         </div>

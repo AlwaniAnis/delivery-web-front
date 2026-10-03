@@ -4,7 +4,7 @@ import ImageIcon from "@rsuite/icons/Image";
 import TrashIcon from "@rsuite/icons/Trash";
 import Barcode from "react-barcode";
 import QRCode from "react-qr-code";
-import { useRecoilState } from "recoil";
+import { useRecoilState, useRecoilValue } from "recoil";
 import {
   Button,
   Checkbox,
@@ -32,6 +32,7 @@ import {
 import { APi } from "../../Api";
 import { DriversList } from "../../Atoms/drivers.atom";
 import { preparationPlacesState } from "../../Atoms/preparationPlaces.atom";
+import { MyStore } from "../../Atoms/store.atom";
 import { tarifsState } from "../../Atoms/tarifs.atom";
 import { DeliveryStatus } from "../../Constants/types";
 import zip_codes from "../../Data/zip_codes.json";
@@ -40,6 +41,7 @@ import useB2B from "../../hooks/useB2B";
 
 function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
   const { isB2B } = useB2B();
+  const store = useRecoilValue(MyStore);
 
   const [drivers] = useRecoilState(DriversList);
   const [depotsList] = useRecoilState(preparationPlacesState);
@@ -102,10 +104,15 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
   };
 
   useEffect(() => {
-    if (!model.id && !model.qrCodeContent) {
-      _setmodel((prev) => ({ ...prev, qrCodeContent: Date.now().toString() }));
-    }
-  }, [model.id]);
+    const defaultDepotId = Number(
+      store?.preparationPlaceId || store?.depotId || depotsList?.[0]?.id || 1
+    );
+    _setmodel((prev) => ({
+      ...prev,
+      qrCodeContent: !prev.id && !prev.qrCodeContent ? Date.now().toString() : prev.qrCodeContent,
+      preparationPlaceId: Number(prev.preparationPlaceId) || defaultDepotId,
+    }));
+  }, [model.id, store?.preparationPlaceId, store?.depotId]);
 
   // Total price of items
   const totalPrice = (model.coliItems || []).reduce(
@@ -287,10 +294,14 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
 
             <SelectPicker
               data={[{ label: "— Sélectionner la formule de tarif —", value: 0 }].concat(
-                (tarifsList || []).map((t) => ({
-                  label: `${t.name} (Frais: ${(Number(t.tarifDelivery) || 0).toFixed(3)} TND · Comm: ${(Number(t.commissionDriver) || 0).toFixed(3)} TND)`,
-                  value: t.id,
-                }))
+                (tarifsList || [])
+                  .filter((t) => !t.isPickup && !/ramassage|pickup/i.test(t.name || ""))
+                  .map((t) => ({
+                    label: isB2B
+                      ? `${t.name} (Frais: ${(Number(t.tarifDelivery) || 0).toFixed(3)} TND)`
+                      : `${t.name} (Frais: ${(Number(t.tarifDelivery) || 0).toFixed(3)} TND · Pickup: ${(Number(t.pickupPrice ?? 1.5)).toFixed(3)} TND · Livr: ${(Number(t.commissionDriver) || 0).toFixed(3)} TND)`,
+                    value: t.id,
+                  }))
               )}
               block
               searchable={true}
@@ -302,6 +313,7 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
                   ...prev,
                   tarifId: val === 0 ? null : val,
                   tarifDelivery: selected ? Number(selected.tarifDelivery) : 0,
+                  pickupPrice: selected ? Number(selected.pickupPrice ?? 1.5) : 0,
                   commissionDriver: selected ? Number(selected.commissionDriver) : 0,
                   cost: selected ? Number(selected.tarifDelivery) : prev.cost,
                 }));
@@ -323,17 +335,19 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
                   }}
                 >
                   <span>{selectedTarif.remark || "Tarif actif"}</span>
-                  <span style={{ fontWeight: 700, color: "#4f46e5" }}>
-                    Commission Livreur : {(Number(selectedTarif.commissionDriver) || 0).toFixed(3)} TND
-                  </span>
+                  {!isB2B && (
+                    <span style={{ fontWeight: 700, color: "#4f46e5" }}>
+                      Pickup Livreur : {(Number(selectedTarif.pickupPrice ?? 1.5)).toFixed(3)} TND · Livraison Livreur : {(Number(selectedTarif.commissionDriver) || 0).toFixed(3)} TND
+                    </span>
+                  )}
                 </div>
               );
             })()}
           </div>
 
-          {/* Non-B2B Fields: Driver & Depot */}
-          {!isB2B && (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+          {/* Depot (Mandatory, inherited from Store Territory) & Driver */}
+          <div style={{ display: "grid", gridTemplateColumns: isB2B ? "1fr" : "1fr 1fr", gap: "10px" }}>
+            {!isB2B && (
               <div>
                 <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#334155", marginBottom: "4px", display: "flex", alignItems: "center", gap: "5px" }}>
                   <FaTruck style={{ color: "#4f46e5" }} /> Livreur Assigné :
@@ -354,32 +368,35 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
                   }}
                 />
               </div>
+            )}
 
-              <div>
-                <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#334155", marginBottom: "4px", display: "flex", alignItems: "center", gap: "5px" }}>
-                  <FaWarehouse style={{ color: "#059669" }} /> Dépôt / Stock :
-                </label>
-                <SelectPicker
-                  data={[{ label: "— En transit —", value: 0 }].concat(
-                    depotsList.map((d) => ({
-                      label: `${d.name} (${d.code || "DEP"})`,
-                      value: d.id,
-                    }))
-                  )}
-                  block
-                  searchable={true}
-                  placeholder="Dépôt de stockage..."
-                  value={model.preparationPlaceId || 0}
-                  onSelect={(val) => {
-                    _setmodel((prev) => ({
-                      ...prev,
-                      preparationPlaceId: val === 0 ? null : val,
-                    }));
-                  }}
-                />
-              </div>
+            <div>
+              <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#065f46", marginBottom: "4px", display: "flex", alignItems: "center", gap: "5px" }}>
+                <FaWarehouse style={{ color: "#059669" }} /> Dépôt du Territoire (Obligatoire) * :
+              </label>
+              <SelectPicker
+                data={depotsList.map((d) => ({
+                  label: `${d.name} (${d.code || "DEP"})`,
+                  value: d.id,
+                }))}
+                block
+                cleanable={false}
+                disabled={isB2B}
+                searchable={true}
+                placeholder="Dépôt de rattachement..."
+                value={Number(model.preparationPlaceId || store?.preparationPlaceId || store?.depotId || depotsList?.[0]?.id || 1)}
+                onSelect={(val) => {
+                  _setmodel((prev) => ({
+                    ...prev,
+                    preparationPlaceId: Number(val) || 1,
+                  }));
+                }}
+              />
+              <small style={{ fontSize: "0.72rem", color: "#64748b", marginTop: "2px", display: "block" }}>
+                Rattaché automatiquement au dépôt du territoire de la boutique.
+              </small>
             </div>
-          )}
+          </div>
 
           {/* Date & Exchangeable */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", alignItems: "center" }}>

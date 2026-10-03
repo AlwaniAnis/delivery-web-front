@@ -4,6 +4,15 @@ import { atom } from "recoil";
 export const normalizeRole = (role) => {
   if (!role) return "admin";
   const str = String(role).trim().toLowerCase();
+  if (
+    str === "depotagent" ||
+    str === "agentdepot" ||
+    str === "agent_depot" ||
+    str.includes("depot") ||
+    str.includes("agent")
+  ) {
+    return "depotAgent";
+  }
   if (str === "driver" || str.includes("driver") || str.includes("livreur")) {
     return "driver";
   }
@@ -25,7 +34,7 @@ const getStoredAuth = () => {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (parsed) {
-      parsed.role = normalizeRole(parsed.role);
+      parsed.role = normalizeRole(parsed.role || parsed.position);
     }
     return parsed;
   } catch (e) {
@@ -45,14 +54,20 @@ export const currentUserState = atom({
   default: initialAuth || null,
 });
 
-// Controls the current active view mode: "admin" | "driver" | "B2Bclient"
+// Controls the current active view mode: "admin" | "driver" | "B2Bclient" | "depotAgent"
 export const activeRoleState = atom({
   key: "activeRoleState",
-  default: normalizeRole(initialAuth?.role),
+  default: normalizeRole(initialAuth?.role || initialAuth?.position),
 });
 
 // When in driver mode or inspecting a driver, store the selected driverId
 export const currentDriverIdState = atom({
   key: "currentDriverIdState",
   default: initialAuth?.driverId || null,
+});
+
+// When in depotAgent mode, store the assigned depot / preparationPlaceId
+export const currentDepotIdState = atom({
+  key: "currentDepotIdState",
+  default: initialAuth?.preparationPlaceId || initialAuth?.depotId || 1,
 });

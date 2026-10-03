@@ -9,6 +9,7 @@ export const ENDPOINTS = {
   Store: "Store",
   Statistics: "Statistics",
   PreparationPlace: "PreparationPlace",
+  DepotAgent: "DepotAgent",
   Tarif: "Tarif",
   DriverPayment: "DriverPayment",
 };
