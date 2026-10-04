@@ -54,17 +54,15 @@ function Home() {
   const store = useRecoilValue(MyStore);
   const fetchStats = () => {
     APi.createAPIEndpoint(ENDPOINTS.Statistics, {
-      storeId: store.isDefault ? filterModel.storeId : store.id,
+      storeId: isB2B ? store.id || 1 : filterModel.storeId,
     })
       .fetchAll()
-      .then((res) => setstats(res.data));
+      .then((res) => setstats(res.data))
+      .catch(() => {});
   };
   useEffect(() => {
-    if (store.id) fetchStats();
-  }, [store.id]);
-  useEffect(() => {
-    if (store.id) fetchStats();
-  }, [filterModel.storeId]);
+    fetchStats();
+  }, [store.id, isB2B, filterModel.storeId]);
   const columns = [
     {
       value: "customer",
@@ -301,7 +299,7 @@ function Home() {
   const fetch = (status) => {
     APi.createAPIEndpoint(APi.ENDPOINTS.Delivery, {
       ...filterModel,
-      storeId: !store.isDefault ? store.id : filterModel.storeId,
+      storeId: isB2B ? store.id || 1 : filterModel.storeId,
       page: 1,
       take: 10000,
       status,
@@ -361,7 +359,7 @@ function Home() {
             Boutique
           </label>
           <SelectPicker
-            data={[{ label: "Toutes les boutiques (Boutique Principale)", value: 0 }].concat(
+            data={[{ label: "Toutes les boutiques (Global)", value: 0 }].concat(
               storesList.map((c) => {
                 return { label: c.name_fr, value: c.id };
               })

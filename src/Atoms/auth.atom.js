@@ -71,3 +71,12 @@ export const currentDepotIdState = atom({
   key: "currentDepotIdState",
   default: initialAuth?.preparationPlaceId || initialAuth?.depotId || 1,
 });
+
+// Controls which of the 2 Admin modules is active when logged in as Admin:
+// "administration" = Module 1: Global Administration (Accounts, Tarifs, Global Dashboard, All Deliveries, All Recaps, All Reclamations)
+// "store" = Module 2: Notre Boutique (Behaves like a normal store: its own deliveries, add/manage them, its own dashboard, its own reclamations, its own recap)
+export const adminModuleState = atom({
+  key: "adminModuleState",
+  default: localStorage.getItem("tawsil_admin_module") || "administration",
+});
+

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useRecoilState, useRecoilValue } from "recoil";
+import { useHistory } from "react-router-dom";
 import { Button, Input, Modal, SelectPicker, Loader } from "rsuite";
 import Swal from "sweetalert2";
 import moment from "moment";
@@ -17,12 +18,18 @@ import {
   FaTrash,
   FaUserShield,
   FaFilter,
+  FaAddressBook,
+  FaPhoneAlt,
+  FaWhatsapp,
+  FaEnvelope,
 } from "react-icons/fa";
 import { APi } from "../../Api";
 import { reclamationsState } from "../../Atoms/reclamations.atom";
+import { globalContactsState } from "../../Atoms/globalContacts.atom";
 import { MyStore } from "../../Atoms/store.atom";
 import { StoresList } from "../../Atoms/stores.atom";
 import { activeRoleState, currentUserState, normalizeRole } from "../../Atoms/auth.atom";
+import useB2B from "../../hooks/useB2B";
 
 const RECLAMATION_CATEGORIES = [
   { label: "Retard de livraison", value: "Retard de livraison" },
@@ -48,17 +55,19 @@ const RECLAMATION_STATUSES = [
 
 export default function Reclamations() {
   const [reclamations, setReclamations] = useRecoilState(reclamationsState);
+  const globalContacts = useRecoilValue(globalContactsState);
   const currentStore = useRecoilValue(MyStore);
   const storesList = useRecoilValue(StoresList);
   const activeRole = useRecoilValue(activeRoleState);
   const currentUser = useRecoilValue(currentUserState);
+  const history = useHistory();
 
   const normalizedRole = normalizeRole(activeRole);
-  const isB2B = normalizedRole === "B2Bclient";
+  const { isB2B } = useB2B();
   const isAdmin = !isB2B && normalizedRole === "admin";
 
   const activeStoreId = Number(
-    currentStore?.id || currentUser?.storeId || currentUser?.eStoreId || 0
+    currentStore?.id || currentUser?.storeId || currentUser?.eStoreId || 1
   );
 
   const [loading, setLoading] = useState(false);
@@ -92,28 +101,105 @@ export default function Reclamations() {
     } catch (e) {}
   };
 
-  // Fetch Reclamations from API
-  const fetchReclamations = () => {
-    setLoading(true);
-    const params = {};
-    if (isB2B && activeStoreId) {
-      params.storeId = activeStoreId;
-    } else if (storeFilter) {
-      params.storeId = storeFilter;
-    }
+  // Normalize backend Reclamation entity for UI display
+  const normalizeReclamation = (rec) => {
+    const matchedStore =
+      rec.store ||
+      storesList.find((s) => Number(s.id) === Number(rec.storeId || rec.eStoreId));
+    const storeName =
+      rec.storeName ||
+      matchedStore?.name_fr ||
+      matchedStore?.name ||
+      `Boutique #${rec.storeId || 1}`;
+    const deliveryCode =
+      rec.deliveryCode ||
+      rec.delivery?.qrCodeContent ||
+      rec.delivery?.code ||
+      (rec.deliveryId ? `#${rec.deliveryId}` : null);
+    const customerName =
+      rec.customerName || rec.delivery?.customer?.fullName || null;
+    const customerPhone =
+      rec.customerPhone || rec.delivery?.customer?.phoneNumber || null;
 
-    APi.createAPIEndpoint(APi.ENDPOINTS.Reclamation, params)
-      .fetchAll()
-      .then((res) => {
-        setLoading(false);
+    const rawReplies = Array.isArray(rec.replies) ? rec.replies : [];
+    const lastReply = rawReplies.length > 0 ? rawReplies[rawReplies.length - 1] : null;
+    const adminReply =
+      rec.adminReply ||
+      (lastReply ? lastReply.message || lastReply.text || "" : "");
+
+    return {
+      ...rec,
+      storeName,
+      deliveryCode,
+      customerName,
+      customerPhone,
+      adminReply,
+      status: rec.status || (rawReplies.length > 0 ? 3 : 1),
+    };
+  };
+
+  // Fetch Reclamations from Swagger API (/api/Reclamation/store/{storeId})
+  const fetchReclamations = async () => {
+    setLoading(true);
+    try {
+      if (isB2B && activeStoreId) {
+        const res = await APi.createAPIEndpoint(
+          `${APi.ENDPOINTS.Reclamation}/store/${activeStoreId}`
+        ).customGet();
         const list = res.data?.data || res.data;
         if (Array.isArray(list)) {
-          persistReclamations(list);
+          persistReclamations(list.map(normalizeReclamation));
         }
-      })
-      .catch(() => {
         setLoading(false);
+        return;
+      }
+
+      if (storeFilter) {
+        const res = await APi.createAPIEndpoint(
+          `${APi.ENDPOINTS.Reclamation}/store/${storeFilter}`
+        ).customGet();
+        const list = res.data?.data || res.data;
+        if (Array.isArray(list)) {
+          persistReclamations(list.map(normalizeReclamation));
+        }
+        setLoading(false);
+        return;
+      }
+
+      // Admin viewing all stores: fetch per store from /api/Reclamation/store/{storeId}
+      const targetStores =
+        storesList.length > 0
+          ? storesList
+          : [{ id: activeStoreId || 1 }];
+      const results = await Promise.allSettled(
+        targetStores.map((st) =>
+          APi.createAPIEndpoint(`${APi.ENDPOINTS.Reclamation}/store/${st.id}`).customGet()
+        )
+      );
+      const mergedMap = new Map();
+      results.forEach((r) => {
+        if (r.status === "fulfilled") {
+          const arr = r.value?.data?.data || r.value?.data;
+          if (Array.isArray(arr)) {
+            arr.forEach((item) => {
+              if (item && item.id) {
+                mergedMap.set(item.id, normalizeReclamation(item));
+              }
+            });
+          }
+        }
       });
+      if (mergedMap.size > 0) {
+        const sorted = Array.from(mergedMap.values()).sort(
+          (a, b) => new Date(b.createdDate || 0) - new Date(a.createdDate || 0)
+        );
+        persistReclamations(sorted);
+      }
+    } catch (e) {
+      // Keep cached reclamations on error
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Load Store's Deliveries so Store can link a parcel to a reclamation
@@ -136,7 +222,7 @@ export default function Reclamations() {
   useEffect(() => {
     fetchReclamations();
     fetchStoreDeliveries();
-  }, [activeStoreId, isB2B]);
+  }, [activeStoreId, isB2B, storeFilter, storesList.length]);
 
   // Create a new Reclamation
   const handleCreateReclamation = () => {
@@ -167,34 +253,38 @@ export default function Reclamations() {
 
     const payload = {
       storeId: targetStoreId,
-      eStoreId: targetStoreId,
-      storeName,
       deliveryId: newRec.deliveryId || null,
-      deliveryCode: matchedDelivery?.qrCodeContent || matchedDelivery?.code || (newRec.deliveryId ? `#${newRec.deliveryId}` : null),
-      customerName: matchedDelivery?.customer?.fullName || null,
-      customerPhone: matchedDelivery?.customer?.phoneNumber || null,
+      driverId: matchedDelivery?.driverId || null,
+      preparationPlaceId:
+        matchedDelivery?.preparationPlaceId ||
+        matchedStore?.preparationPlaceId ||
+        1,
       category: newRec.category || "Autre",
       priority: newRec.priority || "Normale",
       subject: newRec.subject.trim(),
       message: newRec.message.trim(),
       status: 1, // En attente
-      adminReply: "",
       createdDate: new Date().toISOString(),
-      replies: [
-        {
-          id: Date.now(),
-          senderRole: isB2B ? "store" : "admin",
-          senderName: storeName,
-          text: newRec.message.trim(),
-          date: new Date().toISOString(),
-        },
-      ],
     };
+
+    const uiFallbackItem = normalizeReclamation({
+      ...payload,
+      storeName,
+      deliveryCode:
+        matchedDelivery?.qrCodeContent ||
+        matchedDelivery?.code ||
+        (newRec.deliveryId ? `#${newRec.deliveryId}` : null),
+      customerName: matchedDelivery?.customer?.fullName || null,
+      customerPhone: matchedDelivery?.customer?.phoneNumber || null,
+      replies: [],
+    });
 
     APi.createAPIEndpoint(APi.ENDPOINTS.Reclamation)
       .create(payload)
       .then((res) => {
-        const created = res.data?.id ? { ...payload, ...res.data } : { ...payload, id: Date.now() };
+        const created = res.data?.id
+          ? normalizeReclamation({ ...uiFallbackItem, ...res.data })
+          : { ...uiFallbackItem, id: Date.now() };
         persistReclamations([created, ...reclamations]);
         setCreateModalOpen(false);
         setFormError("");
@@ -215,7 +305,7 @@ export default function Reclamations() {
         });
       })
       .catch(() => {
-        const created = { ...payload, id: Date.now() };
+        const created = { ...uiFallbackItem, id: Date.now() };
         persistReclamations([created, ...reclamations]);
         setCreateModalOpen(false);
         setFormError("");
@@ -237,14 +327,30 @@ export default function Reclamations() {
       });
   };
 
-  // Open Reclamation Thread / Reply Modal
+  // Open Reclamation Thread / Reply Modal & Fetch full Reclamation details (/api/Reclamation/{id})
   const openReclamationModal = (rec) => {
-    setSelectedRec(rec);
+    const normalized = normalizeReclamation(rec);
+    setSelectedRec(normalized);
     setReplyText("");
-    setReplyStatus(isAdmin ? (rec.status === 1 ? 3 : rec.status || 3) : rec.status || 1);
+    setReplyStatus(isAdmin ? (normalized.status === 1 ? 3 : normalized.status || 3) : normalized.status || 1);
+
+    if (rec.id) {
+      APi.createAPIEndpoint(APi.ENDPOINTS.Reclamation)
+        .fetchById(rec.id)
+        .then((res) => {
+          if (res.data && res.data.id) {
+            const fresh = normalizeReclamation({ ...normalized, ...res.data });
+            setSelectedRec(fresh);
+            persistReclamations(
+              reclamations.map((r) => (r.id === fresh.id ? fresh : r))
+            );
+          }
+        })
+        .catch(() => {});
+    }
   };
 
-  // Submit Reply (Admin official reply OR Store follow-up message)
+  // Submit Reply via POST /api/Reclamation/reply (ReplyModel: { reclamationId, userId, message })
   const handleSendReply = () => {
     if (!selectedRec) return;
     if (!replyText.trim() && (!isAdmin || replyStatus === selectedRec.status)) {
@@ -254,36 +360,56 @@ export default function Reclamations() {
 
     setSubmittingReply(true);
     const nowIso = new Date().toISOString();
-    const newReplyMsg = replyText.trim()
-      ? {
-          id: Date.now(),
-          senderRole: isAdmin ? "admin" : "store",
-          senderName: isAdmin
-            ? currentUser?.fullName || "Administration Tawsil"
-            : selectedRec.storeName || currentStore?.name_fr || "Boutique",
-          text: replyText.trim(),
-          date: nowIso,
-        }
-      : null;
-
-    const updatedReplies = newReplyMsg
-      ? [...(selectedRec.replies || []), newReplyMsg]
-      : selectedRec.replies || [];
-
-    const nextStatus = isAdmin ? Number(replyStatus || 3) : selectedRec.status === 3 ? 2 : selectedRec.status;
-
-    const updatedRec = {
-      ...selectedRec,
-      status: nextStatus,
-      adminReply: isAdmin && replyText.trim() ? replyText.trim() : selectedRec.adminReply,
-      repliedAt: isAdmin && replyText.trim() ? nowIso : selectedRec.repliedAt,
-      repliedBy: isAdmin ? currentUser?.fullName || "Admin" : selectedRec.repliedBy,
-      replies: updatedReplies,
-      updatedDate: nowIso,
+    const replyPayload = {
+      reclamationId: Number(selectedRec.id),
+      userId: currentUser?.id ? Number(currentUser.id) : null,
+      message: replyText.trim(),
     };
 
-    const finalizeLocalUpdate = () => {
+    const finalizeReplyUpdate = (serverReply = null) => {
       setSubmittingReply(false);
+      const newReplyMsg = replyText.trim()
+        ? {
+            id: serverReply?.id || Date.now(),
+            reclamationId: selectedRec.id,
+            userId: currentUser?.id || null,
+            senderRole: isAdmin ? "admin" : "store",
+            senderName:
+              serverReply?.user?.fullName ||
+              (isAdmin
+                ? currentUser?.fullName || "Administration Tawsil"
+                : selectedRec.storeName || currentStore?.name_fr || "Boutique"),
+            message: serverReply?.message || replyText.trim(),
+            text: serverReply?.message || replyText.trim(),
+            date: serverReply?.date || serverReply?.createdDate || nowIso,
+          }
+        : null;
+
+      const updatedReplies = newReplyMsg
+        ? [...(selectedRec.replies || []), newReplyMsg]
+        : selectedRec.replies || [];
+
+      const nextStatus = isAdmin
+        ? Number(replyStatus || 3)
+        : selectedRec.status === 3
+        ? 2
+        : selectedRec.status;
+
+      const updatedRec = normalizeReclamation({
+        ...selectedRec,
+        status: nextStatus,
+        adminReply:
+          isAdmin && replyText.trim()
+            ? replyText.trim()
+            : selectedRec.adminReply,
+        repliedAt: isAdmin && replyText.trim() ? nowIso : selectedRec.repliedAt,
+        repliedBy: isAdmin
+          ? currentUser?.fullName || "Admin"
+          : selectedRec.repliedBy,
+        replies: updatedReplies,
+        updatedDate: nowIso,
+      });
+
       const nextList = reclamations.map((r) =>
         r.id === selectedRec.id ? updatedRec : r
       );
@@ -301,10 +427,10 @@ export default function Reclamations() {
       });
     };
 
-    APi.createAPIEndpoint(APi.ENDPOINTS.Reclamation)
-      .update(selectedRec.id, updatedRec)
-      .then(() => finalizeLocalUpdate())
-      .catch(() => finalizeLocalUpdate());
+    APi.createAPIEndpoint(`${APi.ENDPOINTS.Reclamation}/reply`)
+      .customPost(replyPayload)
+      .then((res) => finalizeReplyUpdate(res.data))
+      .catch(() => finalizeReplyUpdate());
   };
 
   // Delete Reclamation
@@ -436,26 +562,168 @@ export default function Reclamations() {
           </div>
         </div>
 
-        <Button
-          appearance="primary"
-          onClick={() => {
-            setFormError("");
-            setCreateModalOpen(true);
-          }}
+        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+          <Button
+            onClick={() => history.push("/contacts")}
+            style={{
+              background: "rgba(255,255,255,0.12)",
+              color: "#fff",
+              border: "1px solid rgba(255,255,255,0.25)",
+              fontWeight: 700,
+              borderRadius: "10px",
+              padding: "10px 16px",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "8px",
+            }}
+          >
+            <FaAddressBook />
+            {isAdmin ? "Gérer les Contacts Globaux" : "Contacts Utiles Support"}
+          </Button>
+
+          <Button
+            appearance="primary"
+            onClick={() => {
+              setFormError("");
+              setCreateModalOpen(true);
+            }}
+            style={{
+              background: "linear-gradient(135deg, #4f46e5 0%, #2563eb 100%)",
+              fontWeight: 800,
+              borderRadius: "10px",
+              padding: "10px 18px",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "8px",
+              boxShadow: "0 4px 12px rgba(37, 99, 235, 0.35)",
+            }}
+          >
+            <FaPlus /> Nouvelle Réclamation
+          </Button>
+        </div>
+      </div>
+
+      {/* Global Contacts Quick Bar for Stores */}
+      {globalContacts.length > 0 && (
+        <div
           style={{
-            background: "linear-gradient(135deg, #4f46e5 0%, #2563eb 100%)",
-            fontWeight: 800,
-            borderRadius: "10px",
-            padding: "10px 18px",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "8px",
-            boxShadow: "0 4px 12px rgba(37, 99, 235, 0.35)",
+            background: "#f8fafc",
+            border: "1px solid #cbd5e1",
+            borderRadius: "14px",
+            padding: "14px 18px",
+            marginBottom: "20px",
           }}
         >
-          <FaPlus /> Nouvelle Réclamation
-        </Button>
-      </div>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: "10px",
+              flexWrap: "wrap",
+              gap: "8px",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", fontWeight: 800, fontSize: "0.86rem", color: "#0f172a" }}>
+              <FaAddressBook style={{ color: "#2563eb" }} />
+              <span>Contacts Directs Support & Administration :</span>
+            </div>
+            <button
+              onClick={() => history.push("/contacts")}
+              style={{
+                background: "transparent",
+                border: "none",
+                color: "#2563eb",
+                fontWeight: 700,
+                fontSize: "0.78rem",
+                cursor: "pointer",
+              }}
+            >
+              {isAdmin ? "Modifier les contacts →" : "Voir tous les contacts →"}
+            </button>
+          </div>
+          <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+            {globalContacts.slice(0, 4).map((c, idx) => (
+              <div
+                key={c.id || idx}
+                style={{
+                  background: "#ffffff",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "10px",
+                  padding: "8px 12px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "12px",
+                  fontSize: "0.8rem",
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 800, color: "#0f172a" }}>{c.name}</div>
+                  <div style={{ fontSize: "0.72rem", color: "#64748b" }}>{c.department}</div>
+                </div>
+                <div style={{ display: "inline-flex", gap: "6px" }}>
+                  {c.phone && (
+                    <a
+                      href={`tel:${c.phone}`}
+                      style={{
+                        background: "#eff6ff",
+                        color: "#1d4ed8",
+                        padding: "4px 8px",
+                        borderRadius: "6px",
+                        fontWeight: 700,
+                        textDecoration: "none",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px",
+                      }}
+                    >
+                      <FaPhoneAlt size={10} /> {c.phone}
+                    </a>
+                  )}
+                  {(c.whatsapp || c.phone) && (
+                    <a
+                      href={`https://wa.me/${(c.whatsapp || c.phone || "").replace(/[^0-9+]/g, "")}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        background: "#f0fdf4",
+                        color: "#15803d",
+                        padding: "4px 8px",
+                        borderRadius: "6px",
+                        fontWeight: 700,
+                        textDecoration: "none",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px",
+                      }}
+                    >
+                      <FaWhatsapp size={12} />
+                    </a>
+                  )}
+                  {c.email && (
+                    <a
+                      href={`mailto:${c.email}`}
+                      style={{
+                        background: "#f5f3ff",
+                        color: "#5b21b6",
+                        padding: "4px 8px",
+                        borderRadius: "6px",
+                        fontWeight: 700,
+                        textDecoration: "none",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px",
+                      }}
+                    >
+                      <FaEnvelope size={11} />
+                    </a>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* KPI Summary Cards */}
       <div
@@ -1085,29 +1353,39 @@ export default function Reclamations() {
                   padding: "4px",
                 }}
               >
-                {(selectedRec.replies && selectedRec.replies.length > 0
-                  ? selectedRec.replies
-                  : [
-                      {
-                        id: 1,
-                        senderRole: "store",
-                        senderName: selectedRec.storeName || "Boutique",
-                        text: selectedRec.message,
-                        date: selectedRec.createdDate,
-                      },
-                      ...(selectedRec.adminReply
-                        ? [
-                            {
-                              id: 2,
-                              senderRole: "admin",
-                              senderName: selectedRec.repliedBy || "Administration",
-                              text: selectedRec.adminReply,
-                              date: selectedRec.repliedAt,
-                            },
-                          ]
-                        : []),
-                    ]
-                ).map((msg, mIdx) => {
+                {[
+                  {
+                    id: "initial-msg",
+                    senderRole: "store",
+                    senderName:
+                      selectedRec.store?.name_fr ||
+                      selectedRec.storeName ||
+                      "Boutique",
+                    text: selectedRec.message,
+                    date: selectedRec.createdDate,
+                  },
+                  ...(Array.isArray(selectedRec.replies)
+                    ? selectedRec.replies
+                        .filter((r) => (r.message || r.text) !== selectedRec.message)
+                        .map((r, rIdx) => {
+                          const isReplyFromStore =
+                            r.senderRole === "store" ||
+                            (r.user?.position &&
+                              r.user.position.toLowerCase().includes("b2b"));
+                          return {
+                            id: r.id || rIdx + 1,
+                            senderRole: isReplyFromStore ? "store" : "admin",
+                            senderName:
+                              r.senderName ||
+                              r.user?.fullName ||
+                              r.user?.userName ||
+                              (isReplyFromStore ? "Boutique" : "Administration"),
+                            text: r.message || r.text || "",
+                            date: r.date || r.createdDate,
+                          };
+                        })
+                    : []),
+                ].map((msg, mIdx) => {
                   const fromAdmin = msg.senderRole === "admin";
                   return (
                     <div

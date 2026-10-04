@@ -92,7 +92,7 @@ export default function Deliveries(props) {
     const endpoint = isDriver ? APi.ENDPOINTS.Delivery + "/getForDriver" : APi.ENDPOINTS.Delivery;
     const fetchParams = {
       ...filterModel,
-      storeId: !store.isDefault ? store.id : filterModel.storeId,
+      storeId: isB2B ? store.id || 1 : filterModel.storeId,
     };
     if (isDriver) {
       fetchParams.driverId = driverIdParam;
@@ -1323,7 +1323,7 @@ export default function Deliveries(props) {
   }
   useEffect(() => {
     fetch();
-  }, [store.id, activeRole, currentDriverId, filterModel.page, filterModel.take]);
+  }, [store.id, activeRole, isB2B, currentDriverId, filterModel.page, filterModel.take]);
   return (
     <div>
       {" "}
@@ -1635,7 +1635,7 @@ export default function Deliveries(props) {
         title="Ajouter Commande"
         full
         noExport
-        noAdd={isDriver}
+        noAdd={!isB2B}
         save={save}
         AddComponent={
           <AddEdit error={error} model={model} _setmodel={setmodel} />
@@ -1743,7 +1743,7 @@ export default function Deliveries(props) {
                 });
               }
         }
-        deleteAction={isB2B || isDriver ? false : deleteAction}
+        deleteAction={isDriver ? false : deleteAction}
         actionKey={isB2B ? null : "id"}
         noAdvancedActions={isB2B}
         actions={isB2B ? [] : [

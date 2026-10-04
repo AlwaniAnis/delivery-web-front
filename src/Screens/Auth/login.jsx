@@ -575,6 +575,31 @@ export default function Login() {
               : "Boutique"}
           </Button>
         </form>
+
+        <div
+          style={{
+            marginTop: "20px",
+            paddingTop: "14px",
+            borderTop: "1px solid #f1f5f9",
+            textAlign: "center",
+            fontSize: "0.76rem",
+            color: "#64748b",
+          }}
+        >
+          Developed by{" "}
+          <a
+            href="https://a2dev.org"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              color: "#2563eb",
+              fontWeight: 700,
+              textDecoration: "none",
+            }}
+          >
+            A2 Development (https://a2dev.org)
+          </a>
+        </div>
       </div>
     </div>
   );

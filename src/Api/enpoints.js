@@ -13,4 +13,5 @@ export const ENDPOINTS = {
   Tarif: "Tarif",
   DriverPayment: "DriverPayment",
   Reclamation: "Reclamation",
+  GlobalContact: "GlobalContact",
 };

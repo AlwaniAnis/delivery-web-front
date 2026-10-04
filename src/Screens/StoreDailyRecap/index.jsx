@@ -45,11 +45,11 @@ export default function StoreDailyRecap() {
   const activeRole = useRecoilValue(activeRoleState);
   const currentUser = useRecoilValue(currentUserState);
 
-  const isAdmin = normalizeRole(activeRole) === "admin";
+  const isAdmin = !isB2B && normalizeRole(activeRole) === "admin";
 
-  // Selected Store ID
+  // Selected Store ID (0 = Toutes les boutiques in Administration module, or own storeId in Store module)
   const [selectedStoreId, setSelectedStoreId] = useState(() => {
-    return currentStore?.id || currentUser?.storeId || 1;
+    return isB2B ? currentStore?.id || currentUser?.storeId || 1 : 0;
   });
 
   // Date range (defaults to last 14 days up to today)
@@ -129,18 +129,18 @@ export default function StoreDailyRecap() {
     });
   };
 
-  // Sync selectedStoreId when currentStore or user changes
+  // Sync selectedStoreId when module or currentStore changes
   useEffect(() => {
-    if (currentStore?.id) {
-      setSelectedStoreId(currentStore.id);
-    } else if (currentUser?.storeId) {
-      setSelectedStoreId(currentUser.storeId);
+    if (isB2B) {
+      setSelectedStoreId(currentStore?.id || currentUser?.storeId || 1);
+    } else {
+      setSelectedStoreId(0);
     }
-  }, [currentStore?.id, currentUser?.storeId]);
+  }, [isB2B, currentStore?.id, currentUser?.storeId]);
 
   // Fetch recapByDay
   const fetchRecapByDay = () => {
-    if (!selectedStoreId || !dateRange || !dateRange[0] || !dateRange[1]) return;
+    if (!dateRange || !dateRange[0] || !dateRange[1]) return;
     setLoading(true);
 
     const fromStr = moment(dateRange[0]).format("YYYY-MM-DD");
@@ -350,11 +350,13 @@ export default function StoreDailyRecap() {
   });
 
   const activeStoreName =
-    storesList.find((s) => s.id === Number(selectedStoreId))?.name_fr ||
-    storesList.find((s) => s.id === Number(selectedStoreId))?.name ||
-    currentStore?.name_fr ||
-    currentStore?.name ||
-    `Boutique #${selectedStoreId}`;
+    Number(selectedStoreId) === 0
+      ? "Toutes les Boutiques (Global)"
+      : storesList.find((s) => s.id === Number(selectedStoreId))?.name_fr ||
+        storesList.find((s) => s.id === Number(selectedStoreId))?.name ||
+        currentStore?.name_fr ||
+        currentStore?.name ||
+        `Boutique #${selectedStoreId}`;
 
   return (
     <div style={{ padding: "16px", maxWidth: "1400px", margin: "0 auto" }}>
@@ -452,15 +454,17 @@ export default function StoreDailyRecap() {
                 Boutique :
               </span>
               <SelectPicker
-                data={storesList.map((s) => ({
-                  label: s.name_fr || s.name || `Boutique #${s.id}`,
-                  value: s.id,
-                }))}
+                data={[{ label: "Toutes les Boutiques (Tous les Récaps)", value: 0 }].concat(
+                  storesList.map((s) => ({
+                    label: s.name_fr || s.name || `Boutique #${s.id}`,
+                    value: s.id,
+                  }))
+                )}
                 searchable={true}
                 cleanable={false}
-                style={{ width: "230px" }}
+                style={{ width: "260px" }}
                 value={selectedStoreId}
-                onSelect={(val) => setSelectedStoreId(val)}
+                onSelect={(val) => setSelectedStoreId(val ?? 0)}
               />
             </div>
           )}
