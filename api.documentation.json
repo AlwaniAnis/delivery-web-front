@@ -2074,46 +2074,6 @@
         }
       }
     },
-    "/api/Driver/{id}/bringToDepot/{deliveryId}": {
-      "post": {
-        "tags": [
-          "Driver"
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int32"
-            }
-          },
-          {
-            "name": "deliveryId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int32"
-            }
-          },
-          {
-            "name": "placeId",
-            "in": "query",
-            "schema": {
-              "type": "integer",
-              "format": "int32"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success"
-          }
-        }
-      }
-    },
     "/api/GlobalContact/getAll": {
       "get": {
         "tags": [
@@ -2471,14 +2431,14 @@
         }
       }
     },
-    "/api/PreparationPlace/{placeId}/confirmArrival/{deliveryId}": {
+    "/api/PreparationPlace/{agentDepotId}/confirmArrival/{deliveryId}": {
       "post": {
         "tags": [
           "PreparationPlace"
         ],
         "parameters": [
           {
-            "name": "placeId",
+            "name": "agentDepotId",
             "in": "path",
             "required": true,
             "schema": {
@@ -4590,6 +4550,10 @@
           },
           "preparationPlace": {
             "$ref": "#/components/schemas/PreparationPlace"
+          },
+          "receivedRecapDays": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -4772,19 +4736,15 @@
       "RecapByDayDto": {
         "type": "object",
         "properties": {
+          "storeId": {
+            "type": "integer",
+            "format": "int32"
+          },
           "day": {
             "type": "string",
             "format": "date-time"
           },
           "totalAmount": {
-            "type": "number",
-            "format": "double"
-          },
-          "totalPaid": {
-            "type": "number",
-            "format": "double"
-          },
-          "totalDue": {
             "type": "number",
             "format": "double"
           },
@@ -4808,9 +4768,6 @@
           "date": {
             "type": "string",
             "nullable": true
-          },
-          "isReceived": {
-            "type": "boolean"
           }
         },
         "additionalProperties": false
