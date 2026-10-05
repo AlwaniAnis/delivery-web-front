@@ -6,7 +6,7 @@ import { DepotAgentsList } from "../../Atoms/depotAgents.atom";
 
 const roleOptions = [
   { label: "Administrateur (Direction & Dispatch)", value: "admin" },
-  { label: "Agent de Dépôt (Stock, Pickups & Affectation)", value: "depotAgent" },
+  { label: "Agent de Dépôt (Stock, Pickups & Affectation)", value: "depotAgent" }, //DepotAgent
   { label: "Livreur (Driver App)", value: "driver" },
   { label: "Client Boutique (Espace B2B)", value: "B2Bclient" },
 ];
