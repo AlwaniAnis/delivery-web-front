@@ -32,7 +32,12 @@ import {
 import { APi } from "../../Api";
 import { MyStore } from "../../Atoms/store.atom";
 import { StoresList } from "../../Atoms/stores.atom";
-import { activeRoleState, currentUserState, normalizeRole } from "../../Atoms/auth.atom";
+import {
+  activeRoleState,
+  currentDepotIdState,
+  currentUserState,
+  normalizeRole,
+} from "../../Atoms/auth.atom";
 import useB2B from "../../hooks/useB2B";
 import Swal from "sweetalert2";
 
@@ -44,12 +49,57 @@ export default function StoreDailyRecap() {
   const storesList = useRecoilValue(StoresList);
   const activeRole = useRecoilValue(activeRoleState);
   const currentUser = useRecoilValue(currentUserState);
+  const currentDepotId = useRecoilValue(currentDepotIdState);
 
-  const isAdmin = !isB2B && normalizeRole(activeRole) === "admin";
+  const normalizedRole = normalizeRole(activeRole);
+  const isAdmin = !isB2B && normalizedRole === "admin";
+  const isDepotAgent = !isB2B && (normalizedRole === "depotAgent" || normalizedRole === "depot_agent");
 
-  // Selected Store ID (0 = Toutes les boutiques in Administration module, or own storeId in Store module)
+  const activeDepotPlaceId = Number(
+    currentUser?.preparationPlaceId ||
+      currentUser?.agentDepot?.preparationPlaceId ||
+      currentUser?.depotId ||
+      currentDepotId ||
+      1
+  );
+
+  const [depotFetchedStores, setDepotFetchedStores] = useState([]);
+
+  useEffect(() => {
+    if (isDepotAgent && activeDepotPlaceId) {
+      APi.createAPIEndpoint(APi.ENDPOINTS.Store, {
+        page: 1,
+        take: 500,
+        placeId: activeDepotPlaceId,
+      })
+        .fetchAll()
+        .then((res) => {
+          const rows = res.data?.data || res.data?.Data || res.data || [];
+          if (Array.isArray(rows) && rows.length > 0) {
+            setDepotFetchedStores(rows);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [isDepotAgent, activeDepotPlaceId]);
+
+  // Scope stores to the Depot Agent's preparationPlaceId when Depot Agent is logged in
+  const scopedStoresList = isDepotAgent
+    ? depotFetchedStores.length > 0
+      ? depotFetchedStores
+      : storesList.filter(
+          (s) =>
+            Number(s.preparationPlaceId || s.preparationPlace?.id || s.depotId || 1) ===
+            activeDepotPlaceId
+        )
+    : storesList;
+  const scopedStoreIds = new Set(scopedStoresList.map((s) => Number(s.id)));
+
+  // Selected Store ID: for Depot Agent, always select a specific store of their depot (per store)
   const [selectedStoreId, setSelectedStoreId] = useState(() => {
-    return isB2B ? currentStore?.id || currentUser?.storeId || 1 : 0;
+    if (isB2B) return currentStore?.id || currentUser?.storeId || 1;
+    if (isDepotAgent) return scopedStoresList[0]?.id || 1;
+    return 0;
   });
 
   // Date range (defaults to last 14 days up to today)
@@ -129,14 +179,21 @@ export default function StoreDailyRecap() {
     });
   };
 
-  // Sync selectedStoreId when module or currentStore changes
+  // Sync selectedStoreId when module, role, or depot stores change
   useEffect(() => {
     if (isB2B) {
       setSelectedStoreId(currentStore?.id || currentUser?.storeId || 1);
+    } else if (isDepotAgent) {
+      if (
+        !selectedStoreId ||
+        !scopedStoresList.some((s) => Number(s.id) === Number(selectedStoreId))
+      ) {
+        setSelectedStoreId(scopedStoresList[0]?.id || 1);
+      }
     } else {
       setSelectedStoreId(0);
     }
-  }, [isB2B, currentStore?.id, currentUser?.storeId]);
+  }, [isB2B, isDepotAgent, activeDepotPlaceId, scopedStoresList.length, currentStore?.id, currentUser?.storeId]);
 
   // Fetch recapByDay
   const fetchRecapByDay = () => {
@@ -145,6 +202,11 @@ export default function StoreDailyRecap() {
 
     const fromStr = moment(dateRange[0]).format("YYYY-MM-DD");
     const toStr = moment(dateRange[1]).format("YYYY-MM-DD");
+
+    if (isDepotAgent && Number(selectedStoreId) === 0) {
+      computeFallbackRecap(fromStr, toStr, 0);
+      return;
+    }
 
     APi.createAPIEndpoint(`${APi.ENDPOINTS.Store}/recapByDay`, {
       storeId: selectedStoreId,
@@ -214,8 +276,17 @@ export default function StoreDailyRecap() {
       .then((res) => {
         setLoading(false);
         const deliveries = (res.data?.data || res.data || []).filter((d) => {
-          const sId = d.eStoreId ?? d.storeId ?? d.EStoreId;
-          return !storeId || Number(sId) === Number(storeId);
+          const sId = Number(d.eStoreId ?? d.storeId ?? d.EStoreId ?? 0);
+          if (storeId && Number(storeId) > 0) {
+            return sId === Number(storeId);
+          }
+          if (isDepotAgent) {
+            const delPlaceId = d.preparationPlaceId || d.preparationPlace?.id || d.depotId;
+            if (delPlaceId) return Number(delPlaceId) === activeDepotPlaceId;
+            if (sId && scopedStoreIds.has(sId)) return true;
+            return activeDepotPlaceId === 1;
+          }
+          return true;
         });
 
         const from = moment(fromStr).startOf("day");
@@ -348,8 +419,20 @@ export default function StoreDailyRecap() {
           .fetchAll()
           .then((res) => {
             setLoadingDayDetails(false);
-            const all = res.data?.data || res.data || [];
-            const filtered = all.filter((d) => {
+          const all = (res.data?.data || res.data || []).filter((d) => {
+            const sId = Number(d.eStoreId ?? d.storeId ?? d.EStoreId ?? 0);
+            if (selectedStoreId && Number(selectedStoreId) > 0) {
+              return sId === Number(selectedStoreId);
+            }
+            if (isDepotAgent) {
+              const delPlaceId = d.preparationPlaceId || d.preparationPlace?.id || d.depotId;
+              if (delPlaceId) return Number(delPlaceId) === activeDepotPlaceId;
+              if (sId && scopedStoreIds.has(sId)) return true;
+              return activeDepotPlaceId === 1;
+            }
+            return true;
+          });
+          const filtered = all.filter((d) => {
               const refDate =
                 d.deliveryDate ||
                 d.DeliveryDate ||
@@ -429,8 +512,12 @@ export default function StoreDailyRecap() {
 
   const activeStoreName =
     Number(selectedStoreId) === 0
-      ? "Toutes les Boutiques (Global)"
-      : storesList.find((s) => s.id === Number(selectedStoreId))?.name_fr ||
+      ? isDepotAgent
+        ? "Toutes les Boutiques de mon Dépôt"
+        : "Toutes les Boutiques (Global)"
+      : scopedStoresList.find((s) => s.id === Number(selectedStoreId))?.name_fr ||
+        scopedStoresList.find((s) => s.id === Number(selectedStoreId))?.name ||
+        storesList.find((s) => s.id === Number(selectedStoreId))?.name_fr ||
         storesList.find((s) => s.id === Number(selectedStoreId))?.name ||
         currentStore?.name_fr ||
         currentStore?.name ||
@@ -525,24 +612,28 @@ export default function StoreDailyRecap() {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap", flex: "1 1 280px" }}>
-          {/* Admin store selector */}
-          {isAdmin && (
-            <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", flex: "1 1 220px" }}>
-              <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "#475569" }}>
-                Boutique :
+          {/* Admin or Depot Agent store filter */}
+          {(isAdmin || isDepotAgent) && (
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", flex: "1 1 260px" }}>
+              <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "#475569", display: "flex", alignItems: "center", gap: "5px" }}>
+                <FaStore style={{ color: "#2563eb" }} /> Filtrer par Boutique {isDepotAgent ? "du Dépôt" : ""} :
               </span>
               <SelectPicker
-                data={[{ label: "Toutes les Boutiques (Tous les Récaps)", value: 0 }].concat(
-                  storesList.map((s) => ({
-                    label: s.name_fr || s.name || `Boutique #${s.id}`,
+                data={(isAdmin
+                  ? [{ label: "Toutes les Boutiques (Tous les Récaps)", value: 0 }]
+                  : []
+                ).concat(
+                  scopedStoresList.map((s) => ({
+                    label: `🏪 ${s.name_fr || s.name || `Boutique #${s.id}`}`,
                     value: s.id,
                   }))
                 )}
+                placeholder="Choisir une boutique..."
                 searchable={true}
                 cleanable={false}
-                style={{ width: "260px", maxWidth: "100%", flex: 1 }}
+                style={{ width: "280px", maxWidth: "100%", flex: 1 }}
                 value={selectedStoreId}
-                onSelect={(val) => setSelectedStoreId(val ?? 0)}
+                onSelect={(val) => setSelectedStoreId(val ?? (scopedStoresList[0]?.id || 0))}
               />
             </div>
           )}
@@ -629,6 +720,117 @@ export default function StoreDailyRecap() {
           </button>
         </div>
       </div>
+
+      {/* PER-STORE QUICK CARDS FOR DEPOT AGENT */}
+      {isDepotAgent && scopedStoresList.length > 0 && (
+        <div style={{ marginBottom: "20px" }}>
+          <div
+            style={{
+              fontSize: "0.82rem",
+              fontWeight: 800,
+              color: "#334155",
+              marginBottom: "10px",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+            }}
+          >
+            <FaStore style={{ color: "#2563eb" }} /> Sélectionnez une Boutique de votre Dépôt pour voir son Récap Journalier :
+          </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+              gap: "12px",
+            }}
+          >
+            {scopedStoresList.map((st) => {
+              const isSelected = Number(selectedStoreId) === Number(st.id);
+              const addr = st.contacts?.[0]?.address || st.address || "Boutique partenaire";
+              const ph = st.contacts?.[0]?.phones || st.phone || "";
+              return (
+                <div
+                  key={st.id}
+                  onClick={() => setSelectedStoreId(st.id)}
+                  style={{
+                    background: isSelected ? "#eff6ff" : "#ffffff",
+                    border: isSelected ? "2px solid #2563eb" : "1px solid #e2e8f0",
+                    borderRadius: "12px",
+                    padding: "12px 14px",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: "10px",
+                    boxShadow: isSelected
+                      ? "0 4px 12px rgba(37, 99, 235, 0.14)"
+                      : "0 1px 3px rgba(0,0,0,0.02)",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0 }}>
+                    <div
+                      style={{
+                        width: "36px",
+                        height: "36px",
+                        borderRadius: "10px",
+                        background: isSelected ? "#2563eb" : "#f1f5f9",
+                        color: isSelected ? "#ffffff" : "#475569",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexShrink: 0,
+                      }}
+                    >
+                      <FaStore size={15} />
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontWeight: 800,
+                          fontSize: "0.88rem",
+                          color: isSelected ? "#1e3a8a" : "#0f172a",
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                        }}
+                      >
+                        {st.name_fr || st.name || `Boutique #${st.id}`}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: "0.73rem",
+                          color: "#64748b",
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                        }}
+                      >
+                        {addr} {ph ? `· ${ph}` : ""}
+                      </div>
+                    </div>
+                  </div>
+                  {isSelected && (
+                    <span
+                      style={{
+                        background: "#2563eb",
+                        color: "#ffffff",
+                        fontSize: "0.68rem",
+                        fontWeight: 800,
+                        padding: "3px 8px",
+                        borderRadius: "10px",
+                        flexShrink: 0,
+                      }}
+                    >
+                      Actif
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* METRIC KPI SUMMARY CARDS */}
       <div

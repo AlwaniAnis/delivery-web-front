@@ -1,5 +1,55 @@
 import { atom } from "recoil";
+
 export const DriversList = atom({
-  key: "DriversList", // unique ID (with respect to other atoms/selectors)
-  default: [], // default value (aka initial value)
+  key: "DriversList",
+  default: [
+    {
+      id: 1003,
+      firstName: "Anis",
+      lastName: "Trabelsi",
+      name: "Anis Trabelsi",
+      cin: "08745120",
+      phone1: "+216 22 410 850",
+      phone2: "+216 55 410 850",
+      email: "anis.trabelsi@tawsil.tn",
+      carNumber: "218 TUN 4590",
+      address: "Charguia 1, Tunis",
+      cities: "Tunis,Ariana,Ben Arous",
+      solde: 45.5,
+      Solde: 45.5,
+      preparationPlaceId: 1,
+    },
+    {
+      id: 1004,
+      firstName: "Karim",
+      lastName: "Bouazizi",
+      name: "Karim Bouazizi",
+      cin: "09412580",
+      phone1: "+216 98 632 140",
+      phone2: "",
+      email: "karim.bouazizi@tawsil.tn",
+      carNumber: "195 TUN 8821",
+      address: "Sahloul, Sousse",
+      cities: "Sousse,Monastir,Mahdia",
+      solde: 32.0,
+      Solde: 32.0,
+      preparationPlaceId: 2,
+    },
+    {
+      id: 1005,
+      firstName: "Walid",
+      lastName: "Gharbi",
+      name: "Walid Gharbi",
+      cin: "07654890",
+      phone1: "+216 50 789 321",
+      phone2: "",
+      email: "walid.gharbi@tawsil.tn",
+      carNumber: "230 TUN 1104",
+      address: "Route de Gabès, Sfax",
+      cities: "Sfax,Gabes",
+      solde: 18.0,
+      Solde: 18.0,
+      preparationPlaceId: 3,
+    },
+  ],
 });

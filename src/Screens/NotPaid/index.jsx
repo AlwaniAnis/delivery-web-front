@@ -59,10 +59,32 @@ export default function NotPaidDeliveries() {
   const [checkeds, setcheckeds] = useState([]);
   const { isB2B } = useB2B();
 
+  const activeDepotPlaceId = Number(currentDepotId || 1);
+
+  const scopedDrivers = isDepotAgent
+    ? (drivers || []).filter(
+        (d) =>
+          Number(d.preparationPlaceId || d.preparationPlace?.id || d.depotId || 1) ===
+          activeDepotPlaceId
+      )
+    : drivers || [];
+
+  const scopedStoresList = isDepotAgent
+    ? (storesList || []).filter(
+        (s) =>
+          Number(s.preparationPlaceId || s.preparationPlace?.id || s.depotId || 1) ===
+          activeDepotPlaceId
+      )
+    : storesList || [];
+  const scopedStoreIds = new Set(scopedStoresList.map((s) => Number(s.id)));
+
   const fetch = () => {
+    const targetPlaceId = isDepotAgent
+      ? activeDepotPlaceId
+      : filterModel.preparationPlaceId || 0;
     APi.createAPIEndpoint(APi.ENDPOINTS.Delivery, {
       ...filterModel,
-      placeId: filterModel.preparationPlaceId || 0,
+      placeId: targetPlaceId,
       status: 5,
       isPaid: false,
       ispaid: false,
@@ -72,15 +94,17 @@ export default function NotPaidDeliveries() {
       .then((res) => {
         const rawRows = res.data?.data || [];
         const filteredByDepot =
-          filterModel.preparationPlaceId > 0
-            ? rawRows.filter(
-                (r) =>
-                  Number(r.preparationPlaceId || r.preparationPlace?.id || 1) ===
-                  Number(filterModel.preparationPlaceId)
-              )
+          targetPlaceId > 0
+            ? rawRows.filter((r) => {
+                const pId = r.preparationPlaceId || r.preparationPlace?.id || r.depotId;
+                if (pId) return Number(pId) === Number(targetPlaceId);
+                const sId = Number(r.eStoreId ?? r.storeId ?? 0);
+                if (isDepotAgent && sId && scopedStoreIds.has(sId)) return true;
+                return Number(targetPlaceId) === 1;
+              })
             : rawRows;
         setdata(filteredByDepot);
-        settotalCount(res.data?.totalCount || filteredByDepot.length);
+        settotalCount(isDepotAgent ? filteredByDepot.length : res.data?.totalCount || filteredByDepot.length);
         settotalPaid(res.data?.totalPaid || 0);
         settotalDelivred(res.data?.totalDelivred || 0);
       })
@@ -352,31 +376,46 @@ export default function NotPaidDeliveries() {
     {
       value: "id",
       name: "Validation Cash Dépôt",
-      render: (id, row) => (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            handleRenderPaid([id], getDeliveryDriverId(row) || getActiveDeliveryDriverId(row) || 0);
-          }}
-          style={{
-            background: "#059669",
-            color: "#ffffff",
-            border: "none",
-            borderRadius: "6px",
-            padding: "6px 12px",
-            fontSize: "0.76rem",
-            fontWeight: 700,
-            cursor: "pointer",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "5px",
-            boxShadow: "0 1px 3px rgba(5, 150, 105, 0.25)",
-          }}
-          title="Confirmer que le livreur a remis le cash de ce colis au dépôt"
-        >
-          <FaCheckCircle size={11} /> Rendre Payé (Cash Reçu)
-        </button>
-      ),
+      render: (id, row) =>
+        isDepotAgent ? (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleRenderPaid([id], getDeliveryDriverId(row) || getActiveDeliveryDriverId(row) || 0);
+            }}
+            style={{
+              background: "#059669",
+              color: "#ffffff",
+              border: "none",
+              borderRadius: "6px",
+              padding: "6px 12px",
+              fontSize: "0.76rem",
+              fontWeight: 700,
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "5px",
+              boxShadow: "0 1px 3px rgba(5, 150, 105, 0.25)",
+            }}
+            title="Confirmer que le livreur a remis le cash de ce colis au dépôt"
+          >
+            <FaCheckCircle size={11} /> Rendre Payé (Cash Reçu)
+          </button>
+        ) : (
+          <span
+            style={{
+              background: "#fffbeb",
+              color: "#92400e",
+              border: "1px solid #fde68a",
+              padding: "4px 8px",
+              borderRadius: "6px",
+              fontSize: "0.74rem",
+              fontWeight: 700,
+            }}
+          >
+            En attente remise dépôt
+          </span>
+        ),
     },
   ];
 
@@ -491,7 +530,7 @@ export default function NotPaidDeliveries() {
           <label>Livreur </label>
           <SelectPicker
             data={[{ label: "Sélectionner", value: 0 }].concat(
-              drivers.map((c) => {
+              scopedDrivers.map((c) => {
                 return { label: c.firstName + " " + c.lastName, value: c.id };
               })
             )}
@@ -505,7 +544,7 @@ export default function NotPaidDeliveries() {
             }}
           />
         </Responsive>
-        {!isB2B && (
+        {!isB2B && !isDepotAgent && (
           <Responsive l={3} xl={3} m={4} className="p-5">
             <label>Dépôt du Territoire </label>
             <SelectPicker
@@ -529,7 +568,7 @@ export default function NotPaidDeliveries() {
             <label>Boutique </label>
             <SelectPicker
               data={[{ label: "Sélectionner", value: 0 }].concat(
-                storesList.map((c) => {
+                scopedStoresList.map((c) => {
                   return { label: c.name_fr, value: c.id };
                 })
               )}
@@ -564,7 +603,7 @@ export default function NotPaidDeliveries() {
           }
         />
       </div>
-      {!isB2B && (
+      {isDepotAgent && (
         <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "0 10px 10px" }}>
           <div
             onClick={() =>

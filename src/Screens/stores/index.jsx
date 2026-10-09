@@ -7,17 +7,13 @@ import { FaStore, FaPhoneAlt, FaEnvelope, FaMapMarkerAlt, FaFileInvoice, FaWareh
 import { APi } from "../../Api/";
 import { exportAddAtom } from "../../Atoms/exportAdd.atom";
 import { preparationPlacesState } from "../../Atoms/preparationPlaces.atom";
+import { activeRoleState, currentDepotIdState, normalizeRole } from "../../Atoms/auth.atom";
 import ExportAdd from "../../Components/Common/ExportAdd";
 import Filter from "../../Components/Common/Filter";
 import Grid from "../../Components/Grid";
 import validate from "../../Helpers/validate";
 import AddEdit from "./AddEdit.component";
 import ResetPassword from "../Auth/ResetPassword";
-import {
-  activeRoleState,
-  currentDepotIdState,
-  normalizeRole,
-} from "../../Atoms/auth.atom";
 export default function Stores(props) {
   // STATE
   const depotsList = useRecoilValue(preparationPlacesState);
@@ -31,7 +27,7 @@ export default function Stores(props) {
   const [error, setError] = useState("");
   const [model, setmodel] = useState({
     contacts: [],
-    preparationPlaceId: 1,
+    preparationPlaceId: isDepotAgent ? Number(currentDepotId || 1) : 1,
     latitude: 36.8065,
     longitude: 10.1815,
   });
@@ -51,7 +47,7 @@ export default function Stores(props) {
   const reset = () => {
     setmodel({
       contacts: [],
-      preparationPlaceId: depotsList?.[0]?.id || 1,
+      preparationPlaceId: isDepotAgent ? Number(currentDepotId || 1) : depotsList?.[0]?.id || 1,
       latitude: depotsList?.[0]?.latitude || 36.8065,
       longitude: depotsList?.[0]?.longitude || 10.1815,
     });
@@ -62,22 +58,26 @@ export default function Stores(props) {
     setstate((prev) => {
       return { ...prev, loading: true };
     });
-    APi.createAPIEndpoint(APi.ENDPOINTS.Store, {
-      ...filterModel,
-      ...(isDepotAgent
-        ? {
-            preparationPlaceId: Number(currentDepotId) || 1,
-            placeId: Number(currentDepotId) || 1,
-          }
-        : {}),
-    })
+    const queryParams = isDepotAgent
+      ? { ...filterModel, placeId: Number(currentDepotId || 1) }
+      : filterModel;
+    APi.createAPIEndpoint(APi.ENDPOINTS.Store, queryParams)
       .fetchAll()
       .then((res) => {
-        setdata(res.data.data);
+        const raw = res.data?.data || res.data || [];
+        const scoped = isDepotAgent
+          ? raw.filter(
+              (s) =>
+                !s.preparationPlaceId ||
+                Number(s.preparationPlaceId || s.preparationPlace?.id || s.depotId || 1) ===
+                  Number(currentDepotId || 1)
+            )
+          : raw;
+        setdata(scoped);
         setstate((prev) => {
           return { ...prev, loading: false };
         });
-        settotalCount(res.data.totalCount);
+        settotalCount(res.data?.totalCount ?? scoped.length);
       })
       .catch((e) => {
         setError(e.Message);
@@ -87,7 +87,11 @@ export default function Stores(props) {
       });
   };
   const save = () => {
-    const placeId = Number(model.preparationPlaceId || model.depotId || depotsList?.[0]?.id || 1);
+    const placeId = Number(
+      isDepotAgent
+        ? currentDepotId || 1
+        : model.preparationPlaceId || model.depotId || depotsList?.[0]?.id || 1
+    );
     if (!placeId) {
       setError("Veuillez sélectionner le Dépôt du Territoire de la boutique.");
       return;
@@ -192,7 +196,7 @@ export default function Stores(props) {
     }
   };
   // LIFE CYCLES
-  useEffect(() => fetch(), [isDepotAgent, currentDepotId]);
+  useEffect(() => fetch(), []);
   return (
     <div>
       <Filter search={() => fetch()}>

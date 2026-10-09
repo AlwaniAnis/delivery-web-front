@@ -51,10 +51,12 @@ import AddEdit from "./addEdit.component";
 import useB2B from "../../hooks/useB2B";
 import { StoresList } from "../../Atoms/stores.atom";
 import { preparationPlacesState } from "../../Atoms/preparationPlaces.atom";
+import { tarifsState } from "../../Atoms/tarifs.atom";
 import {
   activeRoleState,
   currentDepotIdState,
   currentDriverIdState,
+  currentUserState,
   normalizeRole,
 } from "../../Atoms/auth.atom";
 export default function Deliveries(props) {
@@ -87,12 +89,42 @@ export default function Deliveries(props) {
   const store = useRecoilValue(MyStore);
   const { isB2B } = useB2B();
   const storesList = useRecoilValue(StoresList);
+  const tarifsList = useRecoilValue(tarifsState);
   const activeRole = useRecoilValue(activeRoleState);
-  const isDriver = activeRole === "driver";
+  const currentRole = normalizeRole(activeRole);
+  const isDriver = currentRole === "driver";
+  const isDepotAgent = currentRole === "depotAgent";
+  const isAdminGlobal = !isDriver && !isDepotAgent && !isB2B;
   const currentDriverId = useRecoilValue(currentDriverIdState);
   const currentDepotId = useRecoilValue(currentDepotIdState);
-  const isDepotAgent = normalizeRole(activeRole) === "depotAgent";
+  const currentUser = useRecoilValue(currentUserState);
   const depotsList = useRecoilValue(preparationPlacesState);
+  const [driverTakeCount, setDriverTakeCount] = useState("");
+
+  const activeDepotPlaceId = Number(
+    currentUser?.preparationPlaceId ||
+      currentUser?.agentDepot?.preparationPlaceId ||
+      currentDepotId ||
+      1
+  );
+
+  // Scope drivers and stores for Depot Agent strictly to their depot (preparationPlaceId)
+  const scopedDrivers = isDepotAgent
+    ? (drivers || []).filter(
+        (d) =>
+          Number(d.preparationPlaceId || d.preparationPlace?.id || d.depotId || 1) ===
+          activeDepotPlaceId
+      )
+    : drivers || [];
+
+  const scopedStoresList = isDepotAgent
+    ? (storesList || []).filter(
+        (s) =>
+          Number(s.preparationPlaceId || s.preparationPlace?.id || s.depotId || 1) ===
+          activeDepotPlaceId
+      )
+    : storesList || [];
+  const scopedStoreIds = new Set(scopedStoresList.map((s) => Number(s.id)));
 
   const [changedDriverModel, setchangedDriverModel] = useState({
     driverId: null,
@@ -123,10 +155,6 @@ export default function Deliveries(props) {
       ...filterModel,
       storeId: isB2B ? store.id || 1 : filterModel.storeId,
     };
-    if (isDepotAgent) {
-      fetchParams.preparationPlaceId = Number(currentDepotId) || 1;
-      fetchParams.placeId = Number(currentDepotId) || 1;
-    }
     if (isDriver) {
       fetchParams.driverId = driverIdParam;
     }
@@ -150,14 +178,24 @@ export default function Deliveries(props) {
           });
           return _el;
         });
+        const depotFilteredRows = isDepotAgent
+          ? mappedRows.filter((r) => {
+              const delPlaceId = r.preparationPlaceId || r.preparationPlace?.id || r.depotId;
+              if (delPlaceId) return Number(delPlaceId) === activeDepotPlaceId;
+              const sId = Number(r.eStoreId ?? r.storeId ?? r.EStoreId ?? 0);
+              if (sId && scopedStoreIds.has(sId)) return true;
+              return activeDepotPlaceId === 1;
+            })
+          : mappedRows;
+
         const filteredRows =
           filterModel.resultFilter !== undefined && Number(filterModel.resultFilter) >= 0
-            ? mappedRows.filter(
+            ? depotFilteredRows.filter(
                 (r) => getDeliveryResult(r) === Number(filterModel.resultFilter)
               )
-            : mappedRows;
+            : depotFilteredRows;
         setdata(filteredRows);
-        settotalCount(res.data?.totalCount ?? rawList.length);
+        settotalCount(isDepotAgent ? filteredRows.length : res.data?.totalCount ?? rawList.length);
         settotalOrdered(res.data?.totalOrdered ?? 0);
         settotalPaid(res.data?.totalPaid ?? 0);
         settotalDelivred(res.data?.totalDelivred ?? 0);
@@ -315,8 +353,7 @@ export default function Deliveries(props) {
       ? Number(currentDriverId)
       : getPickupDriverId(delivery);
 
-    const pickerDrivers = (drivers || []).filter((d) => d.isPicker || d.IsPicker);
-    const availableDrivers = pickerDrivers.length > 0 ? pickerDrivers : drivers || [];
+    const availableDrivers = scopedDrivers.length > 0 ? scopedDrivers : drivers || [];
 
     if (!targetDriverId) {
       const options = availableDrivers.reduce((acc, d) => {
@@ -407,7 +444,7 @@ export default function Deliveries(props) {
       return;
     }
 
-    const options = (drivers || []).reduce((acc, d) => {
+    const options = (scopedDrivers || []).reduce((acc, d) => {
       const name = d.name || `${d.firstName || ""} ${d.lastName || ""}`.trim() || `Livreur #${d.id}`;
       acc[d.id] = `${name} (${d.carNumber || "Véhicule"})`;
       return acc;
@@ -664,42 +701,23 @@ export default function Deliveries(props) {
     const isCurrentUserDriver = activeRole === "driver";
     let targetDriverId = isCurrentUserDriver
       ? Number(currentDriverId)
-      : getPickupDriverId(delivery) || getActiveDeliveryDriverId(delivery) || drivers[0]?.id || 1;
+      : getPickupDriverId(delivery) || getActiveDeliveryDriverId(delivery) || scopedDrivers[0]?.id || 1;
 
-    const depotOptions = (depotsList || []).reduce((acc, dp) => {
-      acc[dp.id] = dp.name;
-      return acc;
-    }, {});
-
-    Swal.fire({
-      title: "Confirmation Réception au Dépôt",
-      html: `
-        <div style="text-align: left; font-size: 0.9rem; margin-bottom: 10px; color: #334155;">
-          L'agent du dépôt confirme la réception physique du colis <b>#${delivery.qrCodeContent || delivery.id}</b> amené par le chauffeur.
-          <br/><br/>
-          <b>Action :</b> Le colis sera assigné au dépôt et le solde du livreur sera crédité selon son tarif.
-        </div>
-      `,
-      input: "select",
-      inputOptions: depotOptions,
-      inputPlaceholder: "Sélectionner le dépôt de stockage...",
-      inputValue: delivery.preparationPlaceId || 1,
-      showCancelButton: true,
-      confirmButtonText: "Confirmer Réception & Créditer",
-      confirmButtonColor: "#059669",
-      cancelButtonText: "Annuler",
-    }).then((res) => {
-      if (res.isConfirmed) {
-        const placeId = Number(res.value) || 1;
-        executeBringToDepot(Number(targetDriverId), delivery.id, placeId);
-      }
-    });
+    const placeId = Number(
+      isDepotAgent
+        ? activeDepotPlaceId
+        : delivery.preparationPlaceId || activeDepotPlaceId || 1
+    );
+    executeBringToDepot(Number(targetDriverId), delivery.id, placeId);
   };
 
   const executeBringToDepot = (drvId, delId, placeId) => {
     const nowIso = new Date().toISOString();
-    APi.createAPIEndpoint(`${APi.ENDPOINTS.Driver}/${drvId}/bringToDepot/${delId}`, { placeId })
-      .customPost({ placeId })
+    const agentId = Number(
+      currentUser?.agentDepotId || currentUser?.depotAgentId || currentUser?.id || 1
+    );
+    APi.createAPIEndpoint(`${APi.ENDPOINTS.PreparationPlace}/${agentId}/confirmArrival/${delId}`)
+      .customPost({})
       .then((res) => {
         const amt = res.data?.amount ?? 3.5;
         const newSolde = res.data?.solde;
@@ -1185,47 +1203,57 @@ export default function Deliveries(props) {
     },
     {
       value: "id",
-      name: "Étape Workflow Suivante",
+      name: "Étape Workflow",
       render: (id, row) => {
         const opStatus = getOperationalStatus(row);
         const resVal = getDeliveryResult(row);
         const hasDeliveryDriver = Boolean(getDeliveryDriverId(row));
         const isPaid = Boolean(row?.isPaid ?? row?.IsPaid);
 
-        if (isB2B) {
+        // Admin and Store (B2B) cannot perform Agent Dépôt or Driver delivery actions (strict separation of concerns)
+        if (isB2B || isAdminGlobal) {
           return (
             <span
               style={{
-                fontSize: "0.72rem",
-                color: "#64748b",
-                background: "#f8fafc",
-                border: "1px solid #e2e8f0",
-                padding: "3px 8px",
+                fontSize: "0.73rem",
+                color: opStatus === 5 ? "#15803d" : "#475569",
+                background: opStatus === 5 ? "#f0fdf4" : "#f8fafc",
+                border: opStatus === 5 ? "1px solid #bbf7d0" : "1px solid #e2e8f0",
+                padding: "4px 9px",
                 borderRadius: "6px",
-                fontWeight: 600,
+                fontWeight: 700,
+                display: "inline-block",
               }}
             >
               {opStatus === 1
-                ? "En attente de ramassage"
+                ? "1. En attente de ramassage"
                 : opStatus === 2
-                ? "En transit vers dépôt"
+                ? "2. En transit vers dépôt"
                 : opStatus === 3
-                ? "Au dépôt logistique"
+                ? hasDeliveryDriver
+                  ? "3. Au dépôt (Livreur affecté)"
+                  : "3. Au dépôt logistique"
                 : opStatus === 4
-                ? "En tournée de livraison"
-                : "Traitement terminé"}
+                ? "4. En cours de livraison"
+                : resVal === 1
+                ? isPaid
+                  ? "5. Livré & Encaissé"
+                  : "5. Livré (Attente caisse)"
+                : resVal === 6
+                ? "5. Retourné à la boutique"
+                : "5. Traitement terminé"}
             </span>
           );
         }
 
-        // Strict single next-step workflow per parcel state
+        // Strict single next-step workflow separated between Depot Agent and Driver
         return (
           <div
             style={{ display: "flex", gap: "5px", alignItems: "center", flexWrap: "wrap", minWidth: "155px" }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* STEP 1: Pending -> Confirm Pickup */}
-            {opStatus === 1 && (
+            {/* DEPOT AGENT ONLY: Step 1 (Assign Pickup), Step 2 (Confirm Depot Reception), Step 3 (Assign Delivery Driver), Step 5 (Confirm Cash) */}
+            {isDepotAgent && opStatus === 1 && (
               <button
                 onClick={() => handlePickup(row)}
                 style={{
@@ -1241,14 +1269,12 @@ export default function Deliveries(props) {
                   fontWeight: 700,
                   cursor: "pointer",
                 }}
-                title="Étape 1 : Confirmer le ramassage en boutique (DriverController.Pickup)"
               >
-                <FaBoxOpen size={11} /> 1. Ramasser (Pickup)
+                <FaBoxOpen size={11} /> 1. Affecter Pickup
               </button>
             )}
 
-            {/* STEP 2: PickedUp -> Depot Agent / Admin confirms BringToDepot */}
-            {opStatus === 2 && !isDriver && (
+            {isDepotAgent && opStatus === 2 && (
               <button
                 onClick={() => handleBringToDepot(row)}
                 style={{
@@ -1264,19 +1290,12 @@ export default function Deliveries(props) {
                   fontWeight: 700,
                   cursor: "pointer",
                 }}
-                title="Étape 2 : Confirmer la réception au dépôt (DriverController.BringToDepot)"
               >
-                <FaWarehouse size={11} /> 2. Réception Dépôt
+                <FaWarehouse size={11} /> 2. Confirmer Réception Dépôt
               </button>
             )}
-            {opStatus === 2 && isDriver && (
-              <span style={{ fontSize: "0.72rem", color: "#0369a1", fontWeight: 700 }}>
-                ⏳ En route vers Dépôt
-              </span>
-            )}
 
-            {/* STEP 3a: AtDepot & No Delivery Driver Assigned -> Assign Delivery Driver */}
-            {opStatus === 3 && !hasDeliveryDriver && !isDriver && (
+            {isDepotAgent && opStatus === 3 && (
               <button
                 onClick={() => handleAssignDeliveryDriver(row)}
                 style={{
@@ -1292,87 +1311,20 @@ export default function Deliveries(props) {
                   fontWeight: 700,
                   cursor: "pointer",
                 }}
-                title="Étape 3 : Affecter un chauffeur de livraison (DriverController.AssignDelivery)"
               >
-                🚚 3. Affecter Livreur
+                🚚 {hasDeliveryDriver ? "Changer Livreur" : "3. Affecter Livreur"}
               </button>
             )}
-            {opStatus === 3 && !hasDeliveryDriver && isDriver && (
-              <span style={{ fontSize: "0.72rem", color: "#92400e", fontWeight: 700 }}>
-                🏢 Au Dépôt (Non affecté)
+
+            {isDepotAgent && opStatus === 4 && (
+              <span style={{ fontSize: "0.72rem", color: "#4338ca", fontWeight: 700 }}>
+                🚚 En livraison (Chez le livreur)
               </span>
             )}
 
-            {/* STEP 3b: AtDepot & Delivery Driver Assigned -> Start Delivery */}
-            {opStatus === 3 && hasDeliveryDriver && (
+            {isDepotAgent && opStatus === 5 && (
               <>
-                <button
-                  onClick={() => handleStartDelivery(row)}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "5px",
-                    padding: "5px 10px",
-                    background: "#eef2ff",
-                    color: "#4338ca",
-                    border: "1px solid #c7d2fe",
-                    borderRadius: "6px",
-                    fontSize: "0.73rem",
-                    fontWeight: 700,
-                    cursor: "pointer",
-                  }}
-                  title="Étape 4 : Démarrer la livraison (DriverController.StartDelivery)"
-                >
-                  ▶️ 4. Démarrer Livraison
-                </button>
-                {!isDriver && (
-                  <button
-                    onClick={() => handleAssignDeliveryDriver(row)}
-                    style={{
-                      padding: "4px 6px",
-                      background: "#f8fafc",
-                      color: "#64748b",
-                      border: "1px solid #e2e8f0",
-                      borderRadius: "5px",
-                      fontSize: "0.68rem",
-                      fontWeight: 600,
-                      cursor: "pointer",
-                    }}
-                    title="Changer le livreur de livraison"
-                  >
-                    ⚙️
-                  </button>
-                )}
-              </>
-            )}
-
-            {/* STEP 4: InDelivery -> Record Delivery Outcome / Result */}
-            {opStatus === 4 && (
-              <button
-                onClick={() => openOutcomeModal(row)}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "5px",
-                  padding: "5px 10px",
-                  background: "#f0fdf4",
-                  color: "#15803d",
-                  border: "1px solid #86efac",
-                  borderRadius: "6px",
-                  fontSize: "0.73rem",
-                  fontWeight: 800,
-                  cursor: "pointer",
-                }}
-                title="Étape 5 : Saisir le résultat de livraison (Delivered, NoAnswer, Refused, Refund...)"
-              >
-                ✓ 5. Saisir Résultat
-              </button>
-            )}
-
-            {/* STEP 5: Completed -> Cash Handover if Delivered & Unpaid, or Closed badge */}
-            {opStatus === 5 && (
-              <>
-                {resVal === 1 && !isPaid && !isDriver ? (
+                {resVal === 1 && !isPaid ? (
                   <button
                     onClick={() => handleRenderPaidSingle(row)}
                     style={{
@@ -1388,9 +1340,8 @@ export default function Deliveries(props) {
                       fontWeight: 700,
                       cursor: "pointer",
                     }}
-                    title="Confirmer la remise du cash au dépôt par le livreur (RenderPaid)"
                   >
-                    💰 Encaisser Cash
+                    💰 Confirmer Cash
                   </button>
                 ) : (
                   <span
@@ -1404,28 +1355,93 @@ export default function Deliveries(props) {
                       borderRadius: "6px",
                     }}
                   >
-                    ✓ Workflow Clôturé
+                    ✓ Clôturé
                   </span>
                 )}
-                {resVal !== 1 && (
-                  <button
-                    onClick={() => openOutcomeModal(row)}
-                    style={{
-                      padding: "3px 7px",
-                      background: "#f8fafc",
-                      color: "#475569",
-                      border: "1px solid #cbd5e1",
-                      borderRadius: "5px",
-                      fontSize: "0.68rem",
-                      fontWeight: 600,
-                      cursor: "pointer",
-                    }}
-                    title="Mettre à jour le résultat ou enregistrer un remboursement"
-                  >
-                    Modifier Résultat
-                  </button>
-                )}
               </>
+            )}
+
+            {/* DRIVER ONLY: Take assigned parcel (StartDelivery), Record Outcome (SetDeliveryResult), or Return Undelivered to Depot */}
+            {isDriver && opStatus === 2 && (
+              <span style={{ fontSize: "0.72rem", color: "#0369a1", fontWeight: 700 }}>
+                ⏳ Ramassé (Attente réception dépôt)
+              </span>
+            )}
+
+            {isDriver && opStatus === 3 && (
+              <button
+                onClick={() => handleStartDelivery(row)}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "5px",
+                  padding: "5px 10px",
+                  background: "#4f46e5",
+                  color: "#ffffff",
+                  border: "none",
+                  borderRadius: "6px",
+                  fontSize: "0.73rem",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                ▶️ Prendre en charge
+              </button>
+            )}
+
+            {isDriver && opStatus === 4 && (
+              <button
+                onClick={() => openOutcomeModal(row)}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "5px",
+                  padding: "5px 10px",
+                  background: "#059669",
+                  color: "#ffffff",
+                  border: "none",
+                  borderRadius: "6px",
+                  fontSize: "0.73rem",
+                  fontWeight: 800,
+                  cursor: "pointer",
+                }}
+              >
+                ✓ Saisir Résultat
+              </button>
+            )}
+
+            {isDriver && opStatus === 5 && (
+              <div style={{ display: "flex", gap: "5px", alignItems: "center", flexWrap: "wrap" }}>
+                {resVal === 1 ? (
+                  <span
+                    style={{
+                      fontSize: "0.72rem",
+                      fontWeight: 700,
+                      color: "#15803d",
+                      background: "#f0fdf4",
+                      border: "1px solid #bbf7d0",
+                      padding: "3px 8px",
+                      borderRadius: "6px",
+                    }}
+                  >
+                    ✓ Livré ({isPaid ? "Cash remis" : "Cash en main"})
+                  </span>
+                ) : (
+                  <span
+                    style={{
+                      fontSize: "0.72rem",
+                      fontWeight: 700,
+                      color: "#92400e",
+                      background: "#fffbeb",
+                      border: "1px solid #fde68a",
+                      padding: "3px 8px",
+                      borderRadius: "6px",
+                    }}
+                  >
+                    ↩️ À retourner au dépôt
+                  </span>
+                )}
+              </div>
             )}
           </div>
         );
@@ -1958,7 +1974,7 @@ export default function Deliveries(props) {
   }
   useEffect(() => {
     fetch();
-  }, [store.id, activeRole, isB2B, currentDriverId, currentDepotId, filterModel.page, filterModel.take]);
+  }, [store.id, activeRole, isB2B, currentDriverId, filterModel.page, filterModel.take]);
   return (
     <div>
       {" "}
@@ -2117,7 +2133,7 @@ export default function Deliveries(props) {
             <label>Livreur </label>
             <SelectPicker
               data={[{ label: "Sélectionner", value: 0 }].concat(
-                drivers.map((c) => {
+                scopedDrivers.map((c) => {
                   return { label: c.firstName + " " + c.lastName, value: c.id };
                 })
               )}
@@ -2165,7 +2181,7 @@ export default function Deliveries(props) {
             <label>Boutique </label>
             <SelectPicker
               data={[{ label: "Sélectionner", value: 0 }].concat(
-                storesList.map((c) => {
+                scopedStoresList.map((c) => {
                   return { label: c.name_fr, value: c.id };
                 })
               )}
@@ -2181,52 +2197,303 @@ export default function Deliveries(props) {
           </Responsive>
         )}
       </Filter>
-      {activeRole === "driver" && (() => {
+      {isDriver && (() => {
         const loggedDriver = drivers.find((d) => d.id === Number(currentDriverId));
-        const soldeVal = Number(loggedDriver?.solde ?? loggedDriver?.Solde) || 0;
+        const drvId = Number(currentDriverId || loggedDriver?.id || 1);
+
+        // 1. Assigned deliveries at depot ready to be taken by the driver (some or all)
+        const assignedAtDepot = data.filter(
+          (d) =>
+            getOperationalStatus(d) === 3 &&
+            Number(getDeliveryDriverId(d) || getActiveDeliveryDriverId(d) || drvId) === drvId
+        );
+
+        // 2. Delivered parcels by this driver
+        const deliveredParcels = data.filter((d) => getDeliveryResult(d) === 1);
+        const totalCashDeliveriesPrices = deliveredParcels.reduce(
+          (sum, d) => sum + getDeliveryTotalPrice(d),
+          0
+        );
+
+        // 3. Service fees (tarifs) for this driver (pickups + deliveries)
+        const getDriverTarifForRow = (row) => {
+          const matchedTarif =
+            row.tarif ||
+            row.Tarif ||
+            tarifsList.find((t) => Number(t.id) === Number(row.tarifId ?? row.TarifId));
+          const pickupFee = Number(
+            matchedTarif?.driverPickupPrice ??
+              matchedTarif?.DriverPickupPrice ??
+              matchedTarif?.commissionPickup ??
+              2.0
+          );
+          const deliveryFee = Number(
+            matchedTarif?.driverDeliveryPrice ??
+              matchedTarif?.DriverDeliveryPrice ??
+              row.commissionDriver ??
+              3.5
+          );
+          return { pickupFee, deliveryFee };
+        };
+
+        const pickedUpParcels = data.filter(
+          (d) => Number(getPickupDriverId(d)) === drvId && getOperationalStatus(d) >= 2
+        );
+        const sumPickupTarifs = pickedUpParcels.reduce(
+          (sum, d) => sum + getDriverTarifForRow(d).pickupFee,
+          0
+        );
+        const sumDeliveryTarifs = deliveredParcels.reduce(
+          (sum, d) => sum + getDriverTarifForRow(d).deliveryFee,
+          0
+        );
+        const sumServiceFeesTarifs = sumPickupTarifs + sumDeliveryTarifs;
+        const totalEndDayCashPlusTarifs = totalCashDeliveriesPrices + sumServiceFeesTarifs;
+
+        // 4. Undelivered parcels to return to the depot
+        const undeliveredParcels = data.filter((d) => {
+          const op = getOperationalStatus(d);
+          const res = getDeliveryResult(d);
+          return (op === 4 && res !== 1) || (res >= 2 && res <= 4);
+        });
+
+        const handleDriverTakeDeliveries = async (countOrSelected) => {
+          let toTake = [];
+          const checkedAssigned = assignedAtDepot.filter((d) => checkeds.includes(d.id));
+          if (checkedAssigned.length > 0) {
+            toTake = checkedAssigned;
+          } else {
+            const n = Number(countOrSelected);
+            toTake = n > 0 ? assignedAtDepot.slice(0, n) : assignedAtDepot;
+          }
+
+          if (toTake.length === 0) {
+            Swal.fire("Information", "Aucun colis en attente de prise en charge au dépôt.", "info");
+            return;
+          }
+
+          const ids = toTake.map((d) => d.id);
+          try {
+            await Promise.allSettled(
+              ids.map((delId) =>
+                APi.createAPIEndpoint(`${APi.ENDPOINTS.Driver}/${drvId}/startDelivery/${delId}`).customPost({})
+              )
+            );
+          } catch (e) {}
+
+          setdata((prev) =>
+            prev.map((d) =>
+              ids.includes(d.id)
+                ? { ...d, status: 4, operationalStatus: 4, deliveryDriverId: drvId }
+                : d
+            )
+          );
+          setcheckeds([]);
+          Swal.fire({
+            icon: "success",
+            title: "Colis Pris en Charge !",
+            html: `Vous avez pris en charge <b>${ids.length} colis</b> pour votre tournée de livraison.`,
+            timer: 1800,
+            showConfirmButton: false,
+          });
+        };
+
+        const handleReturnUndeliveredToDepot = async () => {
+          if (undeliveredParcels.length === 0) return;
+          const ids = undeliveredParcels.map((d) => d.id);
+          try {
+            await Promise.allSettled(
+              ids.map((delId) =>
+                APi.createAPIEndpoint(`${APi.ENDPOINTS.Delivery}/changeResult/${delId}/5`).update2({
+                  deliveryId: delId,
+                  result: 5,
+                })
+              )
+            );
+          } catch (e) {}
+
+          setdata((prev) =>
+            prev.map((d) =>
+              ids.includes(d.id)
+                ? { ...d, result: 5, status: 5, operationalStatus: 5, returnedToDepotByDriver: true }
+                : d
+            )
+          );
+          Swal.fire({
+            icon: "success",
+            title: "Retour au Dépôt Enregistré !",
+            html: `<b>${ids.length} colis non livré(s)</b> ont été marqués comme retournés au dépôt.<br/>L'Agent de Dépôt confirmera leur réception.`,
+            timer: 2200,
+            showConfirmButton: false,
+          });
+        };
+
         return (
-          <div
-            style={{
-              background: "linear-gradient(135deg, #059669 0%, #047857 100%)",
-              borderRadius: "14px",
-              padding: "16px 20px",
-              margin: "10px 10px 14px",
-              color: "#ffffff",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              boxShadow: "0 4px 14px rgba(5, 150, 105, 0.25)",
-              flexWrap: "wrap",
-              gap: "12px",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-              <div
-                style={{
-                  width: "42px",
-                  height: "42px",
-                  borderRadius: "10px",
-                  background: "rgba(255, 255, 255, 0.2)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: "20px",
-                }}
-              >
-                💰
-              </div>
+          <div style={{ margin: "10px 10px 16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+            {/* CARD 1: TAKE SOME OR ALL ASSIGNED DELIVERIES */}
+            <div
+              style={{
+                background: "#ffffff",
+                border: "2px solid #c7d2fe",
+                borderRadius: "14px",
+                padding: "16px 20px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "12px",
+              }}
+            >
               <div>
-                <div style={{ fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", opacity: 0.9 }}>
-                  Portefeuille Livreur / Solde Actuel
+                <div style={{ fontSize: "0.76rem", fontWeight: 800, color: "#4f46e5", textTransform: "uppercase" }}>
+                  1. Prise en Charge au Dépôt
                 </div>
-                <div style={{ fontSize: "1.45rem", fontWeight: 900, fontFamily: "monospace", letterSpacing: "0.5px" }}>
-                  {soldeVal.toFixed(3)} <span style={{ fontSize: "0.85rem", fontWeight: 700 }}>TND</span>
+                <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#0f172a", marginTop: "2px" }}>
+                  {assignedAtDepot.length} colis affecté(s) disponibles au dépôt
                 </div>
+                <div style={{ fontSize: "0.78rem", color: "#64748b" }}>
+                  Prenez tous vos colis affectés ou choisissez le nombre de colis que vous emportez.
+                </div>
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                <input
+                  type="number"
+                  min={1}
+                  max={assignedAtDepot.length || 1}
+                  placeholder={`Nb (max ${assignedAtDepot.length})`}
+                  value={driverTakeCount}
+                  onChange={(e) => setDriverTakeCount(e.target.value)}
+                  style={{
+                    width: "120px",
+                    padding: "7px 10px",
+                    borderRadius: "8px",
+                    border: "1px solid #cbd5e1",
+                    fontWeight: 700,
+                    fontSize: "0.82rem",
+                  }}
+                />
+                {driverTakeCount && Number(driverTakeCount) > 0 && (
+                  <button
+                    onClick={() => handleDriverTakeDeliveries(Number(driverTakeCount))}
+                    style={{
+                      background: "#4f46e5",
+                      color: "#ffffff",
+                      border: "none",
+                      borderRadius: "8px",
+                      padding: "8px 14px",
+                      fontWeight: 800,
+                      fontSize: "0.82rem",
+                      cursor: "pointer",
+                    }}
+                  >
+                    ▶️ Prendre {driverTakeCount} colis
+                  </button>
+                )}
+                <button
+                  onClick={() => handleDriverTakeDeliveries(assignedAtDepot.length)}
+                  disabled={assignedAtDepot.length === 0}
+                  style={{
+                    background: assignedAtDepot.length > 0 ? "#2563eb" : "#cbd5e1",
+                    color: "#ffffff",
+                    border: "none",
+                    borderRadius: "8px",
+                    padding: "8px 16px",
+                    fontWeight: 800,
+                    fontSize: "0.82rem",
+                    cursor: assignedAtDepot.length > 0 ? "pointer" : "not-allowed",
+                  }}
+                >
+                  ▶️ Prendre Tout ({assignedAtDepot.length})
+                </button>
               </div>
             </div>
 
-            <div style={{ fontSize: "0.82rem", background: "rgba(255, 255, 255, 0.15)", padding: "6px 14px", borderRadius: "20px", fontWeight: 600 }}>
-              Chauffeur : {loggedDriver?.name || `${loggedDriver?.firstName || ""} ${loggedDriver?.lastName || ""}`.trim() || "Livreur"}
+            {/* CARD 2: END OF DAY SUMMARY (TOTAL CASH OF DELIVERIES PRICES + SUM OF SERVICE FEES TARIFS + UNDELIVERED RETURNS) */}
+            <div
+              style={{
+                background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
+                borderRadius: "14px",
+                padding: "18px 20px",
+                color: "#ffffff",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "16px",
+              }}
+            >
+              <div>
+                <div style={{ fontSize: "0.75rem", fontWeight: 800, color: "#38bdf8", textTransform: "uppercase" }}>
+                  2. Bilan Fin de Journée — {loggedDriver?.firstName || "Livreur"} {loggedDriver?.lastName || ""}
+                </div>
+                <div style={{ display: "flex", gap: "20px", flexWrap: "wrap", marginTop: "8px" }}>
+                  <div>
+                    <div style={{ fontSize: "0.72rem", color: "#94a3b8" }}>
+                      💵 Total Cash Livraisons ({deliveredParcels.length} livrés)
+                    </div>
+                    <div style={{ fontSize: "1.2rem", fontWeight: 900, fontFamily: "monospace", color: "#ffffff" }}>
+                      {totalCashDeliveriesPrices.toFixed(3)} TND
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "0.72rem", color: "#94a3b8" }}>
+                      🏷️ Somme des Frais de Services (Tarifs)
+                    </div>
+                    <div style={{ fontSize: "1.2rem", fontWeight: 900, fontFamily: "monospace", color: "#fcd34d" }}>
+                      +{sumServiceFeesTarifs.toFixed(3)} TND
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      background: "rgba(16, 185, 129, 0.2)",
+                      border: "1px solid rgba(16, 185, 129, 0.4)",
+                      padding: "4px 12px",
+                      borderRadius: "10px",
+                    }}
+                  >
+                    <div style={{ fontSize: "0.72rem", color: "#a7f3d0", fontWeight: 700 }}>
+                      💰 TOTAL (CASH COLIS + TARIFS)
+                    </div>
+                    <div style={{ fontSize: "1.3rem", fontWeight: 900, fontFamily: "monospace", color: "#34d399" }}>
+                      {totalEndDayCashPlusTarifs.toFixed(3)} TND
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Return undelivered parcels to the depot */}
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                {undeliveredParcels.length > 0 ? (
+                  <button
+                    onClick={handleReturnUndeliveredToDepot}
+                    style={{
+                      background: "#d97706",
+                      color: "#ffffff",
+                      border: "none",
+                      borderRadius: "10px",
+                      padding: "10px 16px",
+                      fontWeight: 800,
+                      fontSize: "0.82rem",
+                      cursor: "pointer",
+                    }}
+                  >
+                    ↩️ Retourner {undeliveredParcels.length} Colis Non Livré(s) au Dépôt
+                  </button>
+                ) : (
+                  <span
+                    style={{
+                      background: "rgba(255,255,255,0.1)",
+                      padding: "6px 12px",
+                      borderRadius: "8px",
+                      fontSize: "0.78rem",
+                      color: "#cbd5e1",
+                    }}
+                  >
+                    ✓ Aucun colis non livré en attente de retour
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         );
@@ -2324,32 +2591,29 @@ export default function Deliveries(props) {
       <Grid
         loading={isFetching}
         canEditRow={(row) =>
-          !isDriver &&
-          (!isB2B ||
-            (getOperationalStatus(row) === 1 &&
-              !row?.isPickedUp &&
-              !row?.IsPickedUp &&
-              !row?.isAtDepot &&
-              !row?.IsAtDepot))
+          isB2B &&
+          getOperationalStatus(row) === 1 &&
+          !row?.isPickedUp &&
+          !row?.IsPickedUp &&
+          !row?.isAtDepot &&
+          !row?.IsAtDepot
         }
         canDeleteRow={(row) =>
-          !isDriver &&
-          (!isB2B ||
-            (getOperationalStatus(row) === 1 &&
-              !row?.isPickedUp &&
-              !row?.IsPickedUp &&
-              !row?.isAtDepot &&
-              !row?.IsAtDepot))
+          isB2B &&
+          getOperationalStatus(row) === 1 &&
+          !row?.isPickedUp &&
+          !row?.IsPickedUp &&
+          !row?.isAtDepot &&
+          !row?.IsAtDepot
         }
         lockedRowLabel="🔒 Verrouillé (Post-Pickup)"
         editAction={
-          isDriver
+          !isB2B
             ? false
             : (id) => {
                 const target = data.find((el) => el.id == id);
                 if (
                   target &&
-                  isB2B &&
                   (getOperationalStatus(target) > 1 ||
                     target.isPickedUp ||
                     target.IsPickedUp ||
@@ -2370,13 +2634,12 @@ export default function Deliveries(props) {
               }
         }
         deleteAction={
-          isDriver
+          !isB2B
             ? false
             : (id) => {
                 const target = data.find((el) => el.id == id);
                 if (
                   target &&
-                  isB2B &&
                   (getOperationalStatus(target) > 1 ||
                     target.isPickedUp ||
                     target.IsPickedUp ||
@@ -2393,7 +2656,7 @@ export default function Deliveries(props) {
                 deleteAction(id);
               }
         }
-        actionKey={isDriver ? null : "id"}
+        actionKey={!isB2B ? null : "id"}
         noAdvancedActions={true}
         actions={[]}
         columns={columns}

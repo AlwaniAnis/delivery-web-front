@@ -24,6 +24,7 @@ import {
   activeRoleState,
   currentDepotIdState,
   currentDriverIdState,
+  currentUserState,
   normalizeRole,
 } from "../../Atoms/auth.atom";
 import { driverPaymentsState, DEFAULT_DRIVER_PAYMENTS } from "../../Atoms/driverPayments.atom";
@@ -39,9 +40,28 @@ export default function DriverPayments() {
   const activeRole = useRecoilValue(activeRoleState);
   const currentDriverId = useRecoilValue(currentDriverIdState);
   const currentDepotId = useRecoilValue(currentDepotIdState);
+  const currentUser = useRecoilValue(currentUserState);
 
-  const isDriver = normalizeRole(activeRole) === "driver";
-  const isDepotAgent = normalizeRole(activeRole) === "depotAgent";
+  const normalizedRole = normalizeRole(activeRole);
+  const isDriver = normalizedRole === "driver";
+  const isDepotAgent = normalizedRole === "depotAgent";
+
+  const activeDepotPlaceId = Number(
+    currentUser?.preparationPlaceId ||
+      currentUser?.agentDepot?.preparationPlaceId ||
+      currentDepotId ||
+      1
+  );
+
+  // Scope drivers for Depot Agent strictly to their depot
+  const scopedDrivers = isDepotAgent
+    ? (drivers || []).filter(
+        (d) =>
+          Number(d.preparationPlaceId || d.preparationPlace?.id || d.depotId || 1) ===
+          activeDepotPlaceId
+      )
+    : drivers || [];
+  const scopedDriverIds = new Set(scopedDrivers.map((d) => Number(d.id)));
 
   const location = useLocation();
   const queryParams = new URLSearchParams(location.search);
@@ -102,22 +122,13 @@ export default function DriverPayments() {
 
   // Load deliveries for optional linking
   useEffect(() => {
-    APi.createAPIEndpoint(APi.ENDPOINTS.Delivery, {
-      page: 1,
-      take: 50,
-      ...(isDepotAgent
-        ? {
-            preparationPlaceId: Number(currentDepotId) || 1,
-            placeId: Number(currentDepotId) || 1,
-          }
-        : {}),
-    })
+    APi.createAPIEndpoint(APi.ENDPOINTS.Delivery, { page: 1, take: 50 })
       .fetchAll()
       .then((res) => {
         setDeliveries(res.data?.data || res.data || []);
       })
       .catch(() => {});
-  }, [isDepotAgent, currentDepotId]);
+  }, []);
 
   useEffect(() => {
     fetchPayments();
@@ -297,7 +308,12 @@ export default function DriverPayments() {
       return false;
     }
 
-    // Admin filter by specific driver
+    // If depot agent role, restrict strictly to drivers belonging to this depot
+    if (isDepotAgent && !scopedDriverIds.has(pDriverId)) {
+      return false;
+    }
+
+    // Admin / Depot Agent filter by specific driver
     if (!isDriver && selectedDriverFilter > 0 && pDriverId !== Number(selectedDriverFilter)) {
       return false;
     }
@@ -517,7 +533,7 @@ export default function DriverPayments() {
                 error={error}
                 model={model}
                 _setmodel={setModel}
-                drivers={drivers}
+                drivers={scopedDrivers}
                 deliveries={deliveries}
               />
             }
@@ -607,7 +623,7 @@ export default function DriverPayments() {
       </div>
 
       {/* QUICK DRIVER SOLDE CARDS FOR ADMIN & DEPOT AGENT */}
-      {!isDriver && drivers.length > 0 && (
+      {!isDriver && scopedDrivers.length > 0 && (
         <div
           style={{
             background: "#ffffff",
@@ -620,7 +636,7 @@ export default function DriverPayments() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", flexWrap: "wrap", gap: "8px" }}>
             <div>
               <h4 style={{ margin: 0, fontSize: "0.95rem", fontWeight: 800, color: "#0f172a" }}>
-                💰 Soldes Actuels des Livreurs (Règlement Direct sans suivi de colis)
+                💰 Soldes Actuels des Livreurs {isDepotAgent ? "du Dépôt" : ""} (Règlement Direct sans suivi de colis)
               </h4>
               <span style={{ fontSize: "0.76rem", color: "#64748b" }}>
                 Le solde cumule automatiquement les tarifs de pickup (à la remise au dépôt) et de livraison (à la réception client). Cliquez sur « Payer » pour régler un livreur.
@@ -635,7 +651,7 @@ export default function DriverPayments() {
               gap: "10px",
             }}
           >
-            {drivers.map((drv) => {
+            {scopedDrivers.map((drv) => {
               const drvName = drv.name || `${drv.firstName || ""} ${drv.lastName || ""}`.trim() || `Livreur #${drv.id}`;
               const drvSolde = Number(drv.solde ?? drv.Solde) || 0;
               return (
@@ -738,8 +754,13 @@ export default function DriverPayments() {
               <FaFilter size={11} /> Filtrer par Livreur :
             </span>
             <SelectPicker
-              data={[{ label: "Tous les livreurs", value: 0 }].concat(
-                drivers.map((d) => ({
+              data={[
+                {
+                  label: isDepotAgent ? "Tous les livreurs du dépôt" : "Tous les livreurs",
+                  value: 0,
+                },
+              ].concat(
+                scopedDrivers.map((d) => ({
                   label: d.name || `${d.firstName || ""} ${d.lastName || ""}`.trim() || `Livreur #${d.id}`,
                   value: d.id,
                 }))

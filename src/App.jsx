@@ -602,6 +602,38 @@ const App = () => {
                   <span className="nav-label">Livraisons du Dépôt</span>
                 </Link>
                 <Link
+                  to="/stores"
+                  className={`nav-link-item ${location.pathname === "/stores" ? "active" : ""}`}
+                  onClick={() => setExpand(false)}
+                >
+                  <span className="nav-icon"><FaStore /></span>
+                  <span className="nav-label">Boutiques du Dépôt</span>
+                </Link>
+                <Link
+                  to="/store_recap"
+                  className={`nav-link-item ${location.pathname === "/store_recap" ? "active" : ""}`}
+                  onClick={() => setExpand(false)}
+                >
+                  <span className="nav-icon"><FaCalendarDay /></span>
+                  <span className="nav-label">Récaps Boutiques du Dépôt</span>
+                </Link>
+                <Link
+                  to="/drivers"
+                  className={`nav-link-item ${location.pathname === "/drivers" ? "active" : ""}`}
+                  onClick={() => setExpand(false)}
+                >
+                  <span className="nav-icon"><FaTruck /></span>
+                  <span className="nav-label">Livreurs du Dépôt</span>
+                </Link>
+                <Link
+                  to="/reclamations"
+                  className={`nav-link-item ${location.pathname === "/reclamations" ? "active" : ""}`}
+                  onClick={() => setExpand(false)}
+                >
+                  <span className="nav-icon"><FaCommentDots /></span>
+                  <span className="nav-label">Réclamations du Dépôt</span>
+                </Link>
+                <Link
                   to="/scan_qrcode"
                   className={`nav-link-item ${location.pathname === "/scan_qrcode" ? "active" : ""}`}
                   onClick={() => setExpand(false)}

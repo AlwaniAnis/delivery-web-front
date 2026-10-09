@@ -3,17 +3,31 @@ import { useRecoilState, useRecoilValue } from "recoil";
 import { Button, Input, Modal } from "rsuite";
 import Pagination from "rsuite/Pagination";
 import Swal from "sweetalert2";
-import { FaPhoneAlt, FaTruck, FaIdCard, FaMapMarkerAlt, FaEnvelope, FaWallet } from "react-icons/fa";
+import {
+  FaPhoneAlt,
+  FaTruck,
+  FaIdCard,
+  FaMapMarkerAlt,
+  FaEnvelope,
+  FaWallet,
+  FaWarehouse,
+} from "react-icons/fa";
 import { APi } from "../../Api/";
 import { exportAddAtom } from "../../Atoms/exportAdd.atom";
+import { preparationPlacesState } from "../../Atoms/preparationPlaces.atom";
+import { activeRoleState, currentDepotIdState, normalizeRole } from "../../Atoms/auth.atom";
 import ExportAdd from "../../Components/Common/ExportAdd";
 import Filter from "../../Components/Common/Filter";
 import Grid from "../../Components/Grid";
-import validate from "../../Helpers/validate";
 import AddEdit from "./AddEdit.component";
 import ResetPassword from "../Auth/ResetPassword";
-import { activeRoleState, currentDepotIdState, normalizeRole } from "../../Atoms/auth.atom";
-export default function Drivers(props) {
+
+export default function Drivers() {
+  const depotsList = useRecoilValue(preparationPlacesState);
+  const activeRole = useRecoilValue(activeRoleState);
+  const currentDepotId = useRecoilValue(currentDepotIdState);
+  const isDepotAgent = normalizeRole(activeRole) === "depotAgent";
+
   // STATE
   const [data, setdata] = useState([]);
   const [totalCount, settotalCount] = useState(0);
@@ -28,10 +42,10 @@ export default function Drivers(props) {
     firstName: "",
     lastName: "",
     address: "",
+    carNumber: "",
+    cities: "",
     solde: 0,
-    Solde: 0,
-    isPicker: false,
-    tarifId: null,
+    preparationPlaceId: isDepotAgent ? Number(currentDepotId || 1) : depotsList?.[0]?.id || 1,
   });
   const [userModel, setuserModel] = useState({
     email: "",
@@ -44,9 +58,6 @@ export default function Drivers(props) {
   // ATOMS
   const [state, setstate] = useRecoilState(exportAddAtom);
   const [show, setshow] = useState(0);
-  const activeRole = useRecoilValue(activeRoleState);
-  const currentDepotId = useRecoilValue(currentDepotIdState);
-  const isDepotAgent = normalizeRole(activeRole) === "depotAgent";
 
   // HELPERS
   const reset = () => {
@@ -58,123 +69,172 @@ export default function Drivers(props) {
       firstName: "",
       lastName: "",
       address: "",
+      carNumber: "",
+      cities: "",
       solde: 0,
-      Solde: 0,
-      isPicker: false,
-      tarifId: null,
+      preparationPlaceId: isDepotAgent ? Number(currentDepotId || 1) : depotsList?.[0]?.id || 1,
     });
     setError("");
   };
+
   // API CALLS
   const fetch = () => {
-    setstate((prev) => {
-      return { ...prev, loading: true };
-    });
-    APi.createAPIEndpoint(APi.ENDPOINTS.Driver, {
-      ...filterModel,
-      ...(isDepotAgent
-        ? {
-            preparationPlaceId: Number(currentDepotId) || 1,
-            placeId: Number(currentDepotId) || 1,
-          }
-        : {}),
-    })
+    setstate((prev) => ({ ...prev, loading: true }));
+    const queryParams = isDepotAgent
+      ? { ...filterModel, placeId: Number(currentDepotId || 1) }
+      : filterModel;
+    APi.createAPIEndpoint(APi.ENDPOINTS.Driver, queryParams)
       .fetchAll()
       .then((res) => {
-        setdata(res.data.data);
-        setstate((prev) => {
-          return { ...prev, loading: false };
-        });
-        settotalCount(res.data.totalCount);
+        const raw = res.data?.data || res.data || [];
+        const scopedRows = isDepotAgent
+          ? raw.filter(
+              (d) =>
+                !d.preparationPlaceId ||
+                Number(d.preparationPlaceId || d.preparationPlace?.id || d.depotId || 1) ===
+                  Number(currentDepotId || 1)
+            )
+          : raw;
+        setdata(scopedRows);
+        setstate((prev) => ({ ...prev, loading: false }));
+        settotalCount(res.data?.totalCount ?? scopedRows.length);
       })
       .catch((e) => {
         setError(e.Message);
-        setstate((prev) => {
-          return { ...prev, loading: false };
-        });
+        setstate((prev) => ({ ...prev, loading: false }));
       });
   };
+
   const save = () => {
-    setstate((prev) => {
-      return { ...prev, loading: true };
-    });
+    const placeId = Number(
+      isDepotAgent
+        ? currentDepotId || 1
+        : model.preparationPlaceId || model.preparationPlace?.id || depotsList?.[0]?.id || 1
+    );
+    const payload = {
+      ...model,
+      preparationPlaceId: placeId,
+    };
+    delete payload.preparationPlace;
+    delete payload.tarifId;
+    delete payload.TarifId;
+    delete payload.tarif;
+    delete payload.isPicker;
+    delete payload.IsPicker;
+
+    setstate((prev) => ({ ...prev, loading: true }));
     if (model.id) {
       APi.createAPIEndpoint(APi.ENDPOINTS.Driver)
-        .update(model.id, model)
-        .then((res) => {
+        .update(model.id, payload)
+        .then(() => {
           fetch();
-          setstate((prev) => {
-            return { ...prev, open: false, loading: false };
-          });
+          setstate((prev) => ({ ...prev, open: false, loading: false }));
           reset();
           Swal.fire({
             position: "top-end",
             icon: "success",
-            title: "Élément a été bien modifié !",
+            title: "Livreur modifié avec succès !",
             showConfirmButton: false,
             timer: 1500,
           });
         })
         .catch((e) => {
           setError(e.Message);
-          setstate((prev) => {
-            return { ...prev, loading: false };
-          });
+          setstate((prev) => ({ ...prev, loading: false }));
         });
     } else {
       APi.createAPIEndpoint(APi.ENDPOINTS.Driver)
-        .create(model)
-        .then((res) => {
+        .create(payload)
+        .then(() => {
           fetch();
           reset();
           Swal.fire({
             position: "top-end",
             icon: "success",
-            title: "Element a été bien ajouté !",
+            title: "Livreur ajouté avec succès !",
             showConfirmButton: false,
             timer: 1500,
           });
-          setstate((prev) => {
-            return { ...prev, open: false, loading: false };
-          });
+          setstate((prev) => ({ ...prev, open: false, loading: false }));
         })
         .catch((e) => {
           setError(e.Message);
-          setstate((prev) => {
-            return { ...prev, loading: false };
-          });
+          setstate((prev) => ({ ...prev, loading: false }));
         });
     }
   };
+
   const deleteAction = (id) => {
     APi.createAPIEndpoint(APi.ENDPOINTS.Driver)
       .delete(id)
-
-      .then((res) => {
+      .then(() => {
         fetch();
         Swal.fire("Supprimé !", "", "success");
       })
       .catch((e) => setError(e.Message));
   };
+
   const getBYId = (id) => {
     setError("");
-
-    setmodel(data.find((el) => el.id == id));
+    const found = data.find((el) => el.id == id);
+    if (found) {
+      setmodel({
+        ...found,
+        preparationPlaceId: Number(
+          found.preparationPlaceId || found.preparationPlace?.id || depotsList?.[0]?.id || 1
+        ),
+      });
+    }
   };
-  // LIFE CYCLES
-  useEffect(() => fetch(), [isDepotAgent, currentDepotId]);
+
+  useEffect(() => {
+    fetch();
+  }, [currentDepotId, isDepotAgent]);
+
+  const columnsWithDepot = columns.map((col) => {
+    if (col.value === "preparationPlaceId") {
+      return {
+        ...col,
+        render: (placeId, preparationPlace) => {
+          const resolvedId = Number(placeId || preparationPlace?.id || 1);
+          const depotObj =
+            preparationPlace ||
+            depotsList.find((d) => Number(d.id) === resolvedId) ||
+            depotsList[0];
+          return (
+            <span
+              style={{
+                background: "#ecfdf5",
+                color: "#065f46",
+                border: "1px solid #a7f3d0",
+                padding: "4px 10px",
+                borderRadius: "6px",
+                fontSize: "0.78rem",
+                fontWeight: 700,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                width: "fit-content",
+              }}
+            >
+              <FaWarehouse size={11} style={{ color: "#059669" }} />
+              {depotObj?.name || `Dépôt #${resolvedId}`}
+            </span>
+          );
+        },
+      };
+    }
+    return col;
+  });
+
   return (
     <div>
       <Filter search={() => fetch()}>
-        {" "}
         <div className="p-10">
-          {" "}
           <Input
-            placeholder="recherche"
+            placeholder="Recherche livreur..."
             onChange={(q) => {
-              setfilterModel((prev) => {
-                return { ...prev, q };
-              });
+              setfilterModel((prev) => ({ ...prev, q }));
             }}
           />
         </div>
@@ -186,14 +246,11 @@ export default function Drivers(props) {
         AddComponent={
           <AddEdit error={error} model={model} _setmodel={setmodel} />
         }
-      />{" "}
+      />
       <Grid
         editAction={(id) => {
           getBYId(id);
-
-          setstate((prev) => {
-            return { ...prev, open: true };
-          });
+          setstate((prev) => ({ ...prev, open: true }));
         }}
         deleteAction={deleteAction}
         actionKey="id"
@@ -222,7 +279,7 @@ export default function Drivers(props) {
             ),
           },
         ]}
-        columns={columns}
+        columns={columnsWithDepot}
         rows={data}
       />
       <div style={{ padding: 20, background: "#fff" }}>
@@ -242,15 +299,10 @@ export default function Drivers(props) {
           activePage={filterModel.page}
           onChangePage={(page) => {
             window.scrollTo(0, 0);
-            setfilterModel((prev) => {
-              return { ...prev, page };
-            });
+            setfilterModel((prev) => ({ ...prev, page }));
           }}
           onChangeLimit={(take) => {
-            console.log(take);
-            setfilterModel((prev) => {
-              return { ...prev, take };
-            });
+            setfilterModel((prev) => ({ ...prev, take }));
           }}
         />
       </div>
@@ -281,9 +333,7 @@ export default function Drivers(props) {
             </Button>
           </Modal.Footer>
         </Modal>
-      ) : (
-        ""
-      )}
+      ) : null}
     </div>
   );
 }
@@ -338,6 +388,11 @@ const columns = [
         </div>
       </div>
     ),
+  },
+  {
+    value: "preparationPlaceId",
+    value2: "preparationPlace",
+    name: "Dépôt (PreparationPlace)",
   },
   {
     value: "phone1",
@@ -466,45 +521,6 @@ const columns = [
         )}
       </div>
     ),
-  },
-  {
-    value: "isPicker",
-    value2: "IsPicker",
-    value3: "tarifId",
-    name: "Rôle Ramassage",
-    render: (isPicker, IsPicker, tarifId) => {
-      const picker = Boolean(isPicker ?? IsPicker);
-      return (
-        <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-          {picker ? (
-            <span
-              style={{
-                background: "#eff6ff",
-                color: "#1d4ed8",
-                border: "1px solid #bfdbfe",
-                padding: "2px 8px",
-                borderRadius: "6px",
-                fontSize: "0.75rem",
-                fontWeight: 700,
-                width: "fit-content",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "4px",
-              }}
-            >
-              📦 Ramasseur (Picker)
-            </span>
-          ) : (
-            <span style={{ color: "#94a3b8", fontSize: "0.75rem" }}>Livreur standard</span>
-          )}
-          {tarifId ? (
-            <span style={{ fontSize: "0.72rem", color: "#64748b", fontWeight: 600 }}>
-              Tarif #{tarifId}
-            </span>
-          ) : null}
-        </div>
-      );
-    },
   },
   {
     value: "solde",

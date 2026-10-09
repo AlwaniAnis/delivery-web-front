@@ -10,6 +10,7 @@ import {
   FaPlus,
 } from "react-icons/fa";
 import { preparationPlacesState } from "../../Atoms/preparationPlaces.atom";
+import { activeRoleState, currentDepotIdState, normalizeRole } from "../../Atoms/auth.atom";
 import Responsive from "../../Components/Responsive";
 import StoreMapPicker from "../../Components/Common/StoreMapPicker";
 
@@ -24,6 +25,9 @@ function AddEdit({
   },
 }) {
   const depotsList = useRecoilValue(preparationPlacesState);
+  const activeRole = useRecoilValue(activeRoleState);
+  const currentDepotId = useRecoilValue(currentDepotIdState);
+  const isDepotAgent = normalizeRole(activeRole) === "depotAgent";
   const [contact, setcontact] = useState({
     address: "",
     phones: "",
@@ -68,36 +72,53 @@ function AddEdit({
 
       <div style={{ marginTop: "12px", marginBottom: "12px" }}>
         <label style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px", color: "#065f46", fontSize: "0.85rem" }}>
-          <FaWarehouse style={{ color: "#059669" }} /> Dépôt du Territoire (Obligatoire) * :
+          <FaWarehouse style={{ color: "#059669" }} /> Dépôt du Territoire (PreparationPlace) * :
         </label>
-        <SelectPicker
-          data={(depotsList || []).map((d) => ({
-            label: `${d.name} (${d.code || `DEP-${d.id}`})`,
-            value: d.id,
-          }))}
-          block
-          cleanable={false}
-          searchable={true}
-          placeholder="Sélectionner le dépôt de rattachement..."
-          value={Number(model.preparationPlaceId || model.depotId || depotsList?.[0]?.id || 1)}
-          onSelect={(val) => {
-            const selectedDepot = (depotsList || []).find((d) => Number(d.id) === Number(val));
-            setmodel((prev) => ({
-              ...prev,
-              preparationPlaceId: val,
-              depotId: val,
-              // If store has no coordinates yet, default to depot coordinates
-              latitude:
-                prev.latitude != null && prev.latitude !== ""
-                  ? prev.latitude
-                  : selectedDepot?.latitude || 36.8065,
-              longitude:
-                prev.longitude != null && prev.longitude !== ""
-                  ? prev.longitude
-                  : selectedDepot?.longitude || 10.1815,
-            }));
-          }}
-        />
+        {isDepotAgent ? (
+          <div
+            style={{
+              background: "#f0fdf4",
+              border: "1px solid #86efac",
+              borderRadius: "8px",
+              padding: "8px 12px",
+              fontWeight: 700,
+              color: "#065f46",
+              fontSize: "0.85rem",
+            }}
+          >
+            🏢{" "}
+            {depotsList.find((d) => Number(d.id) === Number(currentDepotId))?.name ||
+              `Dépôt #${currentDepotId}`}
+          </div>
+        ) : (
+          <SelectPicker
+            data={(depotsList || []).map((d) => ({
+              label: `${d.name} (${d.code || `DEP-${d.id}`})`,
+              value: d.id,
+            }))}
+            block
+            cleanable={false}
+            searchable={true}
+            placeholder="Sélectionner le dépôt de rattachement..."
+            value={Number(model.preparationPlaceId || model.depotId || depotsList?.[0]?.id || 1)}
+            onSelect={(val) => {
+              const selectedDepot = (depotsList || []).find((d) => Number(d.id) === Number(val));
+              setmodel((prev) => ({
+                ...prev,
+                preparationPlaceId: val,
+                depotId: val,
+                latitude:
+                  prev.latitude != null && prev.latitude !== ""
+                    ? prev.latitude
+                    : selectedDepot?.latitude || 36.8065,
+                longitude:
+                  prev.longitude != null && prev.longitude !== ""
+                    ? prev.longitude
+                    : selectedDepot?.longitude || 10.1815,
+              }));
+            }}
+          />
+        )}
         <small style={{ color: "#64748b", fontSize: "0.75rem", display: "block", marginTop: "3px" }}>
           La boutique appartient au territoire de ce dépôt : toutes ses livraisons y sont automatiquement rattachées.
         </small>
