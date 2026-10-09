@@ -20,11 +20,13 @@ import { APi } from "../../Api";
 import {
   getCoordinatesForDelivery,
   getDepotCoordinates,
+  getStoreCoordinates,
   sortDeliveriesByNearest,
 } from "../../Helpers/geocoding";
 import { preparationPlacesState } from "../../Atoms/preparationPlaces.atom";
 import { activeRoleState, currentDriverIdState } from "../../Atoms/auth.atom";
 import { DriversList } from "../../Atoms/drivers.atom";
+import { StoresList } from "../../Atoms/stores.atom";
 import { tarifsState } from "../../Atoms/tarifs.atom";
 import Swal from "sweetalert2";
 
@@ -38,6 +40,7 @@ export default function MyMap() {
   const globalDriverId = useRecoilValue(currentDriverIdState);
   const depots = useRecoilValue(preparationPlacesState);
   const [driversList, setDriversList] = useRecoilState(DriversList);
+  const storesList = useRecoilValue(StoresList);
   const tarifsList = useRecoilValue(tarifsState);
 
   const [deliveries, setDeliveries] = useState([]);
@@ -303,6 +306,53 @@ export default function MyMap() {
         .addTo(markersLayer);
 
       bounds.extend([dpCoords.lat, dpCoords.lng]);
+    });
+
+    // 1b. Add Partner Stores (Boutiques) with Latitude & Longitude
+    (storesList || []).forEach((st) => {
+      const stLat = st.latitude ?? st.Latitude;
+      const stLng = st.longitude ?? st.Longitude;
+      if (stLat == null && stLng == null && !st.contacts?.length) return;
+      const stCoords = getStoreCoordinates(st);
+
+      const storeIcon = L.divIcon({
+        className: "custom-store-icon",
+        html: `
+          <div style="
+            background: #7c3aed;
+            color: #fff;
+            width: 32px;
+            height: 32px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 10px rgba(124, 58, 237, 0.4);
+            border: 2px solid #fff;
+            font-size: 14px;
+          ">
+            🏪
+          </div>
+        `,
+        iconSize: [32, 32],
+        iconAnchor: [16, 16],
+      });
+
+      L.marker([stCoords.lat, stCoords.lng], { icon: storeIcon })
+        .bindPopup(`
+          <div style="font-weight: 800; color: #4c1d95; font-size: 13px;">
+            🏪 ${st.name_fr || "Boutique Partenaire"}
+          </div>
+          <div style="font-size: 11px; color: #64748b; margin-top: 3px;">
+            ${st.contacts?.[0]?.address || `${stCoords.lat.toFixed(4)}, ${stCoords.lng.toFixed(4)}`}
+          </div>
+          ${
+            st.contacts?.[0]?.phones
+              ? `<div style="font-size: 11px; font-weight: 700; color: #2563eb; margin-top: 4px;">📞 ${st.contacts[0].phones}</div>`
+              : ""
+          }
+        `)
+        .addTo(markersLayer);
     });
 
     // 2. Add Live Driver GPS Location Marker

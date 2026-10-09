@@ -43,7 +43,7 @@ function AddEdit({ _setmodel, error, model = {} }) {
         </small>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+      <div className="responsive-grid-3">
         <div>
           <label style={{ fontWeight: 700, fontSize: "0.82rem", color: "#334155", marginBottom: "4px", display: "flex", alignItems: "center", gap: "6px" }}>
             <FaWarehouse style={{ color: "#d97706" }} /> Tarif Pickup Livreur (TND) * :
@@ -68,7 +68,7 @@ function AddEdit({ _setmodel, error, model = {} }) {
 
         <div>
           <label style={{ fontWeight: 700, fontSize: "0.82rem", color: "#334155", marginBottom: "4px", display: "flex", alignItems: "center", gap: "6px" }}>
-            <FaTruck style={{ color: "#2563eb" }} /> Tarif Livraison Livreur (TND) * :
+            <FaTruck style={{ color: "#2563eb" }} /> Commission Livraison (TND) * :
           </label>
           <Input
             type="number"
@@ -85,6 +85,28 @@ function AddEdit({ _setmodel, error, model = {} }) {
           />
           <small style={{ color: "#64748b", fontSize: "0.72rem", marginTop: "3px", display: "block" }}>
             Crédité au livreur lorsque le client reçoit le colis.
+          </small>
+        </div>
+
+        <div>
+          <label style={{ fontWeight: 700, fontSize: "0.82rem", color: "#334155", marginBottom: "4px", display: "flex", alignItems: "center", gap: "6px" }}>
+            <FaTruck style={{ color: "#7c3aed" }} /> Commission Retour (TND) :
+          </label>
+          <Input
+            type="number"
+            step="0.100"
+            min={0}
+            placeholder="Ex: 1.000"
+            value={model.commissionReturn ?? 0}
+            onChange={(val) =>
+              _setmodel((prev) => ({
+                ...prev,
+                commissionReturn: parseFloat(val) || 0,
+              }))
+            }
+          />
+          <small style={{ color: "#64748b", fontSize: "0.72rem", marginTop: "3px", display: "block" }}>
+            Frais / commission de retour (commissionReturn).
           </small>
         </div>
       </div>

@@ -160,6 +160,32 @@ export function getDepotCoordinates(depot) {
 }
 
 /**
+ * Resolves coordinates for an EStore / partner store using its latitude & longitude
+ */
+export function getStoreCoordinates(store) {
+  const lat = store?.latitude ?? store?.Latitude;
+  const lng = store?.longitude ?? store?.Longitude;
+  if (
+    lat !== undefined &&
+    lat !== null &&
+    lat !== "" &&
+    lng !== undefined &&
+    lng !== null &&
+    lng !== "" &&
+    (Number(lat) !== 0 || Number(lng) !== 0)
+  ) {
+    return { lat: Number(lat), lng: Number(lng) };
+  }
+  const addr = `${store?.name_fr || ""} ${store?.contacts?.[0]?.address || ""}`.toLowerCase();
+  for (const key of Object.keys(TUNISIA_COORDINATES)) {
+    if (addr.includes(key)) {
+      return TUNISIA_COORDINATES[key];
+    }
+  }
+  return { lat: 36.8065, lng: 10.1815 };
+}
+
+/**
  * Sorts deliveries using Nearest-Neighbor ("الأقرب فالأقرب") algorithm:
  * Starts from the chosen origin (Depot at start of day OR Driver's live GPS position)
  * and iteratively visits the closest next stop.

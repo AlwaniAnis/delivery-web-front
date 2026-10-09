@@ -15,7 +15,11 @@ import { APi } from "../../Api";
 import { ENDPOINTS } from "../../Api/enpoints";
 import Responsive from "../../Components/Responsive";
 import ResumeCard from "../../Components/ResumeCard";
-import { DeliveryStatus } from "../../Constants/types";
+import {
+  DeliveryStatus,
+  getActiveDeliveryDriver,
+  getDeliveryTotalPrice,
+} from "../../Constants/types";
 import format_number from "../../Helpers/number_formatter";
 import Stats, { Stats2, Stats3 } from "./components";
 
@@ -244,15 +248,17 @@ function Home() {
     {
       value: "coliItems",
       name: "Montant",
-      render: (coliItems) => {
-        const total = (coliItems || []).reduce(
-          (a, b) => a + (Number(b.qty) || 1) * (Number(b.unitPrice) || 0),
-          0
-        );
+      render: (coliItems, row) => {
+        const total = row
+          ? getDeliveryTotalPrice(row)
+          : (coliItems || []).reduce(
+              (a, b) => a + (Number(b.qty) || 1) * (Number(b.unitPrice) || 0),
+              0
+            );
         return (
           <div style={{ display: "inline-flex", alignItems: "baseline", gap: "4px" }}>
             <span style={{ fontWeight: 800, color: "#0f172a", fontSize: "0.95rem" }}>
-              {total.toFixed(3)}
+              {Number(total || 0).toFixed(3)}
             </span>
             <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#64748b" }}>
               TND
@@ -264,36 +270,39 @@ function Home() {
     {
       value: "driver",
       name: "Livreur",
-      render: (v) => (
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <div
-            style={{
-              fontSize: "12px",
-              fontWeight: 700,
-              borderRadius: "50%",
-              width: "32px",
-              height: "32px",
-              textAlign: "center",
-              lineHeight: "32px",
-              background: v ? "#eff6ff" : "#f1f5f9",
-              color: v ? "#2563eb" : "#94a3b8",
-              border: v ? "1px solid #bfdbfe" : "1px solid #e2e8f0",
-              flexShrink: 0,
-            }}
-          >
-            {v ? `${(v.firstName?.[0] || "").toUpperCase()}${(v.lastName?.[0] || "").toUpperCase()}` : "—"}
-          </div>
-
-          <div>
-            <div style={{ fontWeight: 600, color: "#1e293b", fontSize: "0.82rem" }}>
-              {v ? `${v.firstName || ""} ${v.lastName || ""}` : "Non assigné"}
+      render: (v, row) => {
+        const drv = getActiveDeliveryDriver(row) || v;
+        return (
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <div
+              style={{
+                fontSize: "12px",
+                fontWeight: 700,
+                borderRadius: "50%",
+                width: "32px",
+                height: "32px",
+                textAlign: "center",
+                lineHeight: "32px",
+                background: drv ? "#eff6ff" : "#f1f5f9",
+                color: drv ? "#2563eb" : "#94a3b8",
+                border: drv ? "1px solid #bfdbfe" : "1px solid #e2e8f0",
+                flexShrink: 0,
+              }}
+            >
+              {drv ? `${(drv.firstName?.[0] || "").toUpperCase()}${(drv.lastName?.[0] || "").toUpperCase()}` : "—"}
             </div>
-            {v?.carNumber && (
-              <div style={{ fontSize: "0.7rem", color: "#64748b" }}>{v.carNumber}</div>
-            )}
+
+            <div>
+              <div style={{ fontWeight: 600, color: "#1e293b", fontSize: "0.82rem" }}>
+                {drv ? `${drv.firstName || ""} ${drv.lastName || ""}` : "Non assigné"}
+              </div>
+              {drv?.carNumber && (
+                <div style={{ fontSize: "0.7rem", color: "#64748b" }}>{drv.carNumber}</div>
+              )}
+            </div>
           </div>
-        </div>
-      ),
+        );
+      },
     },
   ];
   const fetch = (status) => {
@@ -383,67 +392,61 @@ function Home() {
         />
       </Responsive>
       <Responsive l={6} xl={6} className="p-10">
-        {stats.status && (
-          <Stats2
-            amount1={stats.status.reduce((a, b) => a + b.count, 0)}
-            amount2={
-              stats.status.find((a) => a.key == 5)
-                ? stats.status.find((a) => a.key == 5).count
-                : 0
-            }
-            ration={(
-              (stats.status.find((a) => a.key == 5)
-                ? 100 * stats.status.find((a) => a.key == 5).count
-                : 0) / stats.status.reduce((a, b) => a + b.count, 0)
-            ).toFixed(2)}
-            title="Rapport Livré-Total"
-            color="rgb(84,177,7)"
-          />
-        )}
+        {stats.status && (() => {
+          const totalCnt = stats.status.reduce((a, b) => a + (Number(b.count) || 0), 0);
+          const delivCnt = stats.status.find((a) => a.key == 5)?.count || 0;
+          const ratioVal = totalCnt > 0 ? ((100 * delivCnt) / totalCnt).toFixed(2) : "0.00";
+          return (
+            <Stats2
+              amount1={totalCnt}
+              amount2={delivCnt}
+              ration={ratioVal}
+              title="Rapport Livré-Total"
+              color="rgb(84,177,7)"
+            />
+          );
+        })()}
       </Responsive>
       <div>
         {" "}
         {stats.status
-          ? stats.status.map((el) => {
+          ? stats.status.map((el, idx) => {
+              const normalizedKey = Number(el.key) > 0 ? Number(el.key) : 1;
+              const iconList = [
+                <LuPackageOpen />,
+                <LuPackage />,
+                <GoPackageDependents />,
+                <LuPackageMinus />,
+                <LuPackageCheck />,
+                <FaPhoneSlash />,
+                <LuPackageX />,
+                <MdOutlinePhonelinkErase />,
+                <MdOutlineRecycling />,
+              ];
+              const colorList = [
+                "245,195,35",
+                "70,103,209",
+                "102,51,153",
+                "70,103,209",
+                "84,159,10",
+                "169,14,67",
+                "246,137,51",
+              ];
               return (
-                <Responsive className="p-10" xs={6} s={4} m={4} l={4} xl={4}>
+                <Responsive key={el.key ?? idx} className="p-10" xs={12} s={6} m={4} l={4} xl={4}>
                   <ResumeCard
                     action={() => {
                       fetch(el.key);
                       setshow(true);
                     }}
-                    icon={
-                      [
-                        <LuPackageOpen />,
-                        <LuPackage />,
-                        <GoPackageDependents />,
-
-                        <LuPackageMinus />,
-                        <LuPackageCheck />,
-                        <FaPhoneSlash />,
-                        <LuPackageX />,
-                        <MdOutlinePhonelinkErase />,
-                        <MdOutlineRecycling />,
-                      ][el.key - 1]
-                    }
+                    icon={iconList[(normalizedKey - 1) % iconList.length]}
                     notAmount
                     text={
-                      DeliveryStatus.find((el1) => el1.value == el.key)
-                        ? DeliveryStatus.find((el1) => el1.value == el.key)
-                            .label
-                        : ""
+                      DeliveryStatus.find((el1) => el1.value == normalizedKey)
+                        ? DeliveryStatus.find((el1) => el1.value == normalizedKey).label
+                        : `Statut #${el.key}`
                     }
-                    color={
-                      [
-                        "245,195,35",
-                        "70,103,209",
-                        "102,51,153",
-                        "70,103,209",
-                        "84,159,10",
-                        "169,14,67",
-                        "246,137,51",
-                      ][el.key - 1]
-                    }
+                    color={colorList[(normalizedKey - 1) % colorList.length]}
                     amount={el.count}
                   />
                 </Responsive>
@@ -511,7 +514,7 @@ function Home() {
           >
             Répartition Géographique par Gouvernorat / Ville
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "12px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 240px), 1fr))", gap: "12px" }}>
             {stats.city
               ? stats.city
                   .sort((a, b) => b.count - a.count)

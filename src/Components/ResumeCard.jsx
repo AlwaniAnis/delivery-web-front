@@ -54,11 +54,12 @@ export default function ResumeCard({
         <div
           style={{
             color: "#64748b",
-            fontSize: "0.8rem",
+            fontSize: "0.78rem",
             fontWeight: 600,
             textTransform: "uppercase",
             letterSpacing: "0.03em",
             marginBottom: "4px",
+            lineHeight: 1.3,
           }}
         >
           {text}
@@ -74,7 +75,7 @@ export default function ResumeCard({
         >
           <span
             style={{
-              fontSize: "1.5rem",
+              fontSize: "clamp(1.2rem, 3vw, 1.5rem)",
               fontWeight: 800,
               color: "#0f172a",
               fontFamily: "'JetBrains Mono', monospace",

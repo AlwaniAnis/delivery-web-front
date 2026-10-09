@@ -1,54 +1,45 @@
-import React, { Component, useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 
 export default function Responsive(props) {
-  const [state, setstate] = useState("");
+  const [viewportWidth, setViewportWidth] = useState(
+    typeof window !== "undefined" ? window.innerWidth : 1280
+  );
+
   useEffect(() => {
-    if (window.innerWidth <= 576 && props.xs) {
-      setstate("xs");
-    } else if (window.innerWidth > 576 && window.innerWidth <= 768 && props.s)
-      setstate("s");
-    else if (window.innerWidth > 768 && window.innerWidth <= 992 && props.m)
-      setstate("m");
-    else if (window.innerWidth > 992 && window.innerWidth <= 1200 && props.l)
-      setstate("l");
-    else if (window.innerWidth > 1200 && props.xl) setstate("xl");
-    else setstate("");
-    window.addEventListener("resize", getWidth);
-    return () => {
-      window.removeEventListener("resize", getWidth);
+    const handleResize = () => {
+      setViewportWidth(window.innerWidth);
     };
-  }, [state, props]);
-  function getWidth() {
-    if (window.innerWidth <= 576 && props.xs) {
-      setstate("xs");
-    } else if (window.innerWidth > 576 && window.innerWidth <= 768 && props.s)
-      setstate("s");
-    else if (window.innerWidth > 768 && window.innerWidth <= 992 && props.m)
-      setstate("m");
-    else if (window.innerWidth > 992 && window.innerWidth <= 1200 && props.l)
-      setstate("l");
-    else if (window.innerWidth > 1200 && props.xl) setstate("xl");
-    else setstate("");
+    window.addEventListener("resize", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
+  }, []);
+
+  let cols = 12;
+  if (viewportWidth <= 480) {
+    // On phone screens <= 480px, always stack full-width (12/12) so cards and inputs never clip
+    cols = 12;
+  } else if (viewportWidth <= 576) {
+    cols = props.xs ? props.xs : 12;
+  } else if (viewportWidth <= 768) {
+    cols = props.s ? props.s : props.m || props.l || props.xl ? 6 : 12;
+  } else if (viewportWidth <= 992) {
+    cols = props.m ? props.m : props.l ? Math.max(props.l, 6) : 12;
+  } else if (viewportWidth <= 1200) {
+    cols = props.l ? props.l : props.xl ? props.xl : 12;
+  } else {
+    cols = props.xl ? props.xl : props.l ? props.l : 12;
   }
+
+  const widthPct = `${Math.min(100, Math.max(10, cols * (100 / 12)))}%`;
+
   return (
     <div
       style={{
         display: "inline-block",
-        width:
-          state == "xs"
-            ? props.xs * (100 / 12) + "%"
-            : state == "s"
-            ? props.s * (100 / 12) + "%"
-            : state == "m"
-            ? props.m * (100 / 12) + "%"
-            : state == "l"
-            ? props.l * (100 / 12) + "%"
-            : state == "xl"
-            ? props.xl * (100 / 12) + "%"
-            : "100%",
+        width: widthPct,
         ...props.style,
         verticalAlign: "top",
-
         margin: props.margin ? props.margin : 0,
         boxSizing: "border-box",
       }}
@@ -58,3 +49,4 @@ export default function Responsive(props) {
     </div>
   );
 }
+

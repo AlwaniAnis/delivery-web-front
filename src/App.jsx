@@ -49,6 +49,7 @@ import { preparationPlacesState } from "./Atoms/preparationPlaces.atom";
 import { tarifsState } from "./Atoms/tarifs.atom";
 import { reclamationsState } from "./Atoms/reclamations.atom";
 import { globalContactsState } from "./Atoms/globalContacts.atom";
+import { DepotAgentsList } from "./Atoms/depotAgents.atom";
 import useB2B from "./hooks/useB2B";
 
 // Screens
@@ -86,6 +87,7 @@ const App = () => {
   const [depotsList, setDepotsList] = useRecoilState(preparationPlacesState);
   const [reclamationsList, setReclamationsList] = useRecoilState(reclamationsState);
   const setGlobalContactsList = useSetRecoilState(globalContactsState);
+  const setDepotAgentsList = useSetRecoilState(DepotAgentsList);
   const setTarifsList = useSetRecoilState(tarifsState);
   const setStore = useSetRecoilState(MyStore);
   useB2B();
@@ -93,21 +95,74 @@ const App = () => {
   const location = useLocation();
   const history = useHistory();
 
-  // Load initial stores, drivers, depots, and tariffs from API
+  // Load initial stores, drivers, depots, depot agents, global contacts, and tariffs from API
   useEffect(() => {
-    APi.createAPIEndpoint(APi.ENDPOINTS.Driver, { page: 1, take: 1000 })
-      .fetchAll()
+    APi.createAPIEndpoint(APi.ENDPOINTS.Driver + "/getAll", {})
+      .customGet()
       .then((res) => {
-        if (res.data?.data) setDriversList(res.data.data);
-        else if (Array.isArray(res.data)) setDriversList(res.data);
+        if (Array.isArray(res.data)) setDriversList(res.data);
+        else if (Array.isArray(res.data?.data)) setDriversList(res.data.data);
+      })
+      .catch(() => {
+        APi.createAPIEndpoint(APi.ENDPOINTS.Driver, { page: 1, take: 1000 })
+          .fetchAll()
+          .then((res) => {
+            if (res.data?.data) setDriversList(res.data.data);
+            else if (Array.isArray(res.data)) setDriversList(res.data);
+          })
+          .catch(() => {});
+      });
+
+    APi.createAPIEndpoint(APi.ENDPOINTS.DepotAgent + "/getAll", {})
+      .customGet()
+      .then((res) => {
+        const list = Array.isArray(res.data)
+          ? res.data
+          : Array.isArray(res.data?.data)
+          ? res.data.data
+          : null;
+        if (list) setDepotAgentsList(list);
+      })
+      .catch(() => {});
+
+    APi.createAPIEndpoint(APi.ENDPOINTS.GlobalContact + "/getAll", {})
+      .customGet()
+      .then((res) => {
+        const list = Array.isArray(res.data)
+          ? res.data
+          : Array.isArray(res.data?.data)
+          ? res.data.data
+          : null;
+        if (list) setGlobalContactsList(list);
       })
       .catch(() => {});
 
     APi.createAPIEndpoint(APi.ENDPOINTS.Store + "/getAll", {})
       .fetchAll()
-      .then((res) => {
-        if (Array.isArray(res.data)) setStoresList(res.data);
-        else if (Array.isArray(res.data?.data)) setStoresList(res.data.data);
+      .then(async (res) => {
+        const list = Array.isArray(res.data)
+          ? res.data
+          : Array.isArray(res.data?.data)
+          ? res.data.data
+          : [];
+        if (list.length > 0) {
+          setStoresList(list);
+          try {
+            const recResults = await Promise.allSettled(
+              list.map((st) =>
+                APi.createAPIEndpoint(`${APi.ENDPOINTS.Reclamation}/store/${st.id}`).customGet()
+              )
+            );
+            const merged = [];
+            recResults.forEach((r) => {
+              if (r.status === "fulfilled") {
+                const arr = r.value?.data?.data || r.value?.data;
+                if (Array.isArray(arr)) merged.push(...arr);
+              }
+            });
+            if (merged.length > 0) setReclamationsList(merged);
+          } catch (e) {}
+        }
       })
       .catch(() => {});
 
@@ -119,27 +174,11 @@ const App = () => {
       })
       .catch(() => {});
 
-    APi.createAPIEndpoint(APi.ENDPOINTS.Tarif, { page: 1, take: 1000 })
+    APi.createAPIEndpoint(APi.ENDPOINTS.Tarif + "/getAll", {})
       .fetchAll()
       .then((res) => {
         if (Array.isArray(res.data)) setTarifsList(res.data);
         else if (Array.isArray(res.data?.data)) setTarifsList(res.data.data);
-      })
-      .catch(() => {});
-
-    APi.createAPIEndpoint(APi.ENDPOINTS.Reclamation, {})
-      .fetchAll()
-      .then((res) => {
-        if (Array.isArray(res.data)) setReclamationsList(res.data);
-        else if (Array.isArray(res.data?.data)) setReclamationsList(res.data.data);
-      })
-      .catch(() => {});
-
-    APi.createAPIEndpoint(APi.ENDPOINTS.GlobalContact, {})
-      .fetchAll()
-      .then((res) => {
-        if (Array.isArray(res.data)) setGlobalContactsList(res.data);
-        else if (Array.isArray(res.data?.data)) setGlobalContactsList(res.data.data);
       })
       .catch(() => {});
   }, []);
@@ -265,6 +304,14 @@ const App = () => {
   return (
     <div className="tawsil-app">
       <Container style={{ minHeight: "100vh" }}>
+        {/* Mobile Sidebar Backdrop */}
+        {expand && (
+          <div
+            className="sidebar-mobile-backdrop"
+            onClick={() => setExpand(false)}
+          />
+        )}
+
         {/* Modern Sidebar */}
         <Sidebar className={`tawsil-sidebar ${expand ? "mobile-show" : ""}`}>
           <div className="sidebar-brand-zone">
@@ -720,6 +767,7 @@ const App = () => {
               {/* Authenticated Role Status Badge / Admin Module Toggle */}
               {isAdmin && (
                 <div
+                  className="admin-header-module-switcher"
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
@@ -841,6 +889,7 @@ const App = () => {
               {/* Driver Solde Pill in Top Header */}
               {isDriver && (
                 <div
+                  className="driver-solde-header-pill"
                   style={{
                     background: "linear-gradient(135deg, #059669 0%, #047857 100%)",
                     color: "#ffffff",

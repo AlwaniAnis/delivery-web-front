@@ -6,7 +6,14 @@ import { APi } from "../../Api";
 import Filter from "../../Components/Common/Filter";
 import Grid from "../../Components/Grid";
 import Responsive from "../../Components/Responsive";
-import { dateTypes } from "../../Constants/types";
+import {
+  dateTypes,
+  DeliveryStatus,
+  DeliveryResultOptions,
+  getOperationalStatus,
+  getDeliveryResult,
+  getDeliveryTotalPrice,
+} from "../../Constants/types";
 
 export default function Delivred() {
   const [data, setData] = useState([]);
@@ -129,11 +136,57 @@ export default function Delivred() {
       ),
     },
     {
+      value: "operationalStatus",
+      name: "État Opérationnel & Résultat",
+      render: (v, row) => {
+        const opVal = getOperationalStatus(row || { operationalStatus: v });
+        const resVal = getDeliveryResult(row);
+        const opObj = DeliveryStatus.find((s) => s.value === opVal) || DeliveryStatus[4];
+        const resObj = DeliveryResultOptions.find((r) => r.value === resVal) || DeliveryResultOptions[1];
+        return (
+          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "5px",
+                padding: "3px 8px",
+                borderRadius: "6px",
+                fontSize: "0.74rem",
+                fontWeight: 800,
+                background: opObj.bg,
+                color: opObj.color,
+                width: "fit-content",
+              }}
+            >
+              {opObj.shortLabel || opObj.label}
+            </span>
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "5px",
+                padding: "3px 8px",
+                borderRadius: "6px",
+                fontSize: "0.72rem",
+                fontWeight: 800,
+                background: resObj.bg,
+                color: resObj.color,
+                width: "fit-content",
+              }}
+            >
+              Résultat : {resObj.shortLabel || resObj.label}
+            </span>
+          </div>
+        );
+      },
+    },
+    {
       value: "coliItems",
       value2: "totalPrice",
       name: "Montant Encaissé",
-      render: (items, totalPrice) => {
-        const amt = items?.reduce((s, it) => s + it.qty * it.unitPrice, 0) || totalPrice || 0;
+      render: (items, totalPrice, row) => {
+        const amt = getDeliveryTotalPrice(row || { coliItems: items, totalPrice });
         return (
           <div style={{ textAlign: "right", paddingRight: "10px" }}>
             <span style={{ fontWeight: 800, color: "#0f172a", fontFamily: "monospace", fontSize: "1rem" }}>

@@ -17,10 +17,11 @@ export const AuthService = () => {
   };
 
   return {
-    login: (data) => AXIOS.post("Auth/login", data),
-    loginDriver: (data) => AXIOS.post("Auth/loginDriver", data),
-    loginB2B: (data) => AXIOS.post("Auth/loginB2B", data),
-    register_admin: (data) => AXIOS.post("Auth/", data),
+    login: (data) => AXIOS.post("Auth/Login", data),
+    loginAgentDepot: (data) => AXIOS.post("Auth/LoginAgentDepot", data),
+    loginDriver: (data) => AXIOS.post("Auth/LoginDriver", data),
+    loginB2B: (data) => AXIOS.post("Auth/LoginB2B", data),
+    register_admin: (data) => AXIOS.post("Auth", data),
     update_profile: (data) =>
       AXIOS.post("Auth/update-profile", data, { headers: getHeaders() }),
     reset_password: (pass) =>

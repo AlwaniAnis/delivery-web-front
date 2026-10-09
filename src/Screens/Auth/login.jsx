@@ -53,9 +53,19 @@ export default function Login() {
       role: userRole,
       userName: userData?.userName || userData?.username || model.username,
       fullName: userData?.fullName || userData?.name || userData?.userName || model.username,
-      driverId: userData?.driverId || userData?.id || null,
+      driverId: userData?.driverId || (userRole === "driver" ? userData?.id : null) || null,
       storeId: userData?.storeId || null,
-      preparationPlaceId: userData?.preparationPlaceId || userData?.depotId || 1,
+      agentDepotId:
+        userData?.agentDepotId ||
+        userData?.agentDepot?.id ||
+        (userRole === "depotAgent" ? userData?.id : null) ||
+        1,
+      preparationPlaceId:
+        userData?.preparationPlaceId ||
+        userData?.agentDepot?.preparationPlaceId ||
+        userData?.agentDepot?.depotId ||
+        userData?.depotId ||
+        1,
       token: userData?.token || (typeof userData === "string" ? userData : null),
       isMainStore: userRole === "admin",
     };
@@ -93,15 +103,18 @@ export default function Login() {
 
     // Route to the corresponding real API endpoint
     let authPromise;
-    let endpointName = "Auth/login";
+    let endpointName = "Auth/Login";
     if (selectedRole === "driver") {
-      endpointName = "Auth/loginDriver";
+      endpointName = "Auth/LoginDriver";
       authPromise = AuthService().loginDriver(payload);
     } else if (selectedRole === "B2Bclient") {
-      endpointName = "Auth/loginB2B";
+      endpointName = "Auth/LoginB2B";
       authPromise = AuthService().loginB2B(payload);
+    } else if (selectedRole === "depotAgent") {
+      endpointName = "Auth/LoginAgentDepot";
+      authPromise = AuthService().loginAgentDepot(payload);
     } else {
-      endpointName = "Auth/login";
+      endpointName = "Auth/Login";
       authPromise = AuthService().login(payload);
     }
 

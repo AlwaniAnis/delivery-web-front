@@ -308,7 +308,7 @@ export default function PreparationPlaces() {
     const depotId = receiveForm.depotId || 1;
     setReceiveLoading(true);
 
-    APi.createAPIEndpoint(`${APi.ENDPOINTS.Driver}/${receiveForm.driverId}/bringToDepot/${receiveForm.deliveryId}?placeId=${depotId}`)
+    APi.createAPIEndpoint(`${APi.ENDPOINTS.Driver}/${receiveForm.driverId}/bringToDepot/${receiveForm.deliveryId}`, { placeId: depotId })
       .customPost({ placeId: depotId })
       .then((res) => {
         setReceiveLoading(false);
@@ -774,7 +774,7 @@ export default function PreparationPlaces() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(350px, 1fr))",
+            gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 290px), 1fr))",
             gap: "20px",
           }}
         >
@@ -1032,7 +1032,7 @@ export default function PreparationPlaces() {
               />
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+            <div className="responsive-grid-2">
               <div>
                 <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#334155", marginBottom: "4px", display: "block" }}>
                   Code Emplacement / Référence :
@@ -1085,7 +1085,7 @@ export default function PreparationPlaces() {
                 </span>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "10px" }}>
+              <div className="responsive-grid-2" style={{ marginBottom: "10px" }}>
                 <div>
                   <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", marginBottom: "2px", display: "block" }}>
                     Latitude :

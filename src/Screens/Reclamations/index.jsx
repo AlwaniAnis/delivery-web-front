@@ -839,7 +839,7 @@ export default function Reclamations() {
         }}
       >
         <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "center", flex: 1 }}>
-          <div style={{ position: "relative", minWidth: "250px", flex: 1 }}>
+          <div style={{ position: "relative", minWidth: "200px", flex: "1 1 220px" }}>
             <FaSearch
               style={{
                 position: "absolute",
@@ -868,7 +868,7 @@ export default function Reclamations() {
               value={storeFilter}
               onChange={(val) => setStoreFilter(val || 0)}
               cleanable={false}
-              style={{ width: "220px" }}
+              style={{ width: "220px", maxWidth: "100%", flex: "1 1 180px" }}
             />
           )}
 
@@ -884,7 +884,7 @@ export default function Reclamations() {
             onChange={(val) => setStatusFilter(val || 0)}
             cleanable={false}
             searchable={false}
-            style={{ width: "200px" }}
+            style={{ width: "200px", maxWidth: "100%", flex: "1 1 160px" }}
           />
         </div>
       </div>
@@ -916,26 +916,34 @@ export default function Reclamations() {
             </p>
           </div>
         ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+          <div id="custom-table-container" style={{ border: "none", borderRadius: 0, boxShadow: "none" }}>
+            <table
+              className="tawsil-data-table"
+              style={{
+                width: "max-content",
+                minWidth: "100%",
+                borderCollapse: "collapse",
+                textAlign: "left",
+              }}
+            >
               <thead>
                 <tr style={{ background: "#f8fafc", borderBottom: "2px solid #e2e8f0" }}>
-                  <th style={{ padding: "12px 16px", fontSize: "0.78rem", fontWeight: 800, color: "#475569" }}>
+                  <th style={{ padding: "12px 16px", fontSize: "0.78rem", fontWeight: 800, color: "#475569", whiteSpace: "nowrap", minWidth: "175px" }}>
                     DATE & BOUTIQUE
                   </th>
-                  <th style={{ padding: "12px 16px", fontSize: "0.78rem", fontWeight: 800, color: "#475569" }}>
+                  <th style={{ padding: "12px 16px", fontSize: "0.78rem", fontWeight: 800, color: "#475569", whiteSpace: "nowrap", minWidth: "165px" }}>
                     CATÉGORIE & COLIS LIÉ
                   </th>
-                  <th style={{ padding: "12px 16px", fontSize: "0.78rem", fontWeight: 800, color: "#475569" }}>
+                  <th style={{ padding: "12px 16px", fontSize: "0.78rem", fontWeight: 800, color: "#475569", whiteSpace: "nowrap", minWidth: "240px" }}>
                     SUJET & MESSAGE
                   </th>
-                  <th style={{ padding: "12px 16px", fontSize: "0.78rem", fontWeight: 800, color: "#475569" }}>
+                  <th style={{ padding: "12px 16px", fontSize: "0.78rem", fontWeight: 800, color: "#475569", whiteSpace: "nowrap", minWidth: "220px" }}>
                     RÉPONSE ADMIN
                   </th>
-                  <th style={{ padding: "12px 16px", fontSize: "0.78rem", fontWeight: 800, color: "#475569" }}>
+                  <th style={{ padding: "12px 16px", fontSize: "0.78rem", fontWeight: 800, color: "#475569", whiteSpace: "nowrap", minWidth: "155px" }}>
                     STATUT
                   </th>
-                  <th style={{ padding: "12px 16px", fontSize: "0.78rem", fontWeight: 800, color: "#475569", textAlign: "right" }}>
+                  <th style={{ padding: "12px 16px", fontSize: "0.78rem", fontWeight: 800, color: "#475569", textAlign: "right", whiteSpace: "nowrap", minWidth: "150px" }}>
                     ACTIONS
                   </th>
                 </tr>
@@ -1167,7 +1175,7 @@ export default function Reclamations() {
               </div>
             )}
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+            <div className="responsive-grid-2">
               <div>
                 <label style={{ fontWeight: 700, fontSize: "0.82rem", color: "#334155", marginBottom: "4px", display: "block" }}>
                   Catégorie de Réclamation * :
@@ -1439,7 +1447,7 @@ export default function Reclamations() {
                 }}
               >
                 {isAdmin && (
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
                     <label style={{ fontSize: "0.8rem", fontWeight: 800, color: "#334155" }}>
                       Mettre à jour le statut :
                     </label>
@@ -1452,7 +1460,7 @@ export default function Reclamations() {
                       searchable={false}
                       value={replyStatus}
                       onChange={(val) => setReplyStatus(val)}
-                      style={{ width: "220px" }}
+                      style={{ width: "220px", maxWidth: "100%", flex: "1 1 180px" }}
                     />
                   </div>
                 )}

@@ -91,8 +91,8 @@ export default function DepotAgents() {
 
   const fetch = () => {
     setState((prev) => ({ ...prev, loading: true }));
-    APi.createAPIEndpoint(APi.ENDPOINTS.DepotAgent, filterModel)
-      .fetchAll()
+    APi.createAPIEndpoint(APi.ENDPOINTS.DepotAgent + "/getAll")
+      .customGet()
       .then((res) => {
         const list = res.data?.data || res.data;
         if (Array.isArray(list)) {
@@ -101,7 +101,17 @@ export default function DepotAgents() {
         setState((prev) => ({ ...prev, loading: false }));
       })
       .catch(() => {
-        setState((prev) => ({ ...prev, loading: false }));
+        APi.createAPIEndpoint(APi.ENDPOINTS.DepotAgent, filterModel)
+          .fetchAll()
+          .then((res) => {
+            const list = res.data?.data || res.data;
+            if (Array.isArray(list)) {
+              persistAgents(list);
+            }
+          })
+          .finally(() => {
+            setState((prev) => ({ ...prev, loading: false }));
+          });
       });
   };
 

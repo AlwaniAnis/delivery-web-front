@@ -107,30 +107,44 @@ class Grid extends React.Component {
                                 row[column.value],
                                 row[column.value2],
                                 row[column.value3],
-                                row[column.value4]
+                                row[column.value4],
+                                row
                               )
                             : column.value3
                             ? column.render(
                                 row[column.value],
                                 row[column.value2],
-                                row[column.value3]
+                                row[column.value3],
+                                row
                               )
                             : column.value2
                             ? column.render(
                                 row[column.value],
-                                row[column.value2]
+                                row[column.value2],
+                                row
                               )
-                            : column.render(row[column.value])}
+                            : column.render(row[column.value], row)}
                         </td>
                       );
                     })}
                     {props.actionKey && (
                       <td style={{ textAlign: "right", paddingRight: "16px" }}>
                         {ActionCell({
+                          row,
                           dataKey: row[props.actionKey],
                           noAdvancedActions: props.noAdvancedActions,
-                          editAction: props.editAction,
-                          deleteAction: props.deleteAction,
+                          editAction:
+                            props.canEditRow && !props.canEditRow(row)
+                              ? false
+                              : props.editAction,
+                          deleteAction:
+                            props.canDeleteRow && !props.canDeleteRow(row)
+                              ? false
+                              : props.deleteAction,
+                          lockedRowMessage:
+                            props.canEditRow && !props.canEditRow(row)
+                              ? props.lockedRowLabel || "Verrouillé"
+                              : null,
                           actions: props.actions,
                         })}
                       </td>
@@ -188,6 +202,7 @@ const ActionCell = ({
   noAdvancedActions,
   editAction,
   deleteAction,
+  lockedRowMessage,
   actions,
 }) => {
   function handleDelete() {
@@ -209,6 +224,23 @@ const ActionCell = ({
 
   return (
     <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+      {!editAction && !deleteAction && lockedRowMessage && (
+        <span
+          style={{
+            fontSize: "0.68rem",
+            fontWeight: 700,
+            color: "#64748b",
+            background: "#f1f5f9",
+            border: "1px solid #e2e8f0",
+            padding: "3px 7px",
+            borderRadius: "5px",
+            whiteSpace: "nowrap",
+          }}
+          title="Modification et suppression désactivées après le ramassage (Pickup)"
+        >
+          {lockedRowMessage}
+        </span>
+      )}
       {editAction && (
         <IconButton
           className="grid-action-btn-edit"

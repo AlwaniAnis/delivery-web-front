@@ -17,7 +17,15 @@ import { preparationPlacesState } from "../../Atoms/preparationPlaces.atom";
 import { activeRoleState, currentDepotIdState, normalizeRole } from "../../Atoms/auth.atom";
 import Responsive from "../../Components/Responsive";
 import ResumeCard from "../../Components/ResumeCard";
-import { dateTypes } from "../../Constants/types";
+import {
+  dateTypes,
+  getPickupDriver,
+  getPickupDriverId,
+  getDeliveryDriver,
+  getDeliveryDriverId,
+  getActiveDeliveryDriverId,
+  getDeliveryTotalPrice,
+} from "../../Constants/types";
 import { MyStore } from "../../Atoms/store.atom";
 import { StoresList } from "../../Atoms/stores.atom";
 import useB2B from "../../hooks/useB2B";
@@ -53,8 +61,10 @@ export default function NotPaidDeliveries() {
   const fetch = () => {
     APi.createAPIEndpoint(APi.ENDPOINTS.Delivery, {
       ...filterModel,
+      placeId: filterModel.preparationPlaceId || 0,
       status: 5,
       isPaid: false,
+      ispaid: false,
       storeId: !store.isDefault && isB2B ? store.id : filterModel.storeId,
     })
       .fetchAll()
@@ -267,11 +277,8 @@ export default function NotPaidDeliveries() {
     {
       value: "coliItems",
       name: "Montant à Recouvrer",
-      render: (coliItems) => {
-        const total = (coliItems || []).reduce(
-          (a, b) => a + (Number(b.qty) || 1) * (Number(b.unitPrice) || 0),
-          0
-        );
+      render: (coliItems, row) => {
+        const total = getDeliveryTotalPrice(row || { coliItems });
         return (
           <div style={{ display: "inline-flex", alignItems: "baseline", gap: "4px" }}>
             <span style={{ fontWeight: 800, color: "#b91c1c", fontSize: "0.95rem" }}>
@@ -286,37 +293,33 @@ export default function NotPaidDeliveries() {
     },
     {
       value: "driver",
-      name: "Livreur Assigné",
-      render: (v) => (
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <div
-            style={{
-              fontSize: "12px",
-              fontWeight: 700,
-              borderRadius: "50%",
-              width: "32px",
-              height: "32px",
-              textAlign: "center",
-              lineHeight: "32px",
-              background: v ? "#eff6ff" : "#f1f5f9",
-              color: v ? "#2563eb" : "#94a3b8",
-              border: v ? "1px solid #bfdbfe" : "1px solid #e2e8f0",
-              flexShrink: 0,
-            }}
-          >
-            {v ? `${(v.firstName?.[0] || "").toUpperCase()}${(v.lastName?.[0] || "").toUpperCase()}` : "—"}
-          </div>
-
-          <div>
-            <div style={{ fontWeight: 600, color: "#1e293b", fontSize: "0.82rem" }}>
-              {v ? `${v.firstName || ""} ${v.lastName || ""}` : "Non assigné"}
+      name: "Livreurs (Pickup & Livraison)",
+      render: (v, row) => {
+        const pickDrvId = getPickupDriverId(row);
+        const delivDrvId = getDeliveryDriverId(row);
+        const pickDrv =
+          getPickupDriver(row) ||
+          (pickDrvId ? drivers.find((d) => Number(d.id) === Number(pickDrvId)) : null);
+        const delivDrv =
+          getDeliveryDriver(row) ||
+          (delivDrvId ? drivers.find((d) => Number(d.id) === Number(delivDrvId)) : null) ||
+          v;
+        return (
+          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+            <div style={{ fontSize: "0.76rem", color: delivDrv ? "#1e293b" : "#94a3b8", fontWeight: 700 }}>
+              🚚 Livraison :{" "}
+              {delivDrv
+                ? `${delivDrv.firstName || ""} ${delivDrv.lastName || ""}`.trim() || delivDrv.name
+                : "Non assigné"}
             </div>
-            {v?.carNumber && (
-              <div style={{ fontSize: "0.7rem", color: "#64748b" }}>{v.carNumber}</div>
+            {pickDrv && (
+              <div style={{ fontSize: "0.72rem", color: "#0369a1", fontWeight: 600 }}>
+                📦 Pickup : {`${pickDrv.firstName || ""} ${pickDrv.lastName || ""}`.trim() || pickDrv.name}
+              </div>
             )}
           </div>
-        </div>
-      ),
+        );
+      },
     },
     {
       value: "preparationPlaceId",
@@ -352,7 +355,7 @@ export default function NotPaidDeliveries() {
         <button
           onClick={(e) => {
             e.stopPropagation();
-            handleRenderPaid([id], row?.driverId || row?.driver?.id || 0);
+            handleRenderPaid([id], getDeliveryDriverId(row) || getActiveDeliveryDriverId(row) || 0);
           }}
           style={{
             background: "#059669",

@@ -74,6 +74,7 @@ export default function Tarifs() {
       tarifDelivery: Number(model.tarifDelivery) || 0,
       pickupPrice: Number(model.pickupPrice) || 0,
       commissionDriver: Number(model.commissionDriver) || 0,
+      commissionReturn: Number(model.commissionReturn) || 0,
     };
 
     if (model.id) {
@@ -261,7 +262,7 @@ export default function Tarifs() {
     },
     {
       value: "commissionDriver",
-      name: "Tarif Livraison Livreur",
+      name: "Commission Livraison",
       render: (val) => (
         <span
           style={{
@@ -270,6 +271,26 @@ export default function Tarifs() {
             color: "#2563eb",
             background: "#eff6ff",
             border: "1px solid #bfdbfe",
+            padding: "4px 8px",
+            borderRadius: "6px",
+            display: "inline-block",
+          }}
+        >
+          {(Number(val) || 0).toFixed(3)} TND
+        </span>
+      ),
+    },
+    {
+      value: "commissionReturn",
+      name: "Commission Retour",
+      render: (val) => (
+        <span
+          style={{
+            fontWeight: 800,
+            fontSize: "0.95rem",
+            color: "#7c3aed",
+            background: "#f5f3ff",
+            border: "1px solid #ddd6fe",
             padding: "4px 8px",
             borderRadius: "6px",
             display: "inline-block",

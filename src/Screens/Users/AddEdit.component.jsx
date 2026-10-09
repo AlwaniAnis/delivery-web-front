@@ -75,7 +75,7 @@ function AddEdit({ _setmodel, error, model, drivers = [], stores = [], depotAgen
         />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+      <div className="responsive-grid-2">
         <div>
           <label style={{ fontWeight: 600, fontSize: "0.85rem", color: "#334155" }}>
             Prénom :

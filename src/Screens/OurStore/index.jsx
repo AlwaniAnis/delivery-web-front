@@ -22,6 +22,7 @@ import { createAPIEndpoint } from "../../Api/authenticated.requests";
 import { ENDPOINTS } from "../../Api/enpoints";
 import { MyStore } from "../../Atoms/store.atom";
 import { preparationPlacesState } from "../../Atoms/preparationPlaces.atom";
+import StoreMapPicker from "../../Components/Common/StoreMapPicker";
 
 export default function OurStore() {
   const store = useRecoilValue(MyStore);
@@ -29,12 +30,18 @@ export default function OurStore() {
   const [model, setmodel] = useState({
     contacts: [],
     preparationPlaceId: 1,
+    latitude: 36.8065,
+    longitude: 10.1815,
   });
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (store && store.id) {
-      setmodel(store);
+      setmodel({
+        ...store,
+        latitude: store.latitude ?? store.Latitude ?? 36.8065,
+        longitude: store.longitude ?? store.Longitude ?? 10.1815,
+      });
     }
   }, [store.id]);
 
@@ -90,7 +97,24 @@ export default function OurStore() {
 
   const handleSaveStore = () => {
     setSaving(true);
-    let m = { ...model };
+    const latVal =
+      model.latitude !== undefined && model.latitude !== null && model.latitude !== ""
+        ? Number(model.latitude)
+        : model.Latitude !== undefined && model.Latitude !== null
+        ? Number(model.Latitude)
+        : 36.8065;
+    const lngVal =
+      model.longitude !== undefined && model.longitude !== null && model.longitude !== ""
+        ? Number(model.longitude)
+        : model.Longitude !== undefined && model.Longitude !== null
+        ? Number(model.Longitude)
+        : 10.1815;
+
+    let m = {
+      ...model,
+      latitude: latVal,
+      longitude: lngVal,
+    };
 
     if (m.contacts && Array.isArray(m.contacts)) {
       m.contacts = m.contacts.map((el) => {
@@ -114,7 +138,13 @@ export default function OurStore() {
         createAPIEndpoint(ENDPOINTS.Store + "/getDefault")
           .customGet()
           .then((res) => {
-            if (res && res.data) setmodel(res.data);
+            if (res && res.data) {
+              setmodel({
+                ...res.data,
+                latitude: res.data.latitude ?? res.data.Latitude ?? latVal,
+                longitude: res.data.longitude ?? res.data.Longitude ?? lngVal,
+              });
+            }
           });
       })
       .catch((err) => {
@@ -213,7 +243,7 @@ export default function OurStore() {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: "20px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))", gap: "20px" }}>
         {/* CARD 1: GENERAL INFORMATION */}
         <div
           style={{
@@ -281,6 +311,24 @@ export default function OurStore() {
               onChange={(taxCode) => setmodel((prev) => ({ ...prev, taxCode }))}
             />
           </div>
+
+          <StoreMapPicker
+            latitude={model.latitude ?? model.Latitude ?? 36.8065}
+            longitude={model.longitude ?? model.Longitude ?? 10.1815}
+            height="240px"
+            title="Position GPS de la Boutique (Latitude & Longitude)"
+            onChange={(lat, lng) => {
+              setmodel((prev) => ({
+                ...prev,
+                latitude: lat,
+                longitude: lng,
+              }));
+              setcontact((prev) => ({
+                ...prev,
+                maplink: prev.maplink || `https://www.google.com/maps?q=${lat},${lng}`,
+              }));
+            }}
+          />
 
           <div>
             <label style={{ fontSize: "0.85rem", fontWeight: 700, color: "#334155", marginBottom: "6px", display: "block" }}>
