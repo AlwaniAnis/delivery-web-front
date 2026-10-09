@@ -42,9 +42,11 @@ export default function ExportAdd({
         display: "flex",
         justifyContent: "flex-end",
         alignItems: "center",
-        padding: "15px 0",
+        flexWrap: "wrap",
+        gap: "8px",
+        padding: "12px 0",
         zIndex: "1",
-        maxWidth: "100vw",
+        maxWidth: "100%",
       }}
     >
       {!noExport && (

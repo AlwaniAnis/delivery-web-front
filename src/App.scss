@@ -471,12 +471,58 @@ body {
   border: 1px solid #e2e8f0 !important;
 }
 
+/* Responsive utility classes */
+.tawsil-data-table {
+  width: max-content !important;
+  min-width: 100% !important;
+  border-collapse: collapse;
+
+  th,
+  td {
+    white-space: nowrap;
+    vertical-align: middle;
+  }
+
+  th span,
+  td span,
+  td a,
+  td button {
+    white-space: nowrap;
+  }
+}
+
+.responsive-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.responsive-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.sidebar-mobile-backdrop {
+  display: none;
+}
+
 /* Responsive adjustments */
 @media (max-width: 992px) {
+  .sidebar-mobile-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.55);
+    backdrop-filter: blur(2px);
+    z-index: 998;
+  }
+
   .tawsil-app {
     .tawsil-sidebar {
       transform: translateX(-100%);
       width: 280px;
+      max-width: 85vw;
 
       &.mobile-show {
         transform: translateX(0);
@@ -498,64 +544,153 @@ body {
           display: block !important;
         }
 
-        .role-switcher-container {
+        .role-switcher-container,
+        .admin-header-module-switcher {
           display: none !important;
         }
       }
 
       .tawsil-body-content {
-        padding: 16px;
+        padding: 14px;
       }
     }
   }
 }
 
-@media (max-width: 640px) {
-  .tawsil-app .tawsil-main-container .tawsil-header {
-    min-height: var(--header-height);
-    height: auto;
+@media (max-width: 768px) {
+  .responsive-grid-2,
+  .responsive-grid-3 {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Make RSuite Modals fully responsive on mobile/tablet */
+  .rs-modal-wrapper {
+    overflow-x: hidden !important;
+  }
+
+  .rs-modal,
+  .rs-modal-sm,
+  .rs-modal-md,
+  .rs-modal-lg,
+  .rs-modal-full {
+    width: calc(100vw - 20px) !important;
+    max-width: calc(100vw - 20px) !important;
+    margin: 10px auto !important;
+  }
+
+  .rs-modal-dialog {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+  }
+
+  .rs-modal-content {
+    padding: 14px !important;
+    border-radius: 14px !important;
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+  }
+
+  .rs-modal-body {
+    padding: 10px 4px !important;
+    margin-top: 8px !important;
+    max-height: calc(100vh - 180px) !important;
+  }
+
+  .rs-modal-footer {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
     gap: 8px;
-    padding: 8px 12px;
+    padding-top: 10px !important;
 
-    .header-left-zone {
-      flex: 1;
+    .rs-btn {
+      margin-left: 0 !important;
+    }
+  }
+
+  /* Make RSuite Pagination wrap cleanly on small screens */
+  .rs-pagination-group {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+    justify-content: center !important;
+    align-items: center !important;
+
+    .rs-pagination-group-skip,
+    .rs-pagination-group-limit {
+      margin: 0 !important;
+    }
+  }
+
+  /* Keep Picker menus inside viewport */
+  .rs-picker-menu {
+    max-width: calc(100vw - 24px) !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .tawsil-app .tawsil-main-container {
+    .tawsil-header {
+      min-height: var(--header-height);
+      height: auto;
       gap: 8px;
+      padding: 8px 12px;
 
-      .header-page-title {
-        max-width: 100%;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        font-size: 1rem;
+      .header-left-zone {
+        flex: 1;
+        gap: 8px;
+
+        .header-page-title {
+          max-width: 100%;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          font-size: 0.96rem;
+        }
+
+        .header-breadcrumb {
+          display: none;
+        }
       }
 
-      .header-breadcrumb {
-        display: none;
+      .header-right-zone {
+        gap: 6px;
+
+        .header-role-badge {
+          max-width: 120px;
+          gap: 5px !important;
+          padding: 5px 7px !important;
+          font-size: 0.68rem !important;
+          overflow: hidden;
+        }
+
+        .driver-solde-header-pill {
+          padding: 4px 8px !important;
+          font-size: 0.72rem !important;
+          gap: 4px !important;
+
+          span {
+            font-size: 0.75rem !important;
+          }
+        }
+
+        .header-role-label {
+          min-width: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .user-profile-button .user-avatar-circle {
+          width: 32px;
+          height: 32px;
+        }
       }
     }
 
-    .header-right-zone {
-      gap: 6px;
-
-      .header-role-badge {
-        max-width: 116px;
-        gap: 5px !important;
-        padding: 5px 7px !important;
-        font-size: 0.68rem !important;
-        overflow: hidden;
-      }
-
-      .header-role-label {
-        min-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-
-      .user-profile-button .user-avatar-circle {
-        width: 32px;
-        height: 32px;
-      }
+    .tawsil-body-content {
+      padding: 10px 8px;
     }
   }
 }

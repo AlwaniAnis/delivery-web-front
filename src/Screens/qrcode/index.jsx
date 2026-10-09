@@ -4,7 +4,15 @@ import { Button, Modal, SelectPicker, Tag, Input, Message } from "rsuite";
 import { APi } from "../../Api";
 import { FaPhoneAlt, FaMapMarkerAlt, FaQrcode, FaCamera, FaTimes, FaCheckCircle, FaExchangeAlt, FaBoxOpen, FaWarehouse } from "react-icons/fa";
 import { MdOutlineDeliveryDining } from "react-icons/md";
-import { DeliveryStatus } from "../../Constants/types";
+import {
+  DeliveryStatus,
+  DeliveryResultOptions,
+  getOperationalStatus,
+  getDeliveryResult,
+  getPickupDriverId,
+  getDeliveryDriverId,
+  getActiveDeliveryDriverId,
+} from "../../Constants/types";
 import { DriversList } from "../../Atoms/drivers.atom";
 import { preparationPlacesState } from "../../Atoms/preparationPlaces.atom";
 import { activeRoleState, currentDriverIdState, currentDepotIdState, normalizeRole } from "../../Atoms/auth.atom";
@@ -69,7 +77,7 @@ export default function QRScanner() {
     const isCurrentUserDriver = activeRole === "driver";
     const targetDriverId = isCurrentUserDriver
       ? Number(currentDriverId)
-      : parcel.driverId || parcel.driver?.id || (drivers[0]?.id || 1);
+      : getActiveDeliveryDriverId(parcel) || (drivers[0]?.id || 1);
 
     let effectiveMode = modeToUse;
     if (modeToUse === "auto_smart") {
@@ -82,29 +90,27 @@ export default function QRScanner() {
     }
 
     if (effectiveMode === "auto_pickup") {
-      // Driver scans QR at the store to pick up parcel (Pickup tariff will be credited when brought to depot)
+      // DriverController.Pickup: Driver scans QR at the store to pick up parcel
       APi.createAPIEndpoint(`${APi.ENDPOINTS.Driver}/${targetDriverId}/pickup/${parcel.id}`)
         .customPost({})
         .then(() => {
-          APi.createAPIEndpoint(`${APi.ENDPOINTS.Delivery}/changeStatus/${parcel.id}/3`).update2({}).catch(() => {});
-          const updatedParcel = { ...parcel, status: 3, driverId: targetDriverId };
-          recordScanLog(updatedParcel, "📦 Ramassage Boutique (Pickup)", "Ramassé / En cours", "Tarif appliqué à l'entrée au dépôt");
+          const updatedParcel = { ...parcel, status: 2, operationalStatus: 2, pickupDriverId: targetDriverId };
+          recordScanLog(updatedParcel, "📦 Ramassage Boutique (Pickup)", "Ramassé (2)", "En route vers le dépôt");
           Swal.fire({
             icon: "success",
             title: "Scan QR : Colis Ramassé en Boutique !",
-            html: `Colis <b>#${parcel.qrCodeContent || parcel.id}</b> (${parcel.customer?.fullName || "Client"}) pris en charge.<br/><span style="color:#475569;">Le tarif de pickup sera crédité sur le solde dès la confirmation de réception au dépôt.</span>`,
+            html: `Colis <b>#${parcel.qrCodeContent || parcel.id}</b> (${parcel.customer?.fullName || "Client"}) pris en charge.<br/><span style="color:#475569;">Prochaine étape : confirmation de réception au dépôt (BringToDepot).</span>`,
             timer: 2600,
             showConfirmButton: true,
           });
         })
         .catch(() => {
-          APi.createAPIEndpoint(`${APi.ENDPOINTS.Delivery}/changeStatus/${parcel.id}/3`).update2({}).catch(() => {});
-          const updatedParcel = { ...parcel, status: 3, driverId: targetDriverId };
-          recordScanLog(updatedParcel, "📦 Ramassage Boutique (Pickup)", "Ramassé / En cours", "Tarif appliqué à l'entrée au dépôt");
+          const updatedParcel = { ...parcel, status: 2, operationalStatus: 2, pickupDriverId: targetDriverId };
+          recordScanLog(updatedParcel, "📦 Ramassage Boutique (Pickup)", "Ramassé (2)", "En route vers le dépôt");
           Swal.fire({
             icon: "success",
             title: "Scan QR : Colis Ramassé en Boutique !",
-            html: `Colis <b>#${parcel.qrCodeContent || parcel.id}</b> pris en charge.<br/><span style="color:#475569;">Le tarif de pickup sera crédité dès la confirmation au dépôt.</span>`,
+            html: `Colis <b>#${parcel.qrCodeContent || parcel.id}</b> pris en charge.<br/><span style="color:#475569;">Prochaine étape : confirmation au dépôt.</span>`,
             timer: 2600,
             showConfirmButton: true,
           });
@@ -113,29 +119,26 @@ export default function QRScanner() {
     }
 
     if (effectiveMode === "auto_take") {
-      // Driver scans QR to take a parcel from the depot for delivery
-      APi.createAPIEndpoint(APi.ENDPOINTS.Delivery + "/changeDriver")
-        .create({ driverId: targetDriverId, deliveries: [parcel.id] })
-        .catch(() => {});
-      APi.createAPIEndpoint(`${APi.ENDPOINTS.Delivery}/changeStatus/${parcel.id}/3`)
-        .update2({})
+      // DriverController.StartDelivery: Driver starts delivery after depot receipt is confirmed
+      APi.createAPIEndpoint(`${APi.ENDPOINTS.Driver}/${targetDriverId}/startDelivery/${parcel.id}`)
+        .customPost({})
         .then(() => {
-          const updatedParcel = { ...parcel, status: 3, driverId: targetDriverId };
-          recordScanLog(updatedParcel, "🚚 Prise en Charge Colis", "En cours de livraison (3)", "Affecté au livreur");
+          const updatedParcel = { ...parcel, status: 4, operationalStatus: 4, deliveryDriverId: targetDriverId };
+          recordScanLog(updatedParcel, "🚚 Démarrage Livraison (StartDelivery)", "En cours de livraison (4)", "En tournée");
           Swal.fire({
             icon: "success",
-            title: "Scan QR : Colis Pris en Charge !",
-            html: `Colis <b>#${parcel.qrCodeContent || parcel.id}</b> (${parcel.customer?.fullName || "Client"}) pris en charge pour la livraison.<br/>Statut ➔ <b>En cours (3)</b>.`,
+            title: "Scan QR : Livraison Démarrée !",
+            html: `Colis <b>#${parcel.qrCodeContent || parcel.id}</b> (${parcel.customer?.fullName || "Client"}) pris en charge pour la livraison.<br/>Statut Opérationnel ➔ <b>En Cours de Livraison (4)</b>.`,
             timer: 2400,
             showConfirmButton: true,
           });
         })
         .catch(() => {
-          const updatedParcel = { ...parcel, status: 3, driverId: targetDriverId };
-          recordScanLog(updatedParcel, "🚚 Prise en Charge Colis", "En cours de livraison (3)", "Affecté au livreur");
+          const updatedParcel = { ...parcel, status: 4, operationalStatus: 4, deliveryDriverId: targetDriverId };
+          recordScanLog(updatedParcel, "🚚 Démarrage Livraison (StartDelivery)", "En cours de livraison (4)", "En tournée");
           Swal.fire({
             icon: "success",
-            title: "Scan QR : Colis Pris en Charge !",
+            title: "Scan QR : Livraison Démarrée !",
             html: `Colis <b>#${parcel.qrCodeContent || parcel.id}</b> pris en charge pour la livraison.`,
             timer: 2400,
             showConfirmButton: true,
@@ -147,12 +150,11 @@ export default function QRScanner() {
     if (effectiveMode === "auto_depot") {
       const placeId = Number(selectedDepotForScan) || parcel.preparationPlaceId || 1;
       const depotName = depotsList.find((dp) => Number(dp.id) === placeId)?.name || `Dépôt #${placeId}`;
-      APi.createAPIEndpoint(`${APi.ENDPOINTS.Driver}/${targetDriverId}/bringToDepot/${parcel.id}?placeId=${placeId}`)
+      APi.createAPIEndpoint(`${APi.ENDPOINTS.Driver}/${targetDriverId}/bringToDepot/${parcel.id}`, { placeId })
         .customPost({ placeId })
         .then((resp) => {
           const amt = resp.data?.amount ?? 3.5;
           const newSolde = resp.data?.solde;
-          APi.createAPIEndpoint(`${APi.ENDPOINTS.Delivery}/changeStatus/${parcel.id}/2`).update2({}).catch(() => {});
           setDriversList((prev) =>
             prev.map((d) =>
               d.id === targetDriverId
@@ -164,19 +166,18 @@ export default function QRScanner() {
                 : d
             )
           );
-          const updatedParcel = { ...parcel, status: 2, preparationPlaceId: placeId };
-          recordScanLog(updatedParcel, `🏢 Confirmé au ${depotName}`, "Prêt pour la livraison (2)", `+${Number(amt).toFixed(3)} TND crédité`);
+          const updatedParcel = { ...parcel, status: 3, operationalStatus: 3, preparationPlaceId: placeId };
+          recordScanLog(updatedParcel, `🏢 Confirmé au ${depotName}`, "Reçu au Dépôt (3)", `+${Number(amt).toFixed(3)} TND crédité`);
           Swal.fire({
             icon: "success",
-            title: "Scan QR : Confirmé au Dépôt !",
-            html: `Colis <b>#${parcel.qrCodeContent || parcel.id}</b> affecté à <b>${depotName}</b>.<br/>Statut changé automatiquement ➔ <b>Prêt pour la livraison</b><br/><b style="color:#059669;">+${Number(amt).toFixed(3)} TND</b> crédité au livreur.`,
+            title: "Scan QR : Confirmé au Dépôt (BringToDepot) !",
+            html: `Colis <b>#${parcel.qrCodeContent || parcel.id}</b> réceptionné à <b>${depotName}</b>.<br/>Statut Opérationnel ➔ <b>Reçu au Dépôt (3)</b> (Prêt pour affectation livreur)<br/><b style="color:#059669;">+${Number(amt).toFixed(3)} TND</b> crédité au livreur.`,
             timer: 2600,
             showConfirmButton: true,
           });
         })
         .catch(() => {
           const amt = 3.5;
-          APi.createAPIEndpoint(`${APi.ENDPOINTS.Delivery}/changeStatus/${parcel.id}/2`).update2({}).catch(() => {});
           setDriversList((prev) =>
             prev.map((d) =>
               d.id === targetDriverId
@@ -188,12 +189,12 @@ export default function QRScanner() {
                 : d
             )
           );
-          const updatedParcel = { ...parcel, status: 2, preparationPlaceId: placeId };
-          recordScanLog(updatedParcel, `🏢 Confirmé au ${depotName}`, "Prêt pour la livraison (2)", `+${amt.toFixed(3)} TND crédité`);
+          const updatedParcel = { ...parcel, status: 3, operationalStatus: 3, preparationPlaceId: placeId };
+          recordScanLog(updatedParcel, `🏢 Confirmé au ${depotName}`, "Reçu au Dépôt (3)", `+${amt.toFixed(3)} TND crédité`);
           Swal.fire({
             icon: "success",
-            title: "Scan QR : Confirmé au Dépôt !",
-            html: `Colis <b>#${parcel.qrCodeContent || parcel.id}</b> enregistré à <b>${depotName}</b>.<br/>Statut changé automatiquement ➔ <b>Prêt pour la livraison</b><br/><b style="color:#059669;">+${amt.toFixed(3)} TND</b> crédité au livreur.`,
+            title: "Scan QR : Confirmé au Dépôt (BringToDepot) !",
+            html: `Colis <b>#${parcel.qrCodeContent || parcel.id}</b> enregistré à <b>${depotName}</b>.<br/>Statut Opérationnel ➔ <b>Reçu au Dépôt (3)</b><br/><b style="color:#059669;">+${amt.toFixed(3)} TND</b> crédité au livreur.`,
             timer: 2600,
             showConfirmButton: true,
           });
@@ -202,26 +203,26 @@ export default function QRScanner() {
     }
 
     if (effectiveMode === "auto_deliver") {
-      APi.createAPIEndpoint(`${APi.ENDPOINTS.Delivery}/changeStatus/${parcel.id}/5`)
-        .update2({})
+      APi.createAPIEndpoint(`${APi.ENDPOINTS.Driver}/${targetDriverId}/setDeliveryResult/${parcel.id}`, { result: 1 })
+        .customPost({ deliveryId: parcel.id, result: 1 })
         .then(() => {
-          const updatedParcel = { ...parcel, status: 5 };
-          recordScanLog(updatedParcel, "✅ Remise au Client", "Livré (5)", "Livraison validée");
+          const updatedParcel = { ...parcel, status: 5, operationalStatus: 5, result: 1 };
+          recordScanLog(updatedParcel, "✅ Remise au Client (Delivered)", "Livré (Résultat = 1)", "Livraison validée");
           Swal.fire({
             icon: "success",
             title: "Scan QR : Colis Livré au Client !",
-            html: `Colis <b>#${parcel.qrCodeContent || parcel.id}</b> remis à <b>${parcel.customer?.fullName || "Client"}</b>.<br/>Statut changé automatiquement ➔ <b style="color:#059669;">Livré (5)</b>.`,
+            html: `Colis <b>#${parcel.qrCodeContent || parcel.id}</b> remis à <b>${parcel.customer?.fullName || "Client"}</b>.<br/>Résultat ➔ <b style="color:#059669;">Delivered (Livré)</b>.`,
             timer: 2400,
             showConfirmButton: true,
           });
         })
         .catch(() => {
-          const updatedParcel = { ...parcel, status: 5 };
-          recordScanLog(updatedParcel, "✅ Remise au Client", "Livré (5)", "Livraison validée");
+          const updatedParcel = { ...parcel, status: 5, operationalStatus: 5, result: 1 };
+          recordScanLog(updatedParcel, "✅ Remise au Client (Delivered)", "Livré (Résultat = 1)", "Livraison validée");
           Swal.fire({
             icon: "success",
             title: "Scan QR : Colis Livré au Client !",
-            html: `Colis <b>#${parcel.qrCodeContent || parcel.id}</b> remis à <b>${parcel.customer?.fullName || "Client"}</b>.<br/>Statut changé automatiquement ➔ <b style="color:#059669;">Livré (5)</b>.`,
+            html: `Colis <b>#${parcel.qrCodeContent || parcel.id}</b> remis à <b>${parcel.customer?.fullName || "Client"}</b>.<br/>Résultat ➔ <b style="color:#059669;">Delivered (Livré)</b>.`,
             timer: 2400,
             showConfirmButton: true,
           });
@@ -261,23 +262,20 @@ export default function QRScanner() {
       ? Number(currentDriverId)
       : delivery.driverId || delivery.driver?.id || (drivers[0]?.id || 1);
 
-    APi.createAPIEndpoint(APi.ENDPOINTS.Delivery + "/changeDriver")
-      .create({ driverId: targetDriverId, deliveries: [delivery.id] })
-      .catch(() => {});
-    APi.createAPIEndpoint(`${APi.ENDPOINTS.Delivery}/changeStatus/${delivery.id}/3`)
-      .update2({})
+    APi.createAPIEndpoint(`${APi.ENDPOINTS.Driver}/${targetDriverId}/startDelivery/${delivery.id}`)
+      .customPost({})
       .then(() => {
         Swal.fire({
           icon: "success",
-          title: "Colis Pris en Charge !",
-          html: `Le colis <b>#${delivery.qrCodeContent || delivery.id}</b> est maintenant pris en charge pour la livraison (En cours).`,
+          title: "Livraison Démarrée (StartDelivery) !",
+          html: `Le colis <b>#${delivery.qrCodeContent || delivery.id}</b> est maintenant en cours de livraison (Statut 4).`,
         });
         setDelivery(null);
       })
       .catch(() => {
         Swal.fire({
           icon: "success",
-          title: "Colis Pris en Charge !",
+          title: "Livraison Démarrée (StartDelivery) !",
           html: `Colis <b>#${delivery.qrCodeContent || delivery.id}</b> pris en charge pour la livraison.`,
         });
         setDelivery(null);
@@ -309,7 +307,7 @@ export default function QRScanner() {
     }).then((res) => {
       if (res.isConfirmed) {
         const placeId = Number(res.value) || 1;
-        APi.createAPIEndpoint(`${APi.ENDPOINTS.Driver}/${targetDriverId}/bringToDepot/${delivery.id}?placeId=${placeId}`)
+        APi.createAPIEndpoint(`${APi.ENDPOINTS.Driver}/${targetDriverId}/bringToDepot/${delivery.id}`, { placeId })
           .customPost({ placeId })
           .then((resp) => {
             const amt = resp.data?.amount ?? 3.5;
@@ -1013,57 +1011,100 @@ export default function QRScanner() {
                 </div>
               </div>
 
-              {/* Quick Actions Role-Based: Driver (Pickup / Take Colis) vs Depot Agent (Confirm Reception at Depot) */}
+              {/* Current OperationalStatus & Result Badges */}
+              {(() => {
+                const opVal = getOperationalStatus(delivery);
+                const resVal = getDeliveryResult(delivery);
+                const opObj = DeliveryStatus.find((s) => s.value === opVal) || DeliveryStatus[0];
+                const resObj = DeliveryResultOptions.find((r) => r.value === resVal) || DeliveryResultOptions[0];
+                return (
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      flexWrap: "wrap",
+                      gap: "8px",
+                      background: "#f8fafc",
+                      border: "1px solid #e2e8f0",
+                      borderRadius: "10px",
+                      padding: "10px 12px",
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>
+                        État Opérationnel
+                      </div>
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "5px",
+                          marginTop: "3px",
+                          padding: "3px 8px",
+                          borderRadius: "6px",
+                          fontSize: "0.76rem",
+                          fontWeight: 800,
+                          background: opObj.bg,
+                          color: opObj.color,
+                        }}
+                      >
+                        Étape {opVal}/5 · {opObj.shortLabel || opObj.label}
+                      </span>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>
+                        Résultat (Outcome)
+                      </div>
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "5px",
+                          marginTop: "3px",
+                          padding: "3px 8px",
+                          borderRadius: "6px",
+                          fontSize: "0.76rem",
+                          fontWeight: 800,
+                          background: resObj.bg,
+                          color: resObj.color,
+                        }}
+                      >
+                        {resObj.shortLabel || resObj.label}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Strict Workflow Action based on OperationalStatus */}
               <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "10px", padding: "12px" }}>
                 <span style={{ fontSize: "0.76rem", fontWeight: 700, color: "#64748b", textTransform: "uppercase", display: "block", marginBottom: "8px" }}>
-                  {isDepotAgent
-                    ? "Action Agent de Dépôt (Crédite le Tarif Pickup au Livreur) :"
-                    : "Actions Livreur (Pickup Boutique & Prise en Charge) :"}
+                  Étape Workflow Suivante Autorisée :
                 </span>
-                <div style={{ display: "grid", gridTemplateColumns: isDepotAgent ? "1fr" : "1fr 1fr", gap: "8px" }}>
-                  {!isDepotAgent && (
-                    <>
-                      <button
-                        onClick={handleScanPickup}
-                        style={{
-                          background: "#eff6ff",
-                          color: "#1d4ed8",
-                          border: "1px solid #bfdbfe",
-                          borderRadius: "8px",
-                          padding: "8px 10px",
-                          fontSize: "0.8rem",
-                          fontWeight: 700,
-                          cursor: "pointer",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          gap: "6px",
-                        }}
-                      >
-                        <FaBoxOpen /> Ramasser (Pickup)
-                      </button>
-                      <button
-                        onClick={handleScanTakeColis}
-                        style={{
-                          background: "#eef2ff",
-                          color: "#4f46e5",
-                          border: "1px solid #c7d2fe",
-                          borderRadius: "8px",
-                          padding: "8px 10px",
-                          fontSize: "0.8rem",
-                          fontWeight: 700,
-                          cursor: "pointer",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          gap: "6px",
-                        }}
-                      >
-                        <MdOutlineDeliveryDining size={16} /> Prendre le Colis
-                      </button>
-                    </>
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                  {getOperationalStatus(delivery) === 1 && !isDepotAgent && (
+                    <button
+                      onClick={handleScanPickup}
+                      style={{
+                        background: "#eff6ff",
+                        color: "#1d4ed8",
+                        border: "1px solid #bfdbfe",
+                        borderRadius: "8px",
+                        padding: "10px",
+                        fontSize: "0.84rem",
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: "6px",
+                      }}
+                    >
+                      <FaBoxOpen /> 1. Confirmer Ramassage en Boutique (Pickup)
+                    </button>
                   )}
-                  {!isDriver && (
+                  {getOperationalStatus(delivery) === 2 && !isDriver && (
                     <button
                       onClick={handleScanBringToDepot}
                       style={{
@@ -1071,54 +1112,51 @@ export default function QRScanner() {
                         color: "#059669",
                         border: "1px solid #a7f3d0",
                         borderRadius: "8px",
-                        padding: "9px 12px",
-                        fontSize: "0.82rem",
+                        padding: "10px",
+                        fontSize: "0.84rem",
                         fontWeight: 700,
                         cursor: "pointer",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
                         gap: "6px",
-                        gridColumn: !isDepotAgent ? "1 / -1" : "auto",
                       }}
                     >
-                      <FaWarehouse /> Confirmer Réception au Dépôt (+ Tarif Pickup)
+                      <FaWarehouse /> 2. Confirmer Réception au Dépôt (BringToDepot)
                     </button>
                   )}
+                  {getOperationalStatus(delivery) === 3 && !isDepotAgent && (
+                    <button
+                      onClick={handleScanTakeColis}
+                      style={{
+                        background: "#eef2ff",
+                        color: "#4f46e5",
+                        border: "1px solid #c7d2fe",
+                        borderRadius: "8px",
+                        padding: "10px",
+                        fontSize: "0.84rem",
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: "6px",
+                      }}
+                    >
+                      <MdOutlineDeliveryDining size={16} /> 4. Démarrer la Livraison (StartDelivery)
+                    </button>
+                  )}
+                  {getOperationalStatus(delivery) >= 4 && (
+                    <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "#059669" }}>
+                      ✓ Ce colis est à l'étape {getOperationalStatus(delivery)}/5 du workflow.
+                    </span>
+                  )}
                 </div>
-              </div>
-
-              {/* Status Selector */}
-              <div>
-                <label style={{ fontSize: "0.875rem", fontWeight: 600, color: "#334155", marginBottom: "6px", display: "block" }}>
-                  Modifier l'État de Livraison :
-                </label>
-                <SelectPicker
-                  searchable={false}
-                  data={DeliveryStatus}
-                  block
-                  value={delivery.status}
-                  onSelect={(status) => setDelivery((prev) => ({ ...prev, status }))}
-                />
               </div>
             </div>
           )}
         </Modal.Body>
         <Modal.Footer>
-          <Button
-            appearance="primary"
-            loading={loadingChange}
-            onClick={saveStatusChange}
-            style={{
-              background: "#4f46e5",
-              color: "#fff",
-              fontWeight: 600,
-              padding: "8px 20px",
-              borderRadius: "8px",
-            }}
-          >
-            Valider le Statut
-          </Button>
           <Button onClick={() => setDelivery(null)} appearance="subtle">
             Fermer
           </Button>

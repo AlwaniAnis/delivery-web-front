@@ -73,8 +73,8 @@ export default function GlobalContacts() {
 
   const fetchContacts = () => {
     setLoading(true);
-    APi.createAPIEndpoint(APi.ENDPOINTS.GlobalContact)
-      .fetchAll()
+    APi.createAPIEndpoint(APi.ENDPOINTS.GlobalContact + "/getAll")
+      .customGet()
       .then((res) => {
         setLoading(false);
         const list = res.data?.data || res.data;
@@ -83,7 +83,17 @@ export default function GlobalContacts() {
         }
       })
       .catch(() => {
-        setLoading(false);
+        APi.createAPIEndpoint(APi.ENDPOINTS.GlobalContact)
+          .fetchAll()
+          .then((res) => {
+            const list = res.data?.data || res.data;
+            if (Array.isArray(list)) {
+              persistContacts(list);
+            }
+          })
+          .finally(() => {
+            setLoading(false);
+          });
       });
   };
 
@@ -409,7 +419,7 @@ export default function GlobalContacts() {
           onChange={(val) => setDeptFilter(val || "ALL")}
           cleanable={false}
           searchable={false}
-          style={{ width: "280px" }}
+          style={{ width: "280px", maxWidth: "100%", flex: "1 1 200px" }}
         />
       </div>
 
@@ -451,7 +461,7 @@ export default function GlobalContacts() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))",
+            gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 290px), 1fr))",
             gap: "16px",
           }}
         >
@@ -738,7 +748,7 @@ export default function GlobalContacts() {
               />
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+            <div className="responsive-grid-2">
               <div>
                 <label style={{ fontWeight: 700, fontSize: "0.82rem", color: "#334155", marginBottom: "4px", display: "block" }}>
                   Nom du Contact ou Service * :
@@ -762,7 +772,7 @@ export default function GlobalContacts() {
               </div>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+            <div className="responsive-grid-2">
               <div>
                 <label style={{ fontWeight: 700, fontSize: "0.82rem", color: "#334155", marginBottom: "4px", display: "block" }}>
                   Téléphone Direct * :
@@ -786,7 +796,7 @@ export default function GlobalContacts() {
               </div>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+            <div className="responsive-grid-2">
               <div>
                 <label style={{ fontWeight: 700, fontSize: "0.82rem", color: "#334155", marginBottom: "4px", display: "block" }}>
                   Adresse Email :

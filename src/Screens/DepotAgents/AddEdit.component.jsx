@@ -23,7 +23,7 @@ function AddEdit({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+      <div className="responsive-grid-2">
         <div>
           <label style={{ fontWeight: 600, fontSize: "0.85rem", color: "#334155" }}>Nom :</label>
           <Input
@@ -70,7 +70,7 @@ function AddEdit({
         />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+      <div className="responsive-grid-2">
         <div>
           <label style={{ fontWeight: 600, fontSize: "0.85rem", color: "#334155" }}>CIN :</label>
           <Input
@@ -94,7 +94,7 @@ function AddEdit({
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+      <div className="responsive-grid-2">
         <div>
           <label style={{ fontWeight: 600, fontSize: "0.85rem", color: "#334155" }}>Téléphone 1 :</label>
           <Input

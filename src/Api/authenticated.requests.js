@@ -1,7 +1,12 @@
 import { AXIOS } from "../Config/api.config";
 
 export const createAPIEndpoint = (endpoint, params = {}, custom_url = "") => {
-  const url = endpoint + custom_url + "/";
+  const rawUrl = endpoint + custom_url;
+  const url = rawUrl.includes("?")
+    ? rawUrl
+    : rawUrl.endsWith("/")
+    ? rawUrl
+    : rawUrl + "/";
   const url2 = endpoint;
   const getHeaders = () => {
     let token = "";
@@ -28,12 +33,13 @@ export const createAPIEndpoint = (endpoint, params = {}, custom_url = "") => {
     fetch: () => AXIOS.get(url2, getOptions()),
     customGet: () => AXIOS.get(url, getOptions()),
     customPost: (newRecord) => AXIOS.post(url, newRecord, getOptions()),
+    customPut: (updatedRecord) => AXIOS.put(url, updatedRecord, getOptions()),
     fetchById: (id) => AXIOS.get(url + id, { headers: getHeaders() }),
-    create: (newRecord) => AXIOS.post(url, newRecord, { headers: getHeaders() }),
+    create: (newRecord) => AXIOS.post(url, newRecord, getOptions()),
     update: (id, updatedRecord) =>
       AXIOS.put(url + id, updatedRecord, { headers: getHeaders() }),
     update2: (updatedRecord) =>
-      AXIOS.put(url, updatedRecord, { headers: getHeaders() }),
+      AXIOS.put(url, updatedRecord, getOptions()),
     delete: (id) => AXIOS.delete(url + id, { headers: getHeaders() }),
     upload: (file) => {
       let formData = new FormData();

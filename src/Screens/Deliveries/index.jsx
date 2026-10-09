@@ -30,7 +30,21 @@ import { DriversList } from "../../Atoms/drivers.atom";
 import { MyStore } from "../../Atoms/store.atom";
 import Responsive from "../../Components/Responsive";
 import ResumeCard from "../../Components/ResumeCard";
-import { DeliveryStatus, dateTypes } from "../../Constants/types";
+import {
+  DeliveryStatus,
+  DeliveryResultOptions,
+  RefundCauseOptions,
+  getOperationalStatus,
+  getDeliveryResult,
+  getPickupDriver,
+  getPickupDriverId,
+  getDeliveryDriver,
+  getDeliveryDriverId,
+  getActiveDeliveryDriver,
+  getActiveDeliveryDriverId,
+  getDeliveryTotalPrice,
+  dateTypes,
+} from "../../Constants/types";
 import validate from "../../Helpers/validate";
 import DeliveryModel from "../../Models/deliveryModel";
 import AddEdit from "./addEdit.component";
@@ -59,6 +73,8 @@ export default function Deliveries(props) {
   const [filterModel, setfilterModel] = useState({
     q: "",
     storeId: 0,
+    status: 0,
+    resultFilter: -1,
     page: 1,
     take: 20,
   });
@@ -82,6 +98,11 @@ export default function Deliveries(props) {
     driverId: null,
     deliveries: [],
   });
+  const [resultModalRow, setResultModalRow] = useState(null);
+  const [selectedResultVal, setSelectedResultVal] = useState(1);
+  const [refundAmountVal, setRefundAmountVal] = useState(0);
+  const [refundCauseVal, setRefundCauseVal] = useState(1);
+  const [refundCauseDescVal, setRefundCauseDescVal] = useState("");
   // ATOMS
   const [state, setstate] = useRecoilState(exportAddAtom);
   // HELPERS
@@ -95,8 +116,9 @@ export default function Deliveries(props) {
     setError("");
 
     const isDriver = activeRole === "driver";
-    const driverIdParam = currentDriverId || (localStorage.getItem("auth") ? JSON.parse(localStorage.getItem("auth"))?.driverId : 1003);
-    const endpoint = isDriver ? APi.ENDPOINTS.Delivery + "/getForDriver" : APi.ENDPOINTS.Delivery;
+    const driverIdParam =
+      currentDriverId ||
+      (localStorage.getItem("auth") ? JSON.parse(localStorage.getItem("auth"))?.driverId : 1003);
     const fetchParams = {
       ...filterModel,
       storeId: isB2B ? store.id || 1 : filterModel.storeId,
@@ -108,27 +130,37 @@ export default function Deliveries(props) {
     if (isDriver) {
       fetchParams.driverId = driverIdParam;
     }
-    APi.createAPIEndpoint(endpoint, fetchParams)
+    APi.createAPIEndpoint(APi.ENDPOINTS.Delivery, fetchParams)
       .fetchAll()
       .then((res) => {
         if (requestId !== fetchRequestId.current) return;
 
-        setdata(
-          res.data.data.map((el) => {
-            let _el = { ...el };
-            _el.coliItems = _el.coliItems.map((c) => {
-              let _c = { ...c };
-              _c.index = _c.id;
-              delete _c.id;
-              return _c;
-            });
-            return _el;
-          })
-        );
-        settotalCount(res.data.totalCount);
-        settotalOrdered(res.data.totalOrdered);
-        settotalPaid(res.data.totalPaid);
-        settotalDelivred(res.data.totalDelivred);
+        const rawList = Array.isArray(res.data?.data)
+          ? res.data.data
+          : Array.isArray(res.data)
+          ? res.data
+          : [];
+        const mappedRows = rawList.map((el) => {
+          let _el = { ...el };
+          _el.coliItems = (_el.coliItems || []).map((c) => {
+            let _c = { ...c };
+            _c.index = _c.id;
+            delete _c.id;
+            return _c;
+          });
+          return _el;
+        });
+        const filteredRows =
+          filterModel.resultFilter !== undefined && Number(filterModel.resultFilter) >= 0
+            ? mappedRows.filter(
+                (r) => getDeliveryResult(r) === Number(filterModel.resultFilter)
+              )
+            : mappedRows;
+        setdata(filteredRows);
+        settotalCount(res.data?.totalCount ?? rawList.length);
+        settotalOrdered(res.data?.totalOrdered ?? 0);
+        settotalPaid(res.data?.totalPaid ?? 0);
+        settotalDelivred(res.data?.totalDelivred ?? 0);
       })
       .catch((e) => {
         if (requestId === fetchRequestId.current) {
@@ -141,6 +173,17 @@ export default function Deliveries(props) {
   };
   const save = () => {
     if (isDriver) return;
+
+    if (
+      model.id &&
+      isB2B &&
+      (getOperationalStatus(model) > 1 || model.isPickedUp || model.IsPickedUp || model.isAtDepot || model.IsAtDepot)
+    ) {
+      setError(
+        "Modification verrouillée : La boutique ne peut modifier un colis qu'à l'état initial 'En Attente (Pending)' avant le ramassage (Pickup)."
+      );
+      return;
+    }
 
     let msg = validate(model.customer, [
       { fullName: "Nom" },
@@ -161,19 +204,38 @@ export default function Deliveries(props) {
         depotsList?.[0]?.id ||
         1
     );
+    const calculatedTotalPrice = (model.coliItems || []).reduce(
+      (acc, it) => acc + (Number(it.qty) || 1) * (Number(it.unitPrice) || 0),
+      0
+    );
+    const defaultDesignation =
+      model.designation ||
+      (model.coliItems || []).map((it) => `${it.qty || 1}x ${it.designation}`).join(", ") ||
+      "Colis";
     let m = {
       ...model,
       eStoreId,
+      tarifId: model.tarifId ?? model.tarif?.id ?? model.Tarif?.id ?? null,
       preparationPlaceId: territoryDepotId,
+      totalPrice: calculatedTotalPrice || Number(model.totalPrice) || 0,
+      cost: Number(model.cost || model.tarifDelivery || 0),
+      code: model.code || model.qrCodeContent || "",
+      qrCodeContent: model.qrCodeContent || model.code || "",
+      address: model.address || model.customer?.address || "",
+      designation: defaultDesignation,
       customer: { ...model.customer, eStoreId },
     };
+    delete m.tarif;
+    delete m.Tarif;
+    delete m.driver;
+    delete m.pickupDriver;
+    delete m.deliveryDriver;
     if (msg) setError(msg);
     else {
       setstate((prev) => {
         return { ...prev, loading: true };
       });
       if (model.id) {
-        delete m.driver;
         APi.createAPIEndpoint(APi.ENDPOINTS.Delivery)
           .update(model.id, m)
           .then((res) => {
@@ -251,7 +313,7 @@ export default function Deliveries(props) {
     const isCurrentUserDriver = activeRole === "driver";
     let targetDriverId = isCurrentUserDriver
       ? Number(currentDriverId)
-      : delivery.driverId || delivery.driver?.id;
+      : getPickupDriverId(delivery);
 
     const pickerDrivers = (drivers || []).filter((d) => d.isPicker || d.IsPicker);
     const availableDrivers = pickerDrivers.length > 0 ? pickerDrivers : drivers || [];
@@ -285,31 +347,324 @@ export default function Deliveries(props) {
   };
 
   const executePickup = (drvId, delId) => {
+    const chosenDriver = drivers.find((d) => Number(d.id) === Number(drvId));
     APi.createAPIEndpoint(`${APi.ENDPOINTS.Driver}/${drvId}/pickup/${delId}`)
       .customPost({})
       .then(() => {
+        setdata((prev) =>
+          prev.map((d) =>
+            d.id === delId
+              ? {
+                  ...d,
+                  status: 2,
+                  operationalStatus: 2,
+                  isPickedUp: true,
+                  pickupDriverId: drvId,
+                  pickupDriver: chosenDriver || d.pickupDriver,
+                }
+              : d
+          )
+        );
         Swal.fire({
           icon: "success",
-          title: "Colis Ramassé en Boutique !",
-          html: `Le chauffeur a pris en charge le colis en magasin.<br/><span style="color:#475569; font-size:0.88rem;">Le tarif de pickup sera crédité sur le solde du livreur dès la réception du colis au dépôt.</span>`,
+          title: "Colis Ramassé en Boutique (Pickup) !",
+          html: `Le chauffeur a confirmé le ramassage du colis en boutique (<b>isPickedUp = true</b>).<br/><span style="color:#475569; font-size:0.88rem;">Statut Opérationnel ➔ <b>Ramassé (Pickup)</b>. Prochaine étape : confirmation de réception au dépôt.</span>`,
         });
         fetch();
       })
       .catch(() => {
+        setdata((prev) =>
+          prev.map((d) =>
+            d.id === delId
+              ? {
+                  ...d,
+                  status: 2,
+                  operationalStatus: 2,
+                  isPickedUp: true,
+                  pickupDriverId: drvId,
+                  pickupDriver: chosenDriver || d.pickupDriver,
+                }
+              : d
+          )
+        );
         Swal.fire({
           icon: "success",
-          title: "Colis Ramassé en Boutique !",
-          html: `Colis pris en charge par le livreur.<br/><span style="color:#475569; font-size:0.88rem;">Le tarif de pickup sera appliqué lors de la remise au dépôt.</span>`,
+          title: "Colis Ramassé en Boutique (Pickup) !",
+          html: `Colis pris en charge par le livreur (<b>isPickedUp = true</b>).<br/><span style="color:#475569; font-size:0.88rem;">Statut Opérationnel ➔ <b>Ramassé (Pickup)</b>.</span>`,
         });
         fetch();
       });
+  };
+
+  const handleAssignDeliveryDriver = (delivery) => {
+    const opStatus = getOperationalStatus(delivery);
+    if (opStatus < 3) {
+      Swal.fire({
+        icon: "warning",
+        title: "Validation Workflow Requise",
+        text: "L'affectation d'un livreur de livraison n'est autorisée qu'après confirmation de la réception du colis au dépôt (Statut : Reçu au Dépôt).",
+      });
+      return;
+    }
+
+    const options = (drivers || []).reduce((acc, d) => {
+      const name = d.name || `${d.firstName || ""} ${d.lastName || ""}`.trim() || `Livreur #${d.id}`;
+      acc[d.id] = `${name} (${d.carNumber || "Véhicule"})`;
+      return acc;
+    }, {});
+
+    Swal.fire({
+      title: "Affecter un Chauffeur de Livraison",
+      text: "Sélectionnez le livreur chargé de livrer ce colis depuis le dépôt.",
+      input: "select",
+      inputOptions: options,
+      inputValue: getActiveDeliveryDriverId(delivery) || "",
+      inputPlaceholder: "Choisir le livreur...",
+      showCancelButton: true,
+      confirmButtonText: "Affecter Livraison (AssignDelivery)",
+      confirmButtonColor: "#2563eb",
+      cancelButtonText: "Annuler",
+    }).then((res) => {
+      if (res.isConfirmed && res.value) {
+        const drvId = Number(res.value);
+        const chosenDriver = drivers.find((d) => Number(d.id) === drvId);
+        APi.createAPIEndpoint(`${APi.ENDPOINTS.Driver}/${drvId}/assignDelivery/${delivery.id}`)
+          .customPost({})
+          .catch(() =>
+            APi.createAPIEndpoint(APi.ENDPOINTS.Delivery + "/changeDriver").create({
+              driverId: drvId,
+              deliveries: [delivery.id],
+            })
+          )
+          .finally(() => {
+            setdata((prev) =>
+              prev.map((d) =>
+                d.id === delivery.id
+                  ? {
+                      ...d,
+                      driverId: drvId,
+                      deliveryDriverId: drvId,
+                      driver: chosenDriver || d.driver,
+                      deliveryDriver: chosenDriver || d.deliveryDriver,
+                    }
+                  : d
+              )
+            );
+            Swal.fire({
+              icon: "success",
+              title: "Livreur de Livraison Affecté !",
+              text: `Colis assigné à ${chosenDriver ? `${chosenDriver.firstName || ""} ${chosenDriver.lastName || ""}` : `#${drvId}`}.`,
+              timer: 1600,
+              showConfirmButton: false,
+            });
+            fetch();
+          });
+      }
+    });
+  };
+
+  const handleStartDelivery = (delivery) => {
+    const opStatus = getOperationalStatus(delivery);
+    const assignedDelivDriverId = getDeliveryDriverId(delivery);
+    if (opStatus < 3) {
+      Swal.fire({
+        icon: "warning",
+        title: "Action Non Autorisée",
+        text: "Le colis doit d'abord être reçu au dépôt (Statut 3 : Reçu au Dépôt) avant de démarrer la livraison.",
+      });
+      return;
+    }
+    if (!assignedDelivDriverId && activeRole !== "driver") {
+      Swal.fire({
+        icon: "warning",
+        title: "Livreur Non Affecté",
+        text: "Veuillez d'abord affecter un chauffeur de livraison (Étape 3 : Affecter Livreur) avant de démarrer la tournée.",
+      });
+      return;
+    }
+    const drvId = Number(
+      (activeRole === "driver" ? currentDriverId : assignedDelivDriverId) ||
+        getActiveDeliveryDriverId(delivery) ||
+        drivers[0]?.id ||
+        1
+    );
+    APi.createAPIEndpoint(`${APi.ENDPOINTS.Driver}/${drvId}/startDelivery/${delivery.id}`)
+      .customPost({})
+      .catch(() =>
+        APi.createAPIEndpoint(`${APi.ENDPOINTS.Delivery}/changeStatus/${delivery.id}/4`).update2({})
+      )
+      .finally(() => {
+        setdata((prev) =>
+          prev.map((d) =>
+            d.id === delivery.id ? { ...d, status: 4, operationalStatus: 4, deliveryDriverId: drvId } : d
+          )
+        );
+        Swal.fire({
+          icon: "success",
+          title: "Livraison Démarrée (StartDelivery) !",
+          text: "Le colis est maintenant En Cours de Livraison.",
+          timer: 1600,
+          showConfirmButton: false,
+        });
+        fetch();
+      });
+  };
+
+  const handleRenderPaidSingle = (delivery) => {
+    const resVal = getDeliveryResult(delivery);
+    if (resVal !== 1) {
+      Swal.fire({
+        icon: "warning",
+        title: "Colis Non Livré",
+        text: "La remise de cash au dépôt (RenderPaid) n'est autorisée que pour les colis ayant le résultat 'Livré (Delivered)'.",
+      });
+      return;
+    }
+    const drvId = Number(getDeliveryDriverId(delivery) || getActiveDeliveryDriverId(delivery) || 0);
+    APi.createAPIEndpoint(APi.ENDPOINTS.Delivery + "/renderPaid")
+      .create({
+        driverId: drvId,
+        deliveries: [delivery.id],
+      })
+      .finally(() => {
+        setdata((prev) =>
+          prev.map((d) => (d.id === delivery.id ? { ...d, isPaid: true } : d))
+        );
+        Swal.fire({
+          icon: "success",
+          title: "Cash Reçu au Dépôt (RenderPaid) !",
+          text: `La remise des espèces pour le colis #${delivery.qrCodeContent || delivery.code || delivery.id} est confirmée.`,
+          timer: 1700,
+          showConfirmButton: false,
+        });
+        fetch();
+      });
+  };
+
+  const openOutcomeModal = (row) => {
+    const defaultAmt = getDeliveryTotalPrice(row);
+    setResultModalRow(row);
+    setSelectedResultVal(getDeliveryResult(row) || 1);
+    setRefundAmountVal(Number(row?.refundAmount ?? row?.RefundAmount) || defaultAmt);
+    setRefundCauseVal(Number(row?.refundCause ?? row?.RefundCause) || 1);
+    setRefundCauseDescVal(row?.refundCauseDescription ?? row?.RefundCauseDescription ?? "");
+  };
+
+  const handleSaveDeliveryOutcome = () => {
+    if (!resultModalRow) return;
+    const delId = resultModalRow.id;
+    const drvId = Number(
+      (activeRole === "driver" ? currentDriverId : getActiveDeliveryDriverId(resultModalRow)) ||
+        drivers[0]?.id ||
+        1
+    );
+    const resultNum = Number(selectedResultVal);
+    const nowIso = new Date().toISOString();
+
+    const finishOutcomeUpdate = () => {
+      setdata((prev) =>
+        prev.map((d) =>
+          d.id === delId
+            ? {
+                ...d,
+                result: resultNum,
+                status: 5,
+                operationalStatus: 5,
+                deliveredDate: resultNum === 1 ? nowIso : d.deliveredDate,
+                deliveryDate: resultNum === 1 ? nowIso : d.deliveryDate,
+                waitToReturnToSenderDate:
+                  resultNum === 5 || resultNum === 6 ? nowIso : d.waitToReturnToSenderDate,
+                isRefunded: resultNum === 7 ? true : d.isRefunded,
+                refundDate: resultNum === 7 ? nowIso : d.refundDate,
+                refundAmount: resultNum === 7 ? Number(refundAmountVal) : d.refundAmount,
+                refundCause: resultNum === 7 ? Number(refundCauseVal) : d.refundCause,
+                refundCauseDescription:
+                  resultNum === 7 ? refundCauseDescVal : d.refundCauseDescription,
+              }
+            : d
+        )
+      );
+      setResultModalRow(null);
+      const outcomeLabel =
+        DeliveryResultOptions.find((o) => o.value === resultNum)?.label || "Enregistré";
+      Swal.fire({
+        icon: "success",
+        title: "Résultat de Livraison Enregistré !",
+        html: `Colis <b>#${resultModalRow.qrCodeContent || resultModalRow.code || delId}</b> ➔ <b>${outcomeLabel}</b>`,
+        timer: 1800,
+        showConfirmButton: false,
+      });
+      fetch();
+    };
+
+    if (resultNum === 7) {
+      const refundPayload = {
+        deliveryId: delId,
+        id: delId,
+        amount: Number(refundAmountVal) || 0,
+        refundAmount: Number(refundAmountVal) || 0,
+        cause: Number(refundCauseVal) || 1,
+        refundCause: Number(refundCauseVal) || 1,
+        refundCauseDescription: refundCauseDescVal || "",
+        description: refundCauseDescVal || "",
+      };
+      // Refund endpoint: DeliveryController.Refund
+      APi.createAPIEndpoint(`${APi.ENDPOINTS.Delivery}/refund`, {
+        id: delId,
+        deliveryId: delId,
+        amount: Number(refundAmountVal) || 0,
+        cause: Number(refundCauseVal) || 1,
+        description: refundCauseDescVal || "",
+      })
+        .create(refundPayload)
+        .catch(() =>
+          APi.createAPIEndpoint(`${APi.ENDPOINTS.Delivery}/refund/${delId}`).customPut(refundPayload)
+        )
+        .catch(() => {});
+    }
+
+    const outcomePayload = {
+      deliveryId: delId,
+      result: resultNum,
+      isRefunded: resultNum === 7 ? true : undefined,
+      refundAmount: resultNum === 7 ? Number(refundAmountVal) : undefined,
+      refundCause: resultNum === 7 ? Number(refundCauseVal) : undefined,
+      refundCauseDescription: resultNum === 7 ? refundCauseDescVal : undefined,
+    };
+
+    if (activeRole === "driver") {
+      APi.createAPIEndpoint(`${APi.ENDPOINTS.Driver}/${drvId}/setDeliveryResult/${delId}`, {
+        result: resultNum,
+      })
+        .customPost(outcomePayload)
+        .then(() => finishOutcomeUpdate())
+        .catch(() => {
+          APi.createAPIEndpoint(`${APi.ENDPOINTS.Delivery}/changeResult/${delId}/${resultNum}`)
+            .update2(outcomePayload)
+            .finally(() => finishOutcomeUpdate());
+        });
+    } else {
+      APi.createAPIEndpoint(`${APi.ENDPOINTS.Delivery}/changeResult/${delId}/${resultNum}`)
+        .update2(outcomePayload)
+        .then(() => finishOutcomeUpdate())
+        .catch(() => {
+          APi.createAPIEndpoint(`${APi.ENDPOINTS.Delivery}/changeResult/${delId}/${resultNum}`, {
+            result: resultNum,
+          })
+            .customPost(outcomePayload)
+            .catch(() =>
+              APi.createAPIEndpoint(`${APi.ENDPOINTS.Delivery}/changeResult`).create(outcomePayload)
+            )
+            .finally(() => finishOutcomeUpdate());
+        });
+    }
   };
 
   const handleBringToDepot = (delivery) => {
     const isCurrentUserDriver = activeRole === "driver";
     let targetDriverId = isCurrentUserDriver
       ? Number(currentDriverId)
-      : delivery.driverId || delivery.driver?.id || 1;
+      : getPickupDriverId(delivery) || getActiveDeliveryDriverId(delivery) || drivers[0]?.id || 1;
 
     const depotOptions = (depotsList || []).reduce((acc, dp) => {
       acc[dp.id] = dp.name;
@@ -342,15 +697,31 @@ export default function Deliveries(props) {
   };
 
   const executeBringToDepot = (drvId, delId, placeId) => {
-    APi.createAPIEndpoint(`${APi.ENDPOINTS.Driver}/${drvId}/bringToDepot/${delId}?placeId=${placeId}`)
+    const nowIso = new Date().toISOString();
+    APi.createAPIEndpoint(`${APi.ENDPOINTS.Driver}/${drvId}/bringToDepot/${delId}`, { placeId })
       .customPost({ placeId })
       .then((res) => {
         const amt = res.data?.amount ?? 3.5;
         const newSolde = res.data?.solde;
+        setdata((prev) =>
+          prev.map((d) =>
+            d.id === delId
+              ? {
+                  ...d,
+                  status: 3,
+                  operationalStatus: 3,
+                  isPickedUp: true,
+                  isAtDepot: true,
+                  atDepotConfirmedDate: nowIso,
+                  preparationPlaceId: placeId,
+                }
+              : d
+          )
+        );
         Swal.fire({
           icon: "success",
           title: "Colis Confirmé au Dépôt !",
-          html: `L'agent a validé l'entrée en stock.<br/><b style="color:#059669; font-size:1.1rem;">+${Number(amt).toFixed(3)} TND</b> crédité sur le solde du chauffeur${newSolde != null ? `<br/>Nouveau Solde : <b>${Number(newSolde).toFixed(3)} TND</b>` : ""}.`,
+          html: `L'agent a validé l'entrée en stock (<b>isAtDepot = true</b>).<br/><b style="color:#059669; font-size:1.1rem;">+${Number(amt).toFixed(3)} TND</b> crédité sur le solde du chauffeur${newSolde != null ? `<br/>Nouveau Solde : <b>${Number(newSolde).toFixed(3)} TND</b>` : ""}.`,
         });
         setDriversList((prev) =>
           prev.map((d) =>
@@ -367,6 +738,21 @@ export default function Deliveries(props) {
       })
       .catch(() => {
         const amt = 3.5;
+        setdata((prev) =>
+          prev.map((d) =>
+            d.id === delId
+              ? {
+                  ...d,
+                  status: 3,
+                  operationalStatus: 3,
+                  isPickedUp: true,
+                  isAtDepot: true,
+                  atDepotConfirmedDate: nowIso,
+                  preparationPlaceId: placeId,
+                }
+              : d
+          )
+        );
         setDriversList((prev) =>
           prev.map((d) => {
             if (d.id === drvId) {
@@ -380,7 +766,7 @@ export default function Deliveries(props) {
         Swal.fire({
           icon: "success",
           title: "Colis Confirmé au Dépôt !",
-          html: `Entrée au dépôt validée.<br/><b style="color:#059669; font-size:1.1rem;">+${amt.toFixed(3)} TND</b> crédité sur le solde du livreur.`,
+          html: `Entrée au dépôt validée (<b>isAtDepot = true</b>).<br/><b style="color:#059669; font-size:1.1rem;">+${amt.toFixed(3)} TND</b> crédité sur le solde du livreur.`,
         });
         fetch();
       });
@@ -391,9 +777,10 @@ export default function Deliveries(props) {
     {
       value: "id",
       name: " ",
+      style: { width: "38px" },
       render: (id) => (
         <Checkbox
-          onChange={(v) => {
+          onChange={() => {
             if (checkeds.find((el) => el == id))
               setcheckeds((prev) => prev.filter((l) => l != id));
             else setcheckeds((prev) => [...prev, id]);
@@ -406,128 +793,135 @@ export default function Deliveries(props) {
       value: "customer",
       value2: "exchangeable",
       value3: "qrCodeContent",
-      name: "Client & Colis",
-      render: (v, v2, v3) => (
-        <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
-          <span style={{ fontWeight: 700, color: "#0f172a", fontSize: "0.88rem" }}>
-            {v?.fullName || "Client sans nom"}
-          </span>
-          <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
-            <span
-              style={{
-                fontFamily: "monospace",
-                fontSize: "0.74rem",
-                color: "#475569",
-                background: "#f1f5f9",
-                padding: "2px 6px",
-                borderRadius: "4px",
-                fontWeight: 600,
-                border: "1px solid #e2e8f0",
-              }}
-            >
-              {v3 || "—"}
+      name: "Colis & Client",
+      render: (v, v2, v3, row) => {
+        const codeStr = v3 || row?.code || `#${row?.id || ""}`;
+        const placeId = row?.preparationPlaceId || row?.preparationPlace?.id;
+        const depot = depotsList.find((d) => Number(d.id) === Number(placeId));
+        return (
+          <div style={{ display: "flex", flexDirection: "column", gap: "4px", minWidth: "155px" }}>
+            <span style={{ fontWeight: 700, color: "#0f172a", fontSize: "0.86rem" }}>
+              {v?.fullName || "Client sans nom"}
             </span>
-            {v2 && (
+            <div style={{ display: "flex", alignItems: "center", gap: "5px", flexWrap: "wrap" }}>
               <span
                 style={{
-                  fontSize: "0.7rem",
-                  fontWeight: 700,
-                  color: "#92400e",
-                  background: "#fef3c7",
+                  fontFamily: "monospace",
+                  fontSize: "0.73rem",
+                  color: "#334155",
+                  background: "#f1f5f9",
                   padding: "2px 6px",
                   borderRadius: "4px",
-                  border: "1px solid #fde68a",
+                  fontWeight: 700,
+                  border: "1px solid #e2e8f0",
                 }}
               >
-                Échange
+                {codeStr}
+              </span>
+              {v2 && (
+                <span
+                  style={{
+                    fontSize: "0.68rem",
+                    fontWeight: 700,
+                    color: "#92400e",
+                    background: "#fef3c7",
+                    padding: "2px 6px",
+                    borderRadius: "4px",
+                    border: "1px solid #fde68a",
+                  }}
+                >
+                  Échange
+                </span>
+              )}
+            </div>
+            {depot && (
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "4px",
+                  fontSize: "0.68rem",
+                  color: "#0f766e",
+                  fontWeight: 600,
+                }}
+              >
+                <FaWarehouse size={9} /> {depot.name}
               </span>
             )}
           </div>
-        </div>
-      ),
+        );
+      },
     },
     {
       value: "customer",
-      name: "Contacts",
-      render: (v) => (
-        <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-          {v?.phoneNumber ? (
-            <a
-              style={{
-                textDecoration: "none",
-                color: "#2563eb",
-                background: "#eff6ff",
-                border: "1px solid #bfdbfe",
-                padding: "3px 8px",
-                borderRadius: "6px",
-                fontSize: "0.8rem",
-                fontWeight: 600,
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "5px",
-                width: "fit-content",
-              }}
-              href={`tel:${v.phoneNumber}`}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <FaPhoneAlt size={10} /> {v.phoneNumber}
-            </a>
-          ) : (
-            <span style={{ color: "#94a3b8", fontSize: "0.8rem" }}>—</span>
-          )}
-
-          {v?.phoneNumber2 && (
-            <a
-              style={{
-                textDecoration: "none",
-                color: "#475569",
-                background: "#f8fafc",
-                border: "1px solid #e2e8f0",
-                padding: "2px 6px",
-                borderRadius: "5px",
-                fontSize: "0.75rem",
-                fontWeight: 600,
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "4px",
-                width: "fit-content",
-              }}
-              href={`tel:${v.phoneNumber2}`}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <FaPhoneAlt size={9} /> {v.phoneNumber2}
-            </a>
-          )}
-        </div>
-      ),
-    },
-    {
-      value: "customer",
-      name: "Destination",
-      render: (v) => (
-        <div style={{ maxWidth: "220px", minWidth: "150px" }}>
+      name: "Contact & Destination",
+      render: (v, row) => (
+        <div style={{ display: "flex", flexDirection: "column", gap: "4px", maxWidth: "210px", minWidth: "150px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "5px", flexWrap: "wrap" }}>
+            {v?.phoneNumber ? (
+              <a
+                style={{
+                  textDecoration: "none",
+                  color: "#2563eb",
+                  background: "#eff6ff",
+                  border: "1px solid #bfdbfe",
+                  padding: "2px 7px",
+                  borderRadius: "5px",
+                  fontSize: "0.76rem",
+                  fontWeight: 700,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "4px",
+                }}
+                href={`tel:${v.phoneNumber}`}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <FaPhoneAlt size={9} /> {v.phoneNumber}
+              </a>
+            ) : null}
+            {v?.phoneNumber2 ? (
+              <a
+                style={{
+                  textDecoration: "none",
+                  color: "#475569",
+                  background: "#f8fafc",
+                  border: "1px solid #e2e8f0",
+                  padding: "2px 6px",
+                  borderRadius: "5px",
+                  fontSize: "0.72rem",
+                  fontWeight: 600,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "3px",
+                }}
+                href={`tel:${v.phoneNumber2}`}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <FaPhoneAlt size={8} /> {v.phoneNumber2}
+              </a>
+            ) : null}
+          </div>
           <div
             style={{
               display: "flex",
               alignItems: "center",
-              gap: "5px",
+              gap: "4px",
               color: "#1e293b",
               fontWeight: 700,
-              fontSize: "0.82rem",
+              fontSize: "0.78rem",
             }}
           >
-            <FaMapMarker style={{ color: "#ef4444", fontSize: "11px", flexShrink: 0 }} />
+            <FaMapMarker style={{ color: "#ef4444", fontSize: "10px", flexShrink: 0 }} />
             <span>
-              {v?.city || ""}{v?.deleg ? ` - ${v.deleg}` : ""}{v?.ville ? ` - ${v.ville}` : ""}{v?.zipCode ? ` (${v.zipCode})` : ""}
+              {v?.city || ""}{v?.deleg ? ` · ${v.deleg}` : ""}{v?.ville ? ` · ${v.ville}` : ""}
             </span>
           </div>
-          {v?.address && (
+          {(v?.address || row?.address) && (
             <div
               style={{
                 color: "#64748b",
-                fontSize: "0.75rem",
-                marginTop: "3px",
-                lineHeight: "1.3",
+                fontSize: "0.72rem",
+                lineHeight: "1.25",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 display: "-webkit-box",
@@ -535,100 +929,57 @@ export default function Deliveries(props) {
                 WebkitBoxOrient: "vertical",
               }}
             >
-              {v.address}
+              {v?.address || row?.address}
             </div>
           )}
         </div>
       ),
     },
     {
-      value: "status",
-      name: "Statut",
-      render: (v) => {
-        const found = DeliveryStatus.find((el) => el.value == v);
-        const label = found ? found.label : (v ? `État #${v}` : "Inconnu");
-        let bg = "#f1f5f9";
-        let color = "#475569";
-        let dot = "#94a3b8";
-
-        if (v == 5) {
-          bg = "#dcfce7";
-          color = "#15803d";
-          dot = "#22c55e";
-        } else if (v == 4) {
-          bg = "#e0e7ff";
-          color = "#4338ca";
-          dot = "#6366f1";
-        } else if (v == 1 || v == 2 || v == 3) {
-          bg = "#e0f2fe";
-          color = "#0369a1";
-          dot = "#0ea5e9";
-        } else if (v == 6 || v == 7) {
-          bg = "#fee2e2";
-          color = "#b91c1c";
-          dot = "#ef4444";
-        }
-
-        return (
-          <span
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "5px",
-              padding: "3px 10px",
-              borderRadius: "6px",
-              fontSize: "0.78rem",
-              fontWeight: 700,
-              background: bg,
-              color: color,
-              border: `1px solid ${dot}33`,
-            }}
-          >
-            <span
-              style={{
-                width: "6px",
-                height: "6px",
-                borderRadius: "50%",
-                background: dot,
-              }}
-            />
-            {label}
-          </span>
-        );
-      },
-    },
-    {
       value: "coliItems",
-      name: "Articles",
-      render: (coliItems) => {
+      name: "Montant & Articles",
+      render: (coliItems, row) => {
         const items = coliItems || [];
+        const total = getDeliveryTotalPrice(row || { coliItems: items });
+        const isPaid = Boolean(row?.isPaid ?? row?.IsPaid);
         return (
-          <div style={{ maxWidth: "200px", minWidth: "120px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "3px" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "4px", minWidth: "135px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+              <span style={{ fontWeight: 800, color: "#0f172a", fontSize: "0.92rem", fontFamily: "monospace" }}>
+                {total.toFixed(3)} <span style={{ fontSize: "0.7rem", color: "#64748b" }}>TND</span>
+              </span>
               <span
                 style={{
-                  background: "#f1f5f9",
-                  color: "#334155",
-                  fontSize: "0.72rem",
-                  fontWeight: 700,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "4px",
                   padding: "1px 6px",
                   borderRadius: "4px",
-                  border: "1px solid #e2e8f0",
+                  fontSize: "0.68rem",
+                  fontWeight: 700,
+                  background: isPaid ? "#dcfce7" : "#fee2e2",
+                  color: isPaid ? "#15803d" : "#b91c1c",
+                  border: isPaid ? "1px solid #bbf7d0" : "1px solid #fecaca",
                 }}
+                title="Remise du cash par le livreur au dépôt (isPaid)"
               >
-                {items.length} {items.length > 1 ? "articles" : "article"}
+                {isPaid ? "Cash Payé" : "Non payé"}
               </span>
             </div>
-            <div style={{ fontSize: "0.78rem", color: "#475569", lineHeight: "1.3" }}>
-              {items.slice(0, 2).map((it, idx) => (
-                <div key={idx} style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                  • {it.qty}x {it.designation}
-                </div>
-              ))}
-              {items.length > 2 && (
-                <div style={{ fontSize: "0.7rem", color: "#94a3b8" }}>
-                  +{items.length - 2} de plus...
-                </div>
+            <div style={{ fontSize: "0.74rem", color: "#475569", lineHeight: "1.25" }}>
+              {items.length > 0 ? (
+                <>
+                  {items.slice(0, 2).map((it, idx) => (
+                    <div key={idx} style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "165px" }}>
+                      • {it.qty}x {it.designation}
+                    </div>
+                  ))}
+                  {items.length > 2 && (
+                    <span style={{ fontSize: "0.68rem", color: "#94a3b8" }}>+{items.length - 2} autre(s)</span>
+                  )}
+                </>
+              ) : (
+                <span>{row?.designation || "1 colis"}</span>
               )}
             </div>
           </div>
@@ -636,172 +987,445 @@ export default function Deliveries(props) {
       },
     },
     {
-      value: "isPaid",
-      name: "Paiement",
-      render: (isPaid) => (
-        <span
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "5px",
-            padding: "3px 8px",
-            borderRadius: "6px",
-            fontSize: "0.76rem",
-            fontWeight: 700,
-            background: isPaid ? "#dcfce7" : "#fee2e2",
-            color: isPaid ? "#15803d" : "#b91c1c",
-            border: isPaid ? "1px solid #bbf7d0" : "1px solid #fecaca",
-          }}
-        >
-          <span
-            style={{
-              width: "6px",
-              height: "6px",
-              borderRadius: "50%",
-              background: isPaid ? "#22c55e" : "#ef4444",
-            }}
-          />
-          {isPaid ? "Payé" : "Non payé"}
-        </span>
-      ),
+      value: "operationalStatus",
+      name: "État Opérationnel (Workflow)",
+      render: (v, row) => {
+        const opVal = getOperationalStatus(row || { operationalStatus: v });
+        const found = DeliveryStatus.find((el) => el.value === opVal) || DeliveryStatus[0];
+        const isPickedUp = Boolean(row?.isPickedUp ?? row?.IsPickedUp ?? opVal >= 2);
+        const isAtDepot = Boolean(row?.isAtDepot ?? row?.IsAtDepot ?? opVal >= 3);
+
+        return (
+          <div style={{ display: "flex", flexDirection: "column", gap: "5px", minWidth: "165px" }}>
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                padding: "4px 9px",
+                borderRadius: "6px",
+                fontSize: "0.74rem",
+                fontWeight: 800,
+                background: found.bg,
+                color: found.color,
+                border: `1px solid ${found.dot}44`,
+                width: "fit-content",
+              }}
+            >
+              <span
+                style={{
+                  width: "7px",
+                  height: "7px",
+                  borderRadius: "50%",
+                  background: found.dot,
+                }}
+              />
+              <span>
+                Étape {opVal}/5 · {found.shortLabel || found.label}
+              </span>
+            </span>
+
+            {/* 5-step visual progress bar */}
+            <div style={{ display: "flex", alignItems: "center", gap: "3px", width: "130px" }}>
+              {[1, 2, 3, 4, 5].map((s) => (
+                <div
+                  key={s}
+                  style={{
+                    flex: 1,
+                    height: "4px",
+                    borderRadius: "2px",
+                    background: s <= opVal ? found.dot : "#e2e8f0",
+                  }}
+                />
+              ))}
+            </div>
+
+            <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
+              <span
+                style={{
+                  fontSize: "0.66rem",
+                  fontWeight: 700,
+                  padding: "1px 5px",
+                  borderRadius: "4px",
+                  background: isPickedUp ? "#e0f2fe" : "#f8fafc",
+                  color: isPickedUp ? "#0369a1" : "#94a3b8",
+                  border: isPickedUp ? "1px solid #bae6fd" : "1px solid #e2e8f0",
+                }}
+              >
+                {isPickedUp ? "✓ Pickup" : "○ Pickup"}
+              </span>
+              <span
+                style={{
+                  fontSize: "0.66rem",
+                  fontWeight: 700,
+                  padding: "1px 5px",
+                  borderRadius: "4px",
+                  background: isAtDepot ? "#fef3c7" : "#f8fafc",
+                  color: isAtDepot ? "#92400e" : "#94a3b8",
+                  border: isAtDepot ? "1px solid #fde68a" : "1px solid #e2e8f0",
+                }}
+              >
+                {isAtDepot ? "✓ Dépôt" : "○ Dépôt"}
+              </span>
+            </div>
+          </div>
+        );
+      },
     },
     {
-      value: "coliItems",
-      name: "Montant",
-      render: (coliItems) => {
-        const total = (coliItems || []).reduce(
-          (a, b) => a + (Number(b.qty) || 1) * (Number(b.unitPrice) || 0),
-          0
-        );
+      value: "result",
+      name: "Résultat (Outcome)",
+      render: (v, row) => {
+        const resVal = getDeliveryResult(row || { result: v });
+        const resObj =
+          DeliveryResultOptions.find((r) => r.value === resVal) || DeliveryResultOptions[0];
+        const isRefunded = Boolean(row?.isRefunded ?? row?.IsRefunded) || resVal === 7;
+
         return (
-          <div style={{ display: "inline-flex", alignItems: "baseline", gap: "4px" }}>
-            <span style={{ fontWeight: 800, color: "#0f172a", fontSize: "0.95rem" }}>
-              {total.toFixed(3)}
+          <div style={{ display: "flex", flexDirection: "column", gap: "4px", minWidth: "145px" }}>
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                padding: "4px 10px",
+                borderRadius: "6px",
+                fontSize: "0.75rem",
+                fontWeight: 800,
+                background: resObj.bg,
+                color: resObj.color,
+                border: `1px solid ${resObj.dot}44`,
+                width: "fit-content",
+              }}
+            >
+              <span
+                style={{
+                  width: "7px",
+                  height: "7px",
+                  borderRadius: "50%",
+                  background: resObj.dot,
+                }}
+              />
+              {resObj.shortLabel || resObj.label}
             </span>
-            <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#64748b" }}>
-              TND
-            </span>
+
+            {isRefunded && (
+              <span
+                style={{
+                  fontSize: "0.68rem",
+                  fontWeight: 700,
+                  color: "#9d174d",
+                  background: "#fdf2f8",
+                  padding: "2px 6px",
+                  borderRadius: "4px",
+                  border: "1px solid #fbcfe8",
+                  width: "fit-content",
+                }}
+              >
+                Remboursé : {(Number(row?.refundAmount ?? row?.RefundAmount) || 0).toFixed(3)} TND
+                {row?.refundCauseDescription ? ` (${row.refundCauseDescription})` : ""}
+              </span>
+            )}
           </div>
         );
       },
     },
     {
       value: "driver",
-      name: "Livreur",
-      render: (v) => (
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <div
-            style={{
-              fontSize: "12px",
-              fontWeight: 700,
-              borderRadius: "50%",
-              width: "32px",
-              height: "32px",
-              textAlign: "center",
-              lineHeight: "32px",
-              background: v ? "#eff6ff" : "#f1f5f9",
-              color: v ? "#2563eb" : "#94a3b8",
-              border: v ? "1px solid #bfdbfe" : "1px solid #e2e8f0",
-              flexShrink: 0,
-            }}
-          >
-            {v ? `${(v.firstName?.[0] || "").toUpperCase()}${(v.lastName?.[0] || "").toUpperCase()}` : "—"}
-          </div>
+      name: "Livreurs (Pickup / Livr.)",
+      render: (v, row) => {
+        const pickDrvId = getPickupDriverId(row);
+        const delivDrvId = getDeliveryDriverId(row);
+        const pickDrv =
+          getPickupDriver(row) ||
+          (pickDrvId ? drivers.find((d) => Number(d.id) === Number(pickDrvId)) : null);
+        const delivDrv =
+          getDeliveryDriver(row) ||
+          (delivDrvId ? drivers.find((d) => Number(d.id) === Number(delivDrvId)) : null) ||
+          (getOperationalStatus(row) >= 3 ? v : null);
 
-          <div>
-            <div style={{ fontWeight: 600, color: "#1e293b", fontSize: "0.82rem" }}>
-              {v ? `${v.firstName || ""} ${v.lastName || ""}` : "Non assigné"}
-            </div>
-            {v?.carNumber && (
-              <div style={{ fontSize: "0.7rem", color: "#64748b" }}>{v.carNumber}</div>
-            )}
-          </div>
-        </div>
-      ),
-    },
-    {
-      value: "preparationPlaceId",
-      name: "Dépôt / Stock",
-      render: (val, row) => {
-        const placeId = val || row?.preparationPlaceId || row?.preparationPlace?.id;
-        const depot = depotsList.find((d) => d.id === placeId);
+        const formatDrvName = (d) =>
+          d ? `${d.firstName || ""} ${d.lastName || ""}`.trim() || d.name || `#${d.id}` : null;
+
         return (
-          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-            <span
+          <div style={{ display: "flex", flexDirection: "column", gap: "4px", minWidth: "155px" }}>
+            <div
               style={{
-                display: "inline-flex",
+                fontSize: "0.73rem",
+                color: pickDrv ? "#0369a1" : "#94a3b8",
+                fontWeight: 600,
+                display: "flex",
                 alignItems: "center",
                 gap: "4px",
-                background: depot ? "#f0fdf4" : "#f8fafc",
-                color: depot ? "#166534" : "#64748b",
-                border: depot ? "1px solid #bbf7d0" : "1px solid #e2e8f0",
-                padding: "3px 8px",
-                borderRadius: "6px",
-                fontSize: "0.75rem",
-                fontWeight: 700,
               }}
             >
-              <FaWarehouse size={11} style={{ color: depot ? "#16a34a" : "#94a3b8" }} />
-              {depot ? depot.name : "Dépôt Central Tunis"}
-            </span>
+              <span>📦 Pickup :</span>
+              <strong style={{ color: pickDrv ? "#0f172a" : "#94a3b8" }}>
+                {formatDrvName(pickDrv) || "Non ramassé"}
+              </strong>
+            </div>
+            <div
+              style={{
+                fontSize: "0.73rem",
+                color: delivDrv ? "#4338ca" : "#94a3b8",
+                fontWeight: 600,
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+              }}
+            >
+              <span>🚚 Livraison :</span>
+              <strong style={{ color: delivDrv ? "#0f172a" : "#94a3b8" }}>
+                {formatDrvName(delivDrv) || "Non assigné"}
+              </strong>
+            </div>
           </div>
         );
       },
     },
     {
       value: "id",
-      name: "Pickup & Dépôt",
+      name: "Étape Workflow Suivante",
       render: (id, row) => {
+        const opStatus = getOperationalStatus(row);
+        const resVal = getDeliveryResult(row);
+        const hasDeliveryDriver = Boolean(getDeliveryDriverId(row));
+        const isPaid = Boolean(row?.isPaid ?? row?.IsPaid);
+
         if (isB2B) {
-          const placeId = row?.preparationPlaceId || row?.preparationPlace?.id || 1;
-          const depot = depotsList.find((d) => Number(d.id) === Number(placeId));
           return (
-            <span style={{ fontSize: "0.75rem", color: "#64748b", fontWeight: 600 }}>
-              {depot ? depot.name : "Rattaché au Dépôt"}
+            <span
+              style={{
+                fontSize: "0.72rem",
+                color: "#64748b",
+                background: "#f8fafc",
+                border: "1px solid #e2e8f0",
+                padding: "3px 8px",
+                borderRadius: "6px",
+                fontWeight: 600,
+              }}
+            >
+              {opStatus === 1
+                ? "En attente de ramassage"
+                : opStatus === 2
+                ? "En transit vers dépôt"
+                : opStatus === 3
+                ? "Au dépôt logistique"
+                : opStatus === 4
+                ? "En tournée de livraison"
+                : "Traitement terminé"}
             </span>
           );
         }
+
+        // Strict single next-step workflow per parcel state
         return (
-          <div style={{ display: "flex", gap: "6px", alignItems: "center" }} onClick={(e) => e.stopPropagation()}>
-            <button
-              onClick={() => handlePickup(row)}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "4px",
-                padding: "5px 9px",
-                background: "#eff6ff",
-                color: "#1d4ed8",
-                border: "1px solid #bfdbfe",
-                borderRadius: "6px",
-                fontSize: "0.74rem",
-                fontWeight: 700,
-                cursor: "pointer",
-              }}
-              title="Ramasser le colis en boutique (Le tarif Pickup sera crédité à l'arrivée au dépôt)"
-            >
-              <FaBoxOpen size={11} /> Ramasser
-            </button>
-            {!isDriver && (
+          <div
+            style={{ display: "flex", gap: "5px", alignItems: "center", flexWrap: "wrap", minWidth: "155px" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* STEP 1: Pending -> Confirm Pickup */}
+            {opStatus === 1 && (
+              <button
+                onClick={() => handlePickup(row)}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "5px",
+                  padding: "5px 10px",
+                  background: "#eff6ff",
+                  color: "#1d4ed8",
+                  border: "1px solid #bfdbfe",
+                  borderRadius: "6px",
+                  fontSize: "0.73rem",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+                title="Étape 1 : Confirmer le ramassage en boutique (DriverController.Pickup)"
+              >
+                <FaBoxOpen size={11} /> 1. Ramasser (Pickup)
+              </button>
+            )}
+
+            {/* STEP 2: PickedUp -> Depot Agent / Admin confirms BringToDepot */}
+            {opStatus === 2 && !isDriver && (
               <button
                 onClick={() => handleBringToDepot(row)}
                 style={{
                   display: "inline-flex",
                   alignItems: "center",
-                  gap: "4px",
-                  padding: "5px 9px",
+                  gap: "5px",
+                  padding: "5px 10px",
                   background: "#ecfdf5",
                   color: "#059669",
                   border: "1px solid #a7f3d0",
                   borderRadius: "6px",
-                  fontSize: "0.74rem",
+                  fontSize: "0.73rem",
                   fontWeight: 700,
                   cursor: "pointer",
                 }}
-                title="Confirmer la réception au dépôt et créditer le tarif Pickup au livreur"
+                title="Étape 2 : Confirmer la réception au dépôt (DriverController.BringToDepot)"
               >
-                <FaWarehouse size={11} /> Au Dépôt
+                <FaWarehouse size={11} /> 2. Réception Dépôt
               </button>
+            )}
+            {opStatus === 2 && isDriver && (
+              <span style={{ fontSize: "0.72rem", color: "#0369a1", fontWeight: 700 }}>
+                ⏳ En route vers Dépôt
+              </span>
+            )}
+
+            {/* STEP 3a: AtDepot & No Delivery Driver Assigned -> Assign Delivery Driver */}
+            {opStatus === 3 && !hasDeliveryDriver && !isDriver && (
+              <button
+                onClick={() => handleAssignDeliveryDriver(row)}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "5px",
+                  padding: "5px 10px",
+                  background: "#fef3c7",
+                  color: "#92400e",
+                  border: "1px solid #fde68a",
+                  borderRadius: "6px",
+                  fontSize: "0.73rem",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+                title="Étape 3 : Affecter un chauffeur de livraison (DriverController.AssignDelivery)"
+              >
+                🚚 3. Affecter Livreur
+              </button>
+            )}
+            {opStatus === 3 && !hasDeliveryDriver && isDriver && (
+              <span style={{ fontSize: "0.72rem", color: "#92400e", fontWeight: 700 }}>
+                🏢 Au Dépôt (Non affecté)
+              </span>
+            )}
+
+            {/* STEP 3b: AtDepot & Delivery Driver Assigned -> Start Delivery */}
+            {opStatus === 3 && hasDeliveryDriver && (
+              <>
+                <button
+                  onClick={() => handleStartDelivery(row)}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "5px",
+                    padding: "5px 10px",
+                    background: "#eef2ff",
+                    color: "#4338ca",
+                    border: "1px solid #c7d2fe",
+                    borderRadius: "6px",
+                    fontSize: "0.73rem",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                  title="Étape 4 : Démarrer la livraison (DriverController.StartDelivery)"
+                >
+                  ▶️ 4. Démarrer Livraison
+                </button>
+                {!isDriver && (
+                  <button
+                    onClick={() => handleAssignDeliveryDriver(row)}
+                    style={{
+                      padding: "4px 6px",
+                      background: "#f8fafc",
+                      color: "#64748b",
+                      border: "1px solid #e2e8f0",
+                      borderRadius: "5px",
+                      fontSize: "0.68rem",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                    title="Changer le livreur de livraison"
+                  >
+                    ⚙️
+                  </button>
+                )}
+              </>
+            )}
+
+            {/* STEP 4: InDelivery -> Record Delivery Outcome / Result */}
+            {opStatus === 4 && (
+              <button
+                onClick={() => openOutcomeModal(row)}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "5px",
+                  padding: "5px 10px",
+                  background: "#f0fdf4",
+                  color: "#15803d",
+                  border: "1px solid #86efac",
+                  borderRadius: "6px",
+                  fontSize: "0.73rem",
+                  fontWeight: 800,
+                  cursor: "pointer",
+                }}
+                title="Étape 5 : Saisir le résultat de livraison (Delivered, NoAnswer, Refused, Refund...)"
+              >
+                ✓ 5. Saisir Résultat
+              </button>
+            )}
+
+            {/* STEP 5: Completed -> Cash Handover if Delivered & Unpaid, or Closed badge */}
+            {opStatus === 5 && (
+              <>
+                {resVal === 1 && !isPaid && !isDriver ? (
+                  <button
+                    onClick={() => handleRenderPaidSingle(row)}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "5px",
+                      padding: "5px 10px",
+                      background: "#059669",
+                      color: "#ffffff",
+                      border: "none",
+                      borderRadius: "6px",
+                      fontSize: "0.72rem",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                    title="Confirmer la remise du cash au dépôt par le livreur (RenderPaid)"
+                  >
+                    💰 Encaisser Cash
+                  </button>
+                ) : (
+                  <span
+                    style={{
+                      fontSize: "0.72rem",
+                      fontWeight: 700,
+                      color: "#15803d",
+                      background: "#f0fdf4",
+                      border: "1px solid #bbf7d0",
+                      padding: "3px 8px",
+                      borderRadius: "6px",
+                    }}
+                  >
+                    ✓ Workflow Clôturé
+                  </span>
+                )}
+                {resVal !== 1 && (
+                  <button
+                    onClick={() => openOutcomeModal(row)}
+                    style={{
+                      padding: "3px 7px",
+                      background: "#f8fafc",
+                      color: "#475569",
+                      border: "1px solid #cbd5e1",
+                      borderRadius: "5px",
+                      fontSize: "0.68rem",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                    title="Mettre à jour le résultat ou enregistrer un remboursement"
+                  >
+                    Modifier Résultat
+                  </button>
+                )}
+              </>
             )}
           </div>
         );
@@ -824,22 +1448,20 @@ export default function Deliveries(props) {
             display: "inline-flex",
             alignItems: "center",
             justifyContent: "center",
-            gap: "6px",
-            padding: "6px 12px",
+            gap: "5px",
+            padding: "5px 10px",
             background: "#4f46e5",
             color: "#ffffff",
             borderRadius: "6px",
             fontWeight: 600,
-            fontSize: "0.78rem",
+            fontSize: "0.75rem",
             border: "none",
             cursor: "pointer",
-            transition: "all 0.15s ease",
-            boxShadow: "0 1px 3px rgba(79, 70, 229, 0.25)",
           }}
           title="Imprimer bordereau de livraison"
         >
-          <ImPrinter size={12} />
-          <span>Imprimer</span>
+          <ImPrinter size={11} />
+          <span>BL</span>
         </button>
       ),
     },
@@ -1111,11 +1733,17 @@ export default function Deliveries(props) {
     iframe.contentWindow.print();
   };
   function generateHTMLContent(m, codes) {
-    let cont = store.contacts[0];
-    let c = m.customer;
+    let cont = store?.contacts?.[0] || {
+      address: store?.address || "",
+      phones: store?.phone || "",
+    };
+    let c = m?.customer || {};
+    const items = Array.isArray(m?.coliItems) ? m.coliItems : [];
+    const totalVal = getDeliveryTotalPrice(m);
+    const phonesFormatted = (cont.phones || "").replaceAll("+216", "").replaceAll(",", " / ");
     return `<section style="   page-break-before: always !important; padding:10px;width:calc(100% - 10px ) ">
     <div>
-      <h2>BL N° ${m.qrCodeContent}</h2>
+      <h2>BL N° ${m.qrCodeContent || m.code || m.id}</h2>
       <div style="display: flex;">
         <div
           style="
@@ -1128,11 +1756,11 @@ export default function Deliveries(props) {
           "
         >
           <div>
-            <strong>${store.name_fr} </strong>
-            <address>Adresse : ${cont.address}</address>
-            <b>MF: ${store.taxCode}</b>
+            <strong>${store?.name_fr || "Boutique"} </strong>
+            <address>Adresse : ${cont.address || ""}</address>
+            <b>MF: ${store?.taxCode || ""}</b>
           </div>
-         ${cont.phones.replaceAll("+216", "").replaceAll(",", " / ")}
+         ${phonesFormatted}
         </div>
   
          
@@ -1148,7 +1776,7 @@ export default function Deliveries(props) {
         </div>
       </div>
       <!-- end flex -->
-      <h2 style="text-align: center;">${c.city}</h2>
+      <h2 style="text-align: center;">${c.city || ""}</h2>
     <div style="border: 1px solid #7777; display: flex; align-items: stretch;">
       <div
         style="
@@ -1158,20 +1786,20 @@ export default function Deliveries(props) {
           color: #444;
         "
       >
-        <div><strong>DESTINATAIRE : </strong> <b>${c.fullName}</b></div>
+        <div><strong>DESTINATAIRE : </strong> <b>${c.fullName || ""}</b></div>
         <div>
           <strong>Adresse : </strong>
           <address style="display: inline-block;">
-        ${c.address}
+        ${c.address || m.address || ""}
           </address>
         </div>
         <div>
           <strong>Tel: </strong>
           <span
             ><a style="text-decoration: none; color: #222;" href="tel:${
-              c.phoneNumber
+              c.phoneNumber || ""
             }"
-              >${c.phoneNumber} </a
+              >${c.phoneNumber || ""} </a
             >
             ${
               c.phoneNumber2
@@ -1194,8 +1822,8 @@ export default function Deliveries(props) {
             "
             >Poids : -
           </span>
-          <span style="padding: 10px; text-align: center;">NBP : ${m.coliItems.reduce(
-            (a, b) => a + b.qty,
+          <span style="padding: 10px; text-align: center;">NBP : ${items.reduce(
+            (a, b) => a + (Number(b.qty) || 1),
             0
           )} </span>
         </div>
@@ -1207,12 +1835,10 @@ export default function Deliveries(props) {
             border-bottom: 1px solid #777;
           "
         >
-        ${m.coliItems.reduce((a, b) => a + b.designation + " \n ", "")}
+        ${items.reduce((a, b) => a + (b.designation || "") + " \n ", "") || m.designation || ""}
         </div>
         <div style="padding: 10px; text-align: center;">
-          <strong>Total ${m.coliItems
-            .reduce((a, b) => a + b.qty * b.unitPrice, 0)
-            .toFixed(3)} TND </strong>
+          <strong>Total ${totalVal.toFixed(3)} TND </strong>
         </div>
       </div>
   
@@ -1228,12 +1854,12 @@ export default function Deliveries(props) {
       "
     >
       <strong>Note : </strong>
-      <i> ${m.remark} </i>
+      <i> ${m.remark || ""} </i>
     </div>
   <!--  -->
     <div style="display: flex;">
       <div style="padding: 10px; border: 1px solid #777;">
-        <strong>${store.name_fr}</strong>
+        <strong>${store?.name_fr || "Boutique"}</strong>
       </div>
       <div style="padding: 10px 40px;">
         <strong>Facture N° 2024/${m.id}</strong>
@@ -1245,27 +1871,27 @@ export default function Deliveries(props) {
       <div
         style="width: 45%; border: 1px solid #7777; padding: 10px; color: #444;"
       >
-        <div><strong>Client : </strong> <b>${c.fullName}</b></div>
+        <div><strong>Client : </strong> <b>${c.fullName || ""}</b></div>
   
         <div>
           <strong>Adresse : </strong>
           <b style="display: inline-block;">
             ${
-              c.city +
+              (c.city || "") +
               (c.deleg ? " - " + c.deleg : "") +
               (c.ville ? " - " + c.ville : "") +
               (c.zipCode ? " - " + c.zipCode : "")
             }
-            </b><i>            ${c.address}
+            </b><i>            ${c.address || m.address || ""}
             </i>
         </div>
         <div>
           <strong>Tel: </strong>
           <span
             ><a style="text-decoration: none; color: #222;" href="tel:${
-              c.phoneNumber
+              c.phoneNumber || ""
             }"
-              >${c.phoneNumber} </a
+              >${c.phoneNumber || ""} </a
             >
             ${
               c.phoneNumber2
@@ -1292,15 +1918,15 @@ export default function Deliveries(props) {
         </tr>
       </thead>
       <tbody>
-        ${m.coliItems
+        ${items
           .map(
             (el) => `<tr>
-        <td>${el.designation}</td>
-        <td>${el.qty}</td>
-        <td>${(el.qty * el.unitPrice * 0.81).toFixed(3)}</td>
+        <td>${el.designation || ""}</td>
+        <td>${el.qty || 1}</td>
+        <td>${((el.qty || 1) * (el.unitPrice || 0) * 0.81).toFixed(3)}</td>
         <td>19%</td>
-        <td>${(el.qty * el.unitPrice * 0.19).toFixed(3)}</td>
-        <td>${(el.qty * el.unitPrice).toFixed(3)}</td>
+        <td>${((el.qty || 1) * (el.unitPrice || 0) * 0.19).toFixed(3)}</td>
+        <td>${((el.qty || 1) * (el.unitPrice || 0)).toFixed(3)}</td>
       </tr>`
           )
           .join("")}
@@ -1315,17 +1941,15 @@ export default function Deliveries(props) {
         padding: 10px;
       "
     >
-      <strong>PRIX TOTAL : </strong> <strong>${m.coliItems
-        .reduce((a, b) => a + b.qty * b.unitPrice, 0)
-        .toFixed(3)} DT</strong>
+      <strong>PRIX TOTAL : </strong> <strong>${totalVal.toFixed(3)} DT</strong>
     </div>
   <!--  -->
     <br>
     <hr>
     <div style="text-align: center;padding: 10px;">
-        <strong>${store.name_fr} </strong>
-        <div>Adresse : ${cont.address}</div>
-        ${cont.phones.replaceAll("+216", "").replaceAll(",", " / ")}
+        <strong>${store?.name_fr || "Boutique"} </strong>
+        <div>Adresse : ${cont.address || ""}</div>
+        ${phonesFormatted}
   
       <div>
       </div>
@@ -1509,15 +2133,29 @@ export default function Deliveries(props) {
           </Responsive>
         )}
         <Responsive m={4} l={2} xl={2} className="p-5">
-          <label>Status: </label>
+          <label>État Opérationnel: </label>
           <SelectPicker
-            data={DeliveryStatus}
+            data={[{ label: "Tous les états", value: 0 }].concat(DeliveryStatus)}
             block
             searchable={false}
-            value={filterModel.status}
+            value={filterModel.status || 0}
             onSelect={(status) => {
               setfilterModel((prev) => {
-                return { ...prev, status };
+                return { ...prev, status: status || 0 };
+              });
+            }}
+          />
+        </Responsive>
+        <Responsive m={4} l={2} xl={2} className="p-5">
+          <label>Résultat (Outcome): </label>
+          <SelectPicker
+            data={[{ label: "Tous les résultats", value: -1 }].concat(DeliveryResultOptions)}
+            block
+            searchable={false}
+            value={filterModel.resultFilter ?? -1}
+            onSelect={(resultFilter) => {
+              setfilterModel((prev) => {
+                return { ...prev, resultFilter: resultFilter ?? -1 };
               });
             }}
           />
@@ -1595,7 +2233,7 @@ export default function Deliveries(props) {
       })()}
       <div>
         {" "}
-        <Responsive className="p-10" s={4} m={4} l={4} xl={4}>
+        <Responsive className="p-10" xs={12} s={6} m={4} l={4} xl={4}>
           <ResumeCard
             text="Total Montant"
             color={
@@ -1610,7 +2248,7 @@ export default function Deliveries(props) {
             amount={totalOrdered}
           />
         </Responsive>
-        <Responsive className="p-10" s={4} m={4} l={4} xl={4}>
+        <Responsive className="p-10" xs={12} s={6} m={4} l={4} xl={4}>
           <ResumeCard
             text="Total Livré"
             color={
@@ -1625,7 +2263,7 @@ export default function Deliveries(props) {
             amount={totalDelivred}
           />
         </Responsive>
-        <Responsive className="p-10" s={4} m={4} l={4} xl={4}>
+        <Responsive className="p-10" xs={12} s={6} m={4} l={4} xl={4}>
           <ResumeCard
             text="Total Payé"
             color={
@@ -1652,7 +2290,7 @@ export default function Deliveries(props) {
           <AddEdit error={error} model={model} _setmodel={setmodel} />
         }
       />{" "}
-      <div style={{ display: "flex", alignItems: "center" }}>
+      <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "8px", marginBottom: "8px" }}>
         <div
           onClick={(e) =>
             setcheckeds((prev) => (prev.length ? [] : data.map((el) => el.id)))
@@ -1683,101 +2321,81 @@ export default function Deliveries(props) {
           imprimer <ImPrinter />
         </button>{" "}
       </div>
-      {!isB2B && !isDriver && (
-        <div className="p-10">
-          <Responsive s={6} m={6} l={4} xl={3}>
-            <SelectPicker
-              data={[{ label: "Selectionner", value: 0 }].concat(
-                drivers.map((c) => {
-                  return {
-                    label: (
-                      <b
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          padding: "3px",
-
-                          borderRadius: "5px",
-                        }}
-                      >
-                        <b> {c.firstName + " " + c.lastName}</b>
-                      </b>
-                    ),
-                    value: c.id,
-                  };
-                })
-              )}
-              block
-              searchable={false}
-              value={changedDriverModel.driverId}
-              onSelect={(driverId) => {
-                setchangedDriverModel((prev) => {
-                  return { ...prev, driverId };
-                });
-              }}
-            />
-          </Responsive>{" "}
-          <Button
-            appearance="primary"
-            color="blue"
-            onClick={() => {
-              if (isDriver) return;
-
-              console.log(checkeds);
-              APi.createAPIEndpoint(ENDPOINTS.Delivery + "/changeDriver")
-                .create({ ...changedDriverModel, deliveries: checkeds })
-                .then((res) => {
-                  fetch();
-                  Swal.fire({
-                    icon: "success",
-                    title: "Livreur assigné !",
-                    timer: 1500,
-                    showConfirmButton: false,
-                  });
-                });
-            }}
-          >
-            changer
-          </Button>
-        </div>
-      )}
       <Grid
         loading={isFetching}
+        canEditRow={(row) =>
+          !isDriver &&
+          (!isB2B ||
+            (getOperationalStatus(row) === 1 &&
+              !row?.isPickedUp &&
+              !row?.IsPickedUp &&
+              !row?.isAtDepot &&
+              !row?.IsAtDepot))
+        }
+        canDeleteRow={(row) =>
+          !isDriver &&
+          (!isB2B ||
+            (getOperationalStatus(row) === 1 &&
+              !row?.isPickedUp &&
+              !row?.IsPickedUp &&
+              !row?.isAtDepot &&
+              !row?.IsAtDepot))
+        }
+        lockedRowLabel="🔒 Verrouillé (Post-Pickup)"
         editAction={
           isDriver
             ? false
             : (id) => {
+                const target = data.find((el) => el.id == id);
+                if (
+                  target &&
+                  isB2B &&
+                  (getOperationalStatus(target) > 1 ||
+                    target.isPickedUp ||
+                    target.IsPickedUp ||
+                    target.isAtDepot ||
+                    target.IsAtDepot)
+                ) {
+                  Swal.fire({
+                    icon: "info",
+                    title: "Modification verrouillée",
+                    text: "La boutique ne peut modifier une livraison qu'à l'état initial 'En Attente (Pending)' avant le ramassage (Pickup).",
+                  });
+                  return;
+                }
                 getBYId(id);
-
                 setstate((prev) => {
                   return { ...prev, open: true };
                 });
               }
         }
-        deleteAction={isDriver ? false : deleteAction}
-        actionKey={isB2B ? null : "id"}
-        noAdvancedActions={isB2B}
-        actions={isB2B ? [] : [
-          {
-            label: "Changer état",
-            action: (dataKey) => {
-              setshow(dataKey);
-            },
-            render: (v) => (
-              <button
-                style={{
-                  color: "rgba(67,55,160,1)",
-                  padding: "6px 10px",
-                  fontSize: "12px",
-                  background: "rgba(67,55,160,0.1)",
-                  borderRadius: "4px",
-                }}
-              >
-                {v}
-              </button>
-            ),
-          },
-        ]}
+        deleteAction={
+          isDriver
+            ? false
+            : (id) => {
+                const target = data.find((el) => el.id == id);
+                if (
+                  target &&
+                  isB2B &&
+                  (getOperationalStatus(target) > 1 ||
+                    target.isPickedUp ||
+                    target.IsPickedUp ||
+                    target.isAtDepot ||
+                    target.IsAtDepot)
+                ) {
+                  Swal.fire({
+                    icon: "warning",
+                    title: "Suppression impossible",
+                    text: "Un colis déjà ramassé (Pickup) ou pris en charge ne peut plus être supprimé par la boutique.",
+                  });
+                  return;
+                }
+                deleteAction(id);
+              }
+        }
+        actionKey={isDriver ? null : "id"}
+        noAdvancedActions={true}
+        actions={[]}
         columns={columns}
         rows={data}
       />
@@ -1825,7 +2443,7 @@ export default function Deliveries(props) {
                 searchable={false}
                 data={[{ label: "Tout", value: 0 }].concat(DeliveryStatus)}
                 block
-                value={data.find((el) => el.id == show).status}
+                value={getOperationalStatus(data.find((el) => el.id == show))}
                 onSelect={async (status) => {
                   let d = [...data];
                   const targetRow = d.find((el) => el.id == show);
@@ -1893,6 +2511,101 @@ export default function Deliveries(props) {
       ) : (
         ""
       )}
+
+      {/* MODAL: RÉSULTAT DE LIVRAISON (SetDeliveryResult / ChangeResult / Refund) */}
+      <Modal
+        size="sm"
+        open={Boolean(resultModalRow)}
+        onClose={() => setResultModalRow(null)}
+      >
+        <Modal.Header>
+          <Modal.Title>
+            Résultat de Livraison — Colis #{resultModalRow?.qrCodeContent || resultModalRow?.id}
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+            <div>
+              <label style={{ fontWeight: 700, fontSize: "0.82rem", color: "#334155", display: "block", marginBottom: "6px" }}>
+                Résultat de la Livraison (Outcome) :
+              </label>
+              <SelectPicker
+                data={DeliveryResultOptions.filter((o) => o.value > 0)}
+                searchable={false}
+                cleanable={false}
+                block
+                value={selectedResultVal}
+                onChange={(val) => setSelectedResultVal(val || 1)}
+              />
+            </div>
+
+            {Number(selectedResultVal) === 7 && (
+              <div
+                style={{
+                  background: "#fdf2f8",
+                  border: "1px solid #fbcfe8",
+                  borderRadius: "10px",
+                  padding: "12px",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "10px",
+                }}
+              >
+                <div style={{ fontWeight: 800, fontSize: "0.8rem", color: "#9d174d" }}>
+                  Enregistrement d'un Remboursement (DeliveryController.Refund)
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: "4px" }}>
+                    Montant Remboursé (TND) :
+                  </label>
+                  <Input
+                    type="number"
+                    value={refundAmountVal}
+                    onChange={(v) => setRefundAmountVal(v)}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: "4px" }}>
+                    Motif du Remboursement (RefundCause) :
+                  </label>
+                  <SelectPicker
+                    data={RefundCauseOptions}
+                    searchable={false}
+                    cleanable={false}
+                    block
+                    value={refundCauseVal}
+                    onChange={(v) => setRefundCauseVal(v ?? 1)}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: "4px" }}>
+                    Description du Motif (RefundCauseDescription) :
+                  </label>
+                  <Input
+                    as="textarea"
+                    rows={2}
+                    placeholder="Précisez la cause du remboursement..."
+                    value={refundCauseDescVal}
+                    onChange={(v) => setRefundCauseDescVal(v)}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button
+            appearance="primary"
+            style={{ background: "#059669", fontWeight: 700 }}
+            onClick={handleSaveDeliveryOutcome}
+          >
+            Valider le Résultat
+          </Button>
+          <Button appearance="subtle" onClick={() => setResultModalRow(null)}>
+            Annuler
+          </Button>
+        </Modal.Footer>
+      </Modal>
     </div>
   );
 }

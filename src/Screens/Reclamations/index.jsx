@@ -1,39 +1,38 @@
-import React, { useEffect, useState } from "react";
-import { useRecoilState, useRecoilValue } from "recoil";
-import { useHistory } from "react-router-dom";
-import { Button, Input, Modal, SelectPicker, Loader } from "rsuite";
-import Swal from "sweetalert2";
 import moment from "moment";
+import { useEffect, useState } from "react";
 import {
-  FaCommentDots,
-  FaPlus,
-  FaReply,
-  FaStore,
+  FaAddressBook,
   FaBoxOpen,
   FaCheckCircle,
   FaClock,
+  FaCommentDots,
+  FaEnvelope,
   FaExclamationCircle,
-  FaSearch,
   FaPaperPlane,
+  FaPhoneAlt,
+  FaPlus,
+  FaReply,
+  FaSearch,
+  FaStore,
   FaTrash,
   FaUserShield,
-  FaFilter,
-  FaAddressBook,
-  FaPhoneAlt,
-  FaWhatsapp,
-  FaEnvelope,
+  FaWhatsapp
 } from "react-icons/fa";
+import { useHistory } from "react-router-dom";
+import { useRecoilState, useRecoilValue } from "recoil";
+import { Button, Input, Loader, Modal, SelectPicker } from "rsuite";
+import Swal from "sweetalert2";
 import { APi } from "../../Api";
-import { reclamationsState } from "../../Atoms/reclamations.atom";
-import { globalContactsState } from "../../Atoms/globalContacts.atom";
-import { MyStore } from "../../Atoms/store.atom";
-import { StoresList } from "../../Atoms/stores.atom";
 import {
   activeRoleState,
   currentDepotIdState,
   currentUserState,
   normalizeRole,
 } from "../../Atoms/auth.atom";
+import { globalContactsState } from "../../Atoms/globalContacts.atom";
+import { reclamationsState } from "../../Atoms/reclamations.atom";
+import { MyStore } from "../../Atoms/store.atom";
+import { StoresList } from "../../Atoms/stores.atom";
 import useB2B from "../../hooks/useB2B";
 
 const RECLAMATION_CATEGORIES = [
@@ -876,7 +875,7 @@ export default function Reclamations() {
         }}
       >
         <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "center", flex: 1 }}>
-          <div style={{ position: "relative", minWidth: "250px", flex: 1 }}>
+          <div style={{ position: "relative", minWidth: "200px", flex: "1 1 220px" }}>
             <FaSearch
               style={{
                 position: "absolute",
@@ -905,7 +904,7 @@ export default function Reclamations() {
               value={storeFilter}
               onChange={(val) => setStoreFilter(val || 0)}
               cleanable={false}
-              style={{ width: "220px" }}
+              style={{ width: "220px", maxWidth: "100%", flex: "1 1 180px" }}
             />
           )}
 
@@ -921,7 +920,7 @@ export default function Reclamations() {
             onChange={(val) => setStatusFilter(val || 0)}
             cleanable={false}
             searchable={false}
-            style={{ width: "200px" }}
+            style={{ width: "200px", maxWidth: "100%", flex: "1 1 160px" }}
           />
         </div>
       </div>
@@ -953,26 +952,34 @@ export default function Reclamations() {
             </p>
           </div>
         ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+          <div id="custom-table-container" style={{ border: "none", borderRadius: 0, boxShadow: "none" }}>
+            <table
+              className="tawsil-data-table"
+              style={{
+                width: "max-content",
+                minWidth: "100%",
+                borderCollapse: "collapse",
+                textAlign: "left",
+              }}
+            >
               <thead>
                 <tr style={{ background: "#f8fafc", borderBottom: "2px solid #e2e8f0" }}>
-                  <th style={{ padding: "12px 16px", fontSize: "0.78rem", fontWeight: 800, color: "#475569" }}>
+                  <th style={{ padding: "12px 16px", fontSize: "0.78rem", fontWeight: 800, color: "#475569", whiteSpace: "nowrap", minWidth: "175px" }}>
                     DATE & BOUTIQUE
                   </th>
-                  <th style={{ padding: "12px 16px", fontSize: "0.78rem", fontWeight: 800, color: "#475569" }}>
+                  <th style={{ padding: "12px 16px", fontSize: "0.78rem", fontWeight: 800, color: "#475569", whiteSpace: "nowrap", minWidth: "165px" }}>
                     CATÉGORIE & COLIS LIÉ
                   </th>
-                  <th style={{ padding: "12px 16px", fontSize: "0.78rem", fontWeight: 800, color: "#475569" }}>
+                  <th style={{ padding: "12px 16px", fontSize: "0.78rem", fontWeight: 800, color: "#475569", whiteSpace: "nowrap", minWidth: "240px" }}>
                     SUJET & MESSAGE
                   </th>
-                  <th style={{ padding: "12px 16px", fontSize: "0.78rem", fontWeight: 800, color: "#475569" }}>
+                  <th style={{ padding: "12px 16px", fontSize: "0.78rem", fontWeight: 800, color: "#475569", whiteSpace: "nowrap", minWidth: "220px" }}>
                     RÉPONSE ADMIN
                   </th>
-                  <th style={{ padding: "12px 16px", fontSize: "0.78rem", fontWeight: 800, color: "#475569" }}>
+                  <th style={{ padding: "12px 16px", fontSize: "0.78rem", fontWeight: 800, color: "#475569", whiteSpace: "nowrap", minWidth: "155px" }}>
                     STATUT
                   </th>
-                  <th style={{ padding: "12px 16px", fontSize: "0.78rem", fontWeight: 800, color: "#475569", textAlign: "right" }}>
+                  <th style={{ padding: "12px 16px", fontSize: "0.78rem", fontWeight: 800, color: "#475569", textAlign: "right", whiteSpace: "nowrap", minWidth: "150px" }}>
                     ACTIONS
                   </th>
                 </tr>
@@ -1206,7 +1213,7 @@ export default function Reclamations() {
               </div>
             )}
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+            <div className="responsive-grid-2">
               <div>
                 <label style={{ fontWeight: 700, fontSize: "0.82rem", color: "#334155", marginBottom: "4px", display: "block" }}>
                   Catégorie de Réclamation * :

@@ -148,15 +148,50 @@ export default function StoreDailyRecap() {
 
     APi.createAPIEndpoint(`${APi.ENDPOINTS.Store}/recapByDay`, {
       storeId: selectedStoreId,
+      dateFrom: fromStr,
+      dateTo: toStr,
       date_from: fromStr,
       date_to: toStr,
     })
       .customGet()
       .then((res) => {
         setLoading(false);
-        const data = Array.isArray(res.data) ? res.data : res.data?.data || [];
-        if (data.length > 0) {
-          setRecapDays(data);
+        const rawData = Array.isArray(res.data) ? res.data : res.data?.data || [];
+        if (rawData.length > 0) {
+          const normalized = rawData.map((item) => {
+            const total = Number(item.totalAmount ?? item.TotalAmount ?? 0);
+            const paid =
+              item.totalPaid !== undefined || item.TotalPaid !== undefined
+                ? Number(item.totalPaid ?? item.TotalPaid ?? 0)
+                : total;
+            const due =
+              item.totalDue !== undefined || item.TotalDue !== undefined
+                ? Number(item.totalDue ?? item.TotalDue ?? 0)
+                : Math.max(0, total - paid);
+            const count = Number(
+              item.deliveriesCount ??
+                item.DeliveriesCount ??
+                item.count ??
+                item.Count ??
+                item.totalDeliveries ??
+                item.TotalDeliveries ??
+                0
+            );
+            return {
+              ...item,
+              day: item.day || item.Day || item.date || item.Date,
+              Day: item.Day || item.day || item.Date || item.date,
+              totalAmount: total,
+              TotalAmount: total,
+              totalPaid: paid,
+              TotalPaid: paid,
+              totalDue: due,
+              TotalDue: due,
+              deliveriesCount: count,
+              DeliveriesCount: count,
+            };
+          });
+          setRecapDays(normalized);
         } else {
           // If empty, generate fallback days in the range
           computeFallbackRecap(fromStr, toStr, selectedStoreId);
@@ -190,12 +225,22 @@ export default function StoreDailyRecap() {
         for (let m = moment(to); m.isSameOrAfter(from, "day"); m.subtract(1, "days")) {
           const currentDayStr = m.format("YYYY-MM-DD");
           const dayDeliveries = deliveries.filter((d) => {
-            const created = d.createdDate || d.beginProcessDate || d.CreatedDate;
-            return created && moment(created).format("YYYY-MM-DD") === currentDayStr;
+            const refDate =
+              d.deliveryDate ||
+              d.DeliveryDate ||
+              d.deliveredDate ||
+              d.DeliveredDate ||
+              d.createdDate ||
+              d.beginProcessDate ||
+              d.CreatedDate;
+            return refDate && moment(refDate).format("YYYY-MM-DD") === currentDayStr;
           });
 
           let totalAmount = 0;
           let totalPaid = 0;
+          let deliveryFees = 0;
+          let returnFees = 0;
+          let refundAmount = 0;
 
           dayDeliveries.forEach((del) => {
             const items = del.coliItems || del.ColiItems || [];
@@ -209,10 +254,24 @@ export default function StoreDailyRecap() {
               delAmount = Number(del.totalPrice) || Number(del.cost) || 0;
             }
             totalAmount += delAmount;
-            if (del.isPaid || del.status === 2) {
+            const resCode = Number(del.result ?? del.Result ?? 0);
+            const delivFeeVal = Number(
+              del.tarif?.tarifDelivery ?? del.tarifDelivery ?? del.cost ?? 7
+            );
+            const returnFeeVal = Number(
+              del.tarif?.commissionReturn ?? del.commissionReturn ?? del.returnFee ?? 3
+            );
+            if (del.isPaid || del.status === 5 || resCode === 1) {
               totalPaid += delAmount;
+              deliveryFees += delivFeeVal;
+            } else if (resCode === 5 || resCode === 6) {
+              returnFees += returnFeeVal;
+            } else if (resCode === 7 || del.isRefunded || Number(del.refundAmount) > 0) {
+              refundAmount += Number(del.refundAmount ?? del.RefundAmount) || 0;
             }
           });
+
+          const netStoreAmount = Math.max(0, totalPaid - deliveryFees - returnFees - refundAmount);
 
           days.push({
             day: m.toDate(),
@@ -221,6 +280,14 @@ export default function StoreDailyRecap() {
             TotalAmount: totalAmount,
             totalPaid,
             TotalPaid: totalPaid,
+            deliveryFees,
+            DeliveryFees: deliveryFees,
+            returnFees,
+            ReturnFees: returnFees,
+            refundAmount,
+            RefundAmount: refundAmount,
+            netStoreAmount,
+            NetStoreAmount: netStoreAmount,
             totalDue: totalAmount - totalPaid,
             TotalDue: totalAmount - totalPaid,
             deliveriesCount: dayDeliveries.length,
@@ -262,6 +329,10 @@ export default function StoreDailyRecap() {
 
     APi.createAPIEndpoint(`${APi.ENDPOINTS.Store}/deliveriesByDate`, {
       storeId: selectedStoreId,
+      date: dayStr,
+      day: dayStr,
+      dateFrom: dayStr,
+      dateTo: dayStr,
       date_from: dayStr,
       date_to: dayStr,
     })
@@ -279,8 +350,15 @@ export default function StoreDailyRecap() {
             setLoadingDayDetails(false);
             const all = res.data?.data || res.data || [];
             const filtered = all.filter((d) => {
-              const created = d.createdDate || d.beginProcessDate || d.CreatedDate;
-              return created && moment(created).format("YYYY-MM-DD") === dayStr;
+              const refDate =
+                d.deliveryDate ||
+                d.DeliveryDate ||
+                d.deliveredDate ||
+                d.DeliveredDate ||
+                d.createdDate ||
+                d.beginProcessDate ||
+                d.CreatedDate;
+              return refDate && moment(refDate).format("YYYY-MM-DD") === dayStr;
             });
             setDayDeliveries(filtered);
           })
@@ -446,10 +524,10 @@ export default function StoreDailyRecap() {
           boxShadow: "0 1px 3px rgba(0,0,0,0.02)",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap", flex: "1 1 280px" }}>
           {/* Admin store selector */}
           {isAdmin && (
-            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", flex: "1 1 220px" }}>
               <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "#475569" }}>
                 Boutique :
               </span>
@@ -462,7 +540,7 @@ export default function StoreDailyRecap() {
                 )}
                 searchable={true}
                 cleanable={false}
-                style={{ width: "260px" }}
+                style={{ width: "260px", maxWidth: "100%", flex: 1 }}
                 value={selectedStoreId}
                 onSelect={(val) => setSelectedStoreId(val ?? 0)}
               />
@@ -470,7 +548,7 @@ export default function StoreDailyRecap() {
           )}
 
           {/* Date Range Picker */}
-          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", flex: "1 1 220px" }}>
             <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "#475569", display: "flex", alignItems: "center", gap: "4px" }}>
               <FaCalendarAlt style={{ color: "#2563eb" }} /> Période :
             </span>
@@ -480,7 +558,7 @@ export default function StoreDailyRecap() {
                 if (val && val[0] && val[1]) setDateRange(val);
               }}
               format="dd/MM/yyyy"
-              style={{ width: "260px" }}
+              style={{ width: "260px", maxWidth: "100%", flex: 1 }}
               cleanable={false}
             />
           </div>
@@ -740,7 +818,7 @@ export default function StoreDailyRecap() {
             </span>
           </div>
 
-          <div style={{ position: "relative", minWidth: "240px" }}>
+          <div style={{ position: "relative", minWidth: "200px", flex: "1 1 200px", maxWidth: "320px" }}>
             <FaSearch
               style={{
                 position: "absolute",
@@ -765,32 +843,43 @@ export default function StoreDailyRecap() {
             <Loader size="md" content="Calcul du récapitulatif journalier..." />
           </div>
         ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+          <div id="custom-table-container" style={{ border: "none", borderRadius: 0, boxShadow: "none" }}>
+            <table
+              className="tawsil-data-table"
+              style={{
+                width: "max-content",
+                minWidth: "100%",
+                borderCollapse: "collapse",
+                textAlign: "left",
+              }}
+            >
               <thead>
                 <tr style={{ background: "#f8fafc", borderBottom: "2px solid #e2e8f0" }}>
-                  <th style={{ padding: "12px 18px", fontSize: "0.8rem", fontWeight: 800, color: "#475569" }}>
+                  <th style={{ padding: "12px 16px", fontSize: "0.76rem", fontWeight: 800, color: "#475569", whiteSpace: "nowrap", minWidth: "195px" }}>
                     JOUR / DATE
                   </th>
-                  <th style={{ padding: "12px 18px", fontSize: "0.8rem", fontWeight: 800, color: "#475569" }}>
+                  <th style={{ padding: "12px 16px", fontSize: "0.76rem", fontWeight: 800, color: "#475569", whiteSpace: "nowrap", minWidth: "115px" }}>
                     NOMBRE COLIS
                   </th>
-                  <th style={{ padding: "12px 18px", fontSize: "0.8rem", fontWeight: 800, color: "#475569" }}>
+                  <th style={{ padding: "12px 16px", fontSize: "0.76rem", fontWeight: 800, color: "#475569", whiteSpace: "nowrap", minWidth: "130px" }}>
                     MONTANT TOTAL
                   </th>
-                  <th style={{ padding: "12px 18px", fontSize: "0.8rem", fontWeight: 800, color: "#475569" }}>
+                  <th style={{ padding: "12px 16px", fontSize: "0.76rem", fontWeight: 800, color: "#475569", whiteSpace: "nowrap", minWidth: "135px" }}>
                     ENCAISSÉ (PAYÉ)
                   </th>
-                  <th style={{ padding: "12px 18px", fontSize: "0.8rem", fontWeight: 800, color: "#475569" }}>
+                  <th style={{ padding: "12px 16px", fontSize: "0.76rem", fontWeight: 800, color: "#475569", whiteSpace: "nowrap", minWidth: "190px" }}>
+                    FRAIS & RETOURS / REMB.
+                  </th>
+                  <th style={{ padding: "12px 16px", fontSize: "0.76rem", fontWeight: 800, color: "#475569", whiteSpace: "nowrap", minWidth: "130px" }}>
                     RESTANT DÛ
                   </th>
-                  <th style={{ padding: "12px 18px", fontSize: "0.8rem", fontWeight: 800, color: "#475569" }}>
+                  <th style={{ padding: "12px 16px", fontSize: "0.76rem", fontWeight: 800, color: "#475569", whiteSpace: "nowrap", minWidth: "145px" }}>
                     TAUX RECOUVREMENT
                   </th>
-                  <th style={{ padding: "12px 18px", fontSize: "0.8rem", fontWeight: 800, color: "#475569" }}>
+                  <th style={{ padding: "12px 16px", fontSize: "0.76rem", fontWeight: 800, color: "#475569", whiteSpace: "nowrap", minWidth: "165px" }}>
                     ÉTAT RETRAIT DÉPÔT
                   </th>
-                  <th style={{ padding: "12px 18px", fontSize: "0.8rem", fontWeight: 800, color: "#475569", textAlign: "right" }}>
+                  <th style={{ padding: "12px 16px", fontSize: "0.76rem", fontWeight: 800, color: "#475569", textAlign: "right", whiteSpace: "nowrap", minWidth: "210px" }}>
                     ACTIONS
                   </th>
                 </tr>
@@ -823,9 +912,9 @@ export default function StoreDailyRecap() {
                       }
                     >
                       {/* Date */}
-                      <td style={{ padding: "14px 18px" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                          <span style={{ fontWeight: 800, color: "#0f172a", textTransform: "capitalize", fontSize: "0.88rem" }}>
+                      <td style={{ padding: "12px 16px", whiteSpace: "nowrap", verticalAlign: "middle" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px", whiteSpace: "nowrap" }}>
+                          <span style={{ fontWeight: 800, color: "#0f172a", textTransform: "capitalize", fontSize: "0.88rem", whiteSpace: "nowrap" }}>
                             {formattedDay}
                           </span>
                           {isToday && (
@@ -834,22 +923,24 @@ export default function StoreDailyRecap() {
                                 background: "#2563eb",
                                 color: "#fff",
                                 fontSize: "0.68rem",
-                                padding: "2px 6px",
+                                padding: "2px 7px",
                                 borderRadius: "10px",
                                 fontWeight: 700,
+                                whiteSpace: "nowrap",
+                                flexShrink: 0,
                               }}
                             >
                               Aujourd'hui
                             </span>
                           )}
                         </div>
-                        <span style={{ fontSize: "0.75rem", color: "#64748b" }}>
+                        <span style={{ fontSize: "0.74rem", color: "#64748b", display: "block", marginTop: "2px" }}>
                           {moment(dayDate).format("DD/MM/YYYY")}
                         </span>
                       </td>
 
                       {/* Deliveries Count */}
-                      <td style={{ padding: "14px 18px" }}>
+                      <td style={{ padding: "12px 16px", whiteSpace: "nowrap", verticalAlign: "middle" }}>
                         <span
                           style={{
                             background: count > 0 ? "#f1f5f9" : "#fafafa",
@@ -861,22 +952,23 @@ export default function StoreDailyRecap() {
                             display: "inline-flex",
                             alignItems: "center",
                             gap: "6px",
+                            whiteSpace: "nowrap",
                           }}
                         >
-                          <FaBoxOpen size={12} style={{ color: count > 0 ? "#2563eb" : "#cbd5e1" }} />
-                          {count} {count > 1 ? "colis" : "colis"}
+                          <FaBoxOpen size={12} style={{ color: count > 0 ? "#2563eb" : "#cbd5e1", flexShrink: 0 }} />
+                          {count} colis
                         </span>
                       </td>
 
                       {/* Total Amount */}
-                      <td style={{ padding: "14px 18px" }}>
-                        <span style={{ fontWeight: 800, color: "#0f172a", fontSize: "0.92rem", fontFamily: "monospace" }}>
+                      <td style={{ padding: "12px 16px", whiteSpace: "nowrap", verticalAlign: "middle" }}>
+                        <span style={{ fontWeight: 800, color: "#0f172a", fontSize: "0.9rem", fontFamily: "monospace", whiteSpace: "nowrap" }}>
                           {total.toFixed(3)} TND
                         </span>
                       </td>
 
                       {/* Total Paid */}
-                      <td style={{ padding: "14px 18px" }}>
+                      <td style={{ padding: "12px 16px", whiteSpace: "nowrap", verticalAlign: "middle" }}>
                         <span
                           style={{
                             fontWeight: 800,
@@ -888,14 +980,35 @@ export default function StoreDailyRecap() {
                             fontSize: "0.88rem",
                             fontFamily: "monospace",
                             display: "inline-block",
+                            whiteSpace: "nowrap",
                           }}
                         >
                           {paid.toFixed(3)} TND
                         </span>
                       </td>
 
+                      {/* Fees, Return Fees & Refunds */}
+                      <td style={{ padding: "12px 16px", whiteSpace: "nowrap", verticalAlign: "middle" }}>
+                        {(() => {
+                          const delivFee = Number(item.deliveryFees ?? item.DeliveryFees ?? item.totalFees ?? 0);
+                          const retFee = Number(item.returnFees ?? item.ReturnFees ?? 0);
+                          const refAmt = Number(item.refundAmount ?? item.RefundAmount ?? item.totalRefunds ?? 0);
+                          const totalDeductions = delivFee + retFee + refAmt;
+                          return (
+                            <div style={{ fontSize: "0.78rem", color: "#475569", fontFamily: "monospace", whiteSpace: "nowrap" }}>
+                              <div style={{ fontWeight: 700, color: "#334155", whiteSpace: "nowrap" }}>
+                                -{totalDeductions.toFixed(3)} TND
+                              </div>
+                              <div style={{ fontSize: "0.68rem", color: "#64748b", whiteSpace: "nowrap" }}>
+                                Livr: {delivFee.toFixed(1)} | Ret: {retFee.toFixed(1)} | Remb: {refAmt.toFixed(1)}
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </td>
+
                       {/* Total Due */}
-                      <td style={{ padding: "14px 18px" }}>
+                      <td style={{ padding: "12px 16px", whiteSpace: "nowrap", verticalAlign: "middle" }}>
                         <span
                           style={{
                             fontWeight: 800,
@@ -907,6 +1020,7 @@ export default function StoreDailyRecap() {
                             fontSize: "0.88rem",
                             fontFamily: "monospace",
                             display: "inline-block",
+                            whiteSpace: "nowrap",
                           }}
                         >
                           {due.toFixed(3)} TND
@@ -914,16 +1028,16 @@ export default function StoreDailyRecap() {
                       </td>
 
                       {/* Recovery Rate */}
-                      <td style={{ padding: "14px 18px" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <td style={{ padding: "12px 16px", whiteSpace: "nowrap", verticalAlign: "middle" }}>
+                        <div style={{ display: "inline-flex", alignItems: "center", gap: "8px", whiteSpace: "nowrap" }}>
                           <div
                             style={{
-                              flex: 1,
+                              width: "68px",
+                              flexShrink: 0,
                               height: "6px",
                               background: "#e2e8f0",
                               borderRadius: "4px",
                               overflow: "hidden",
-                              maxWidth: "80px",
                             }}
                           >
                             <div
@@ -934,14 +1048,14 @@ export default function StoreDailyRecap() {
                               }}
                             />
                           </div>
-                          <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569" }}>
+                          <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", whiteSpace: "nowrap" }}>
                             {rate}%
                           </span>
                         </div>
                       </td>
 
                       {/* State: Reçu du Dépôt vs En attente */}
-                      <td style={{ padding: "14px 18px" }}>
+                      <td style={{ padding: "12px 16px", whiteSpace: "nowrap", verticalAlign: "middle" }}>
                         {received ? (
                           <span
                             style={{
@@ -955,9 +1069,10 @@ export default function StoreDailyRecap() {
                               display: "inline-flex",
                               alignItems: "center",
                               gap: "5px",
+                              whiteSpace: "nowrap",
                             }}
                           >
-                            <FaCheckCircle size={11} /> Reçu du Dépôt
+                            <FaCheckCircle size={11} style={{ flexShrink: 0 }} /> Reçu du Dépôt
                           </span>
                         ) : (
                           <span
@@ -972,16 +1087,17 @@ export default function StoreDailyRecap() {
                               display: "inline-flex",
                               alignItems: "center",
                               gap: "5px",
+                              whiteSpace: "nowrap",
                             }}
                           >
-                            <FaClock size={11} /> En attente au Dépôt
+                            <FaClock size={11} style={{ flexShrink: 0 }} /> En attente au Dépôt
                           </span>
                         )}
                       </td>
 
                       {/* Action */}
-                      <td style={{ padding: "14px 18px", textAlign: "right" }}>
-                        <div style={{ display: "inline-flex", alignItems: "center", gap: "8px", justifyContent: "flex-end" }}>
+                      <td style={{ padding: "12px 16px", textAlign: "right", whiteSpace: "nowrap", verticalAlign: "middle" }}>
+                        <div style={{ display: "inline-flex", alignItems: "center", gap: "8px", justifyContent: "flex-end", flexWrap: "nowrap" }}>
                           {!received && (
                             <button
                               onClick={(e) => handleMarkDayReceived(item, e)}
@@ -997,11 +1113,13 @@ export default function StoreDailyRecap() {
                                 display: "inline-flex",
                                 alignItems: "center",
                                 gap: "5px",
+                                whiteSpace: "nowrap",
+                                flexShrink: 0,
                                 boxShadow: "0 2px 6px rgba(5, 150, 105, 0.25)",
                               }}
                               title="Confirmer que la boutique a récupéré le montant de ce jour auprès du dépôt"
                             >
-                              <FaCheckCircle size={12} /> Reçu
+                              <FaCheckCircle size={12} style={{ flexShrink: 0 }} /> Reçu
                             </button>
                           )}
                           <button
@@ -1021,9 +1139,11 @@ export default function StoreDailyRecap() {
                               display: "inline-flex",
                               alignItems: "center",
                               gap: "6px",
+                              whiteSpace: "nowrap",
+                              flexShrink: 0,
                             }}
                           >
-                            <FaEye size={12} /> Détails des Colis
+                            <FaEye size={12} style={{ flexShrink: 0 }} /> Détails des Colis
                           </button>
                         </div>
                       </td>

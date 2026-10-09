@@ -1,77 +1,75 @@
-import React, { useEffect, useState } from "react";
-import { Link, Route, Switch, useLocation, useHistory } from "react-router-dom";
-import { useRecoilState, useRecoilValue, useSetRecoilState } from "recoil";
-import { Container, Content, Header, Sidebar, Dropdown } from "rsuite";
+import { useEffect, useState } from "react";
+import { Link, Route, Switch, useHistory, useLocation } from "react-router-dom";
+import { useRecoilState, useSetRecoilState } from "recoil";
+import { Container, Content, Dropdown, Header, Sidebar } from "rsuite";
 
 // Icons
+import { BiTrip } from "react-icons/bi";
 import {
+  FaAddressBook,
+  FaBars,
   FaBox,
-  FaTruck,
-  FaUsers,
-  FaStore,
+  FaCalendarDay,
   FaChartPie,
+  FaCommentDots,
   FaMoneyBillWave,
+  FaMoneyCheckAlt,
   FaQrcode,
   FaRoute,
-  FaUserShield,
   FaSignOutAlt,
-  FaBars,
-  FaTimes,
-  FaExchangeAlt,
-  FaCheckCircle,
-  FaWarehouse,
+  FaStore,
   FaTags,
+  FaTimes,
+  FaTruck,
+  FaUsers,
+  FaUserShield,
   FaWallet,
-  FaMoneyCheckAlt,
-  FaCalendarDay,
-  FaCommentDots,
-  FaAddressBook,
+  FaWarehouse
 } from "react-icons/fa";
-import { BiTrip } from "react-icons/bi";
-import { MdOutlineDeliveryDining } from "react-icons/md";
 
 // Atoms & Services
 import { APi } from "./Api";
 import "./App.scss";
 import {
-  isLogged,
-  currentUserState,
   activeRoleState,
   adminModuleState,
-  currentDriverIdState,
   currentDepotIdState,
+  currentDriverIdState,
+  currentUserState,
+  isLogged,
   normalizeRole,
 } from "./Atoms/auth.atom";
+import { DepotAgentsList } from "./Atoms/depotAgents.atom";
 import { DriversList } from "./Atoms/drivers.atom";
-import { StoresList } from "./Atoms/stores.atom";
-import { MyStore } from "./Atoms/store.atom";
-import { preparationPlacesState } from "./Atoms/preparationPlaces.atom";
-import { tarifsState } from "./Atoms/tarifs.atom";
-import { reclamationsState } from "./Atoms/reclamations.atom";
 import { globalContactsState } from "./Atoms/globalContacts.atom";
+import { preparationPlacesState } from "./Atoms/preparationPlaces.atom";
+import { reclamationsState } from "./Atoms/reclamations.atom";
+import { MyStore } from "./Atoms/store.atom";
+import { StoresList } from "./Atoms/stores.atom";
+import { tarifsState } from "./Atoms/tarifs.atom";
 import useB2B from "./hooks/useB2B";
 
 // Screens
 import Login from "./Screens/Auth/login";
+import Customers from "./Screens/Customers";
 import Home from "./Screens/Dashboard";
 import Deliveries from "./Screens/Deliveries";
-import NotPaidDeliveries from "./Screens/NotPaid";
-import Drivers from "./Screens/Drivers";
+import Delivred from "./Screens/Delivred";
 import DepotAgents from "./Screens/DepotAgents";
 import DepotAgentWorkspace from "./Screens/DepotAgentWorkspace";
-import Customers from "./Screens/Customers";
-import Stores from "./Screens/stores";
-import OurStore from "./Screens/OurStore";
-import Users from "./Screens/Users";
-import QRScanner from "./Screens/qrcode";
-import Delivred from "./Screens/Delivred";
-import MyMap from "./Screens/Map";
-import PreparationPlaces from "./Screens/PreparationPlaces";
-import Tarifs from "./Screens/Tarifs";
 import DriverPayments from "./Screens/DriverPayments";
-import StoreDailyRecap from "./Screens/StoreDailyRecap";
-import Reclamations from "./Screens/Reclamations";
+import Drivers from "./Screens/Drivers";
 import GlobalContacts from "./Screens/GlobalContacts";
+import MyMap from "./Screens/Map";
+import NotPaidDeliveries from "./Screens/NotPaid";
+import OurStore from "./Screens/OurStore";
+import PreparationPlaces from "./Screens/PreparationPlaces";
+import QRScanner from "./Screens/qrcode";
+import Reclamations from "./Screens/Reclamations";
+import StoreDailyRecap from "./Screens/StoreDailyRecap";
+import Stores from "./Screens/stores";
+import Tarifs from "./Screens/Tarifs";
+import Users from "./Screens/Users";
 
 const App = () => {
   const [expand, setExpand] = useState(false);
@@ -86,6 +84,7 @@ const App = () => {
   const [depotsList, setDepotsList] = useRecoilState(preparationPlacesState);
   const [reclamationsList, setReclamationsList] = useRecoilState(reclamationsState);
   const setGlobalContactsList = useSetRecoilState(globalContactsState);
+  const setDepotAgentsList = useSetRecoilState(DepotAgentsList);
   const setTarifsList = useSetRecoilState(tarifsState);
   const setStore = useSetRecoilState(MyStore);
   useB2B();
@@ -100,7 +99,7 @@ const App = () => {
       }
     : {};
 
-  // Load initial stores, drivers, depots, and tariffs from API
+  // Load initial stores, drivers, depots, depot agents, global contacts, and tariffs from API
   useEffect(() => {
     APi.createAPIEndpoint(APi.ENDPOINTS.Driver, {
       page: 1,
@@ -109,16 +108,69 @@ const App = () => {
     })
       .fetchAll()
       .then((res) => {
-        if (res.data?.data) setDriversList(res.data.data);
-        else if (Array.isArray(res.data)) setDriversList(res.data);
+        if (Array.isArray(res.data)) setDriversList(res.data);
+        else if (Array.isArray(res.data?.data)) setDriversList(res.data.data);
+      })
+      .catch(() => {
+        APi.createAPIEndpoint(APi.ENDPOINTS.Driver, { page: 1, take: 1000 })
+          .fetchAll()
+          .then((res) => {
+            if (res.data?.data) setDriversList(res.data.data);
+            else if (Array.isArray(res.data)) setDriversList(res.data);
+          })
+          .catch(() => {});
+      });
+
+    APi.createAPIEndpoint(APi.ENDPOINTS.DepotAgent + "/getAll", {})
+      .customGet()
+      .then((res) => {
+        const list = Array.isArray(res.data)
+          ? res.data
+          : Array.isArray(res.data?.data)
+          ? res.data.data
+          : null;
+        if (list) setDepotAgentsList(list);
+      })
+      .catch(() => {});
+
+    APi.createAPIEndpoint(APi.ENDPOINTS.GlobalContact + "/getAll", {})
+      .customGet()
+      .then((res) => {
+        const list = Array.isArray(res.data)
+          ? res.data
+          : Array.isArray(res.data?.data)
+          ? res.data.data
+          : null;
+        if (list) setGlobalContactsList(list);
       })
       .catch(() => {});
 
     APi.createAPIEndpoint(APi.ENDPOINTS.Store + "/getAll", depotFilter)
       .fetchAll()
-      .then((res) => {
-        if (Array.isArray(res.data)) setStoresList(res.data);
-        else if (Array.isArray(res.data?.data)) setStoresList(res.data.data);
+      .then(async (res) => {
+        const list = Array.isArray(res.data)
+          ? res.data
+          : Array.isArray(res.data?.data)
+          ? res.data.data
+          : [];
+        if (list.length > 0) {
+          setStoresList(list);
+          try {
+            const recResults = await Promise.allSettled(
+              list.map((st) =>
+                APi.createAPIEndpoint(`${APi.ENDPOINTS.Reclamation}/store/${st.id}`).customGet()
+              )
+            );
+            const merged = [];
+            recResults.forEach((r) => {
+              if (r.status === "fulfilled") {
+                const arr = r.value?.data?.data || r.value?.data;
+                if (Array.isArray(arr)) merged.push(...arr);
+              }
+            });
+            if (merged.length > 0) setReclamationsList(merged);
+          } catch (e) {}
+        }
       })
       .catch(() => {});
 
@@ -130,7 +182,7 @@ const App = () => {
       })
       .catch(() => {});
 
-    APi.createAPIEndpoint(APi.ENDPOINTS.Tarif, { page: 1, take: 1000 })
+    APi.createAPIEndpoint(APi.ENDPOINTS.Tarif + "/getAll", {})
       .fetchAll()
       .then((res) => {
         if (Array.isArray(res.data)) setTarifsList(res.data);
@@ -279,6 +331,14 @@ const App = () => {
   return (
     <div className="tawsil-app">
       <Container style={{ minHeight: "100vh" }}>
+        {/* Mobile Sidebar Backdrop */}
+        {expand && (
+          <div
+            className="sidebar-mobile-backdrop"
+            onClick={() => setExpand(false)}
+          />
+        )}
+
         {/* Modern Sidebar */}
         <Sidebar className={`tawsil-sidebar ${expand ? "mobile-show" : ""}`}>
           <div className="sidebar-brand-zone">
@@ -742,6 +802,7 @@ const App = () => {
               {/* Authenticated Role Status Badge / Admin Module Toggle */}
               {isAdmin && (
                 <div
+                  className="admin-header-module-switcher"
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
@@ -863,6 +924,7 @@ const App = () => {
               {/* Driver Solde Pill in Top Header */}
               {isDriver && (
                 <div
+                  className="driver-solde-header-pill"
                   style={{
                     background: "linear-gradient(135deg, #059669 0%, #047857 100%)",
                     color: "#ffffff",

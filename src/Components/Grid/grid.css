@@ -1,6 +1,7 @@
 #custom-table-container {
   display: block;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   overscroll-behavior-x: contain;
   padding: 0;
   width: 100%;
@@ -69,6 +70,13 @@
   color: #1e293b;
   border-bottom: 1px solid #f1f5f9;
   vertical-align: middle;
+  white-space: nowrap;
+}
+
+.body-table-row td span,
+.body-table-row td a,
+.body-table-row td button {
+  white-space: nowrap;
 }
 
 .hovred-tr:hover {

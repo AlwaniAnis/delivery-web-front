@@ -107,11 +107,15 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
     const defaultDepotId = Number(
       store?.preparationPlaceId || store?.depotId || depotsList?.[0]?.id || 1
     );
-    _setmodel((prev) => ({
-      ...prev,
-      qrCodeContent: !prev.id && !prev.qrCodeContent ? Date.now().toString() : prev.qrCodeContent,
-      preparationPlaceId: Number(prev.preparationPlaceId) || defaultDepotId,
-    }));
+    _setmodel((prev) => {
+      const generatedCode = !prev.id && !prev.qrCodeContent && !prev.code ? Date.now().toString() : prev.qrCodeContent || prev.code;
+      return {
+        ...prev,
+        qrCodeContent: generatedCode,
+        code: prev.code || generatedCode,
+        preparationPlaceId: Number(prev.preparationPlaceId) || defaultDepotId,
+      };
+    });
   }, [model.id, store?.preparationPlaceId, store?.depotId]);
 
   // Total price of items
@@ -132,7 +136,7 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))",
           gap: "18px",
           alignItems: "start",
         }}
@@ -235,14 +239,14 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
           {/* Code Colis Input */}
           <div>
             <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#334155", marginBottom: "4px", display: "block" }}>
-              Code Unique du Colis :
+              Code Unique du Colis (code / qrCodeContent) :
             </label>
             <Input
               placeholder="Ex: 169875412..."
               onChange={(qrCodeContent) => {
-                _setmodel((prev) => ({ ...prev, qrCodeContent }));
+                _setmodel((prev) => ({ ...prev, qrCodeContent, code: qrCodeContent }));
               }}
-              value={model.qrCodeContent || ""}
+              value={model.qrCodeContent || model.code || ""}
             />
           </div>
 
@@ -306,17 +310,23 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
               block
               searchable={true}
               placeholder="Choisir le tarif de livraison..."
-              value={model.tarifId || 0}
+              value={model.tarifId || model.tarif?.id || 0}
               onSelect={(val) => {
                 const selected = (tarifsList || []).find((t) => t.id === val);
-                _setmodel((prev) => ({
-                  ...prev,
-                  tarifId: val === 0 ? null : val,
-                  tarifDelivery: selected ? Number(selected.tarifDelivery) : 0,
-                  pickupPrice: selected ? Number(selected.pickupPrice ?? 1.5) : 0,
-                  commissionDriver: selected ? Number(selected.commissionDriver) : 0,
-                  cost: selected ? Number(selected.tarifDelivery) : prev.cost,
-                }));
+                _setmodel((prev) => {
+                  const next = {
+                    ...prev,
+                    tarifId: val === 0 ? null : val,
+                    tarifDelivery: selected ? Number(selected.tarifDelivery) : 0,
+                    pickupPrice: selected ? Number(selected.pickupPrice ?? 1.5) : 0,
+                    commissionDriver: selected ? Number(selected.commissionDriver) : 0,
+                    commissionReturn: selected ? Number(selected.commissionReturn || 0) : 0,
+                    cost: selected ? Number(selected.tarifDelivery) : prev.cost,
+                  };
+                  delete next.tarif;
+                  delete next.Tarif;
+                  return next;
+                });
               }}
             />
 
@@ -345,31 +355,8 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
             })()}
           </div>
 
-          {/* Depot (Mandatory, inherited from Store Territory) & Driver */}
-          <div style={{ display: "grid", gridTemplateColumns: isB2B ? "1fr" : "1fr 1fr", gap: "10px" }}>
-            {!isB2B && (
-              <div>
-                <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#334155", marginBottom: "4px", display: "flex", alignItems: "center", gap: "5px" }}>
-                  <FaTruck style={{ color: "#4f46e5" }} /> Livreur Assigné :
-                </label>
-                <SelectPicker
-                  data={[{ label: "— Non Assigné —", value: 0 }].concat(
-                    drivers.map((c) => ({
-                      label: `${c.firstName || ""} ${c.lastName || ""}`.trim() || c.name || `Livreur #${c.id}`,
-                      value: c.id,
-                    }))
-                  )}
-                  block
-                  searchable={true}
-                  placeholder="Sélectionner..."
-                  value={model.driverId || 0}
-                  onSelect={(driverId) => {
-                    _setmodel((prev) => ({ ...prev, driverId: driverId === 0 ? null : driverId }));
-                  }}
-                />
-              </div>
-            )}
-
+          {/* Depot (Mandatory, inherited from Store Territory) */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "10px" }}>
             <div>
               <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#065f46", marginBottom: "4px", display: "flex", alignItems: "center", gap: "5px" }}>
                 <FaWarehouse style={{ color: "#059669" }} /> Dépôt du Territoire (Obligatoire) * :
@@ -393,7 +380,7 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
                 }}
               />
               <small style={{ fontSize: "0.72rem", color: "#64748b", marginTop: "2px", display: "block" }}>
-                Rattaché automatiquement au dépôt du territoire de la boutique.
+                Workflow : Préparation en boutique (Pending) ➔ Ramassage (Pickup) ➔ Réception au Dépôt ➔ Affectation Livreur.
               </small>
             </div>
           </div>
@@ -505,7 +492,7 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
                 />
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px", marginBottom: "8px" }}>
+              <div className="responsive-grid-3" style={{ marginBottom: "8px" }}>
                 <div>
                   <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", marginBottom: "2px", display: "block" }}>
                     Quantité :
@@ -772,7 +759,7 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
           </div>
 
           {/* Customer Name & Email */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+          <div className="responsive-grid-2">
             <div>
               <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#334155", marginBottom: "4px", display: "block" }}>
                 Nom Complet du Client *
@@ -808,7 +795,7 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
           </div>
 
           {/* Phone numbers */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+          <div className="responsive-grid-2">
             <div>
               <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#334155", marginBottom: "4px", display: "flex", alignItems: "center", gap: "5px" }}>
                 <FaPhoneAlt style={{ color: "#10b981", fontSize: "11px" }} /> Téléphone Principal *
@@ -860,7 +847,7 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
               <FaMapMarkerAlt style={{ color: "#ef4444" }} /> Localisation & Zone Géographique
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+            <div className="responsive-grid-2">
               <div>
                 <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", marginBottom: "3px", display: "block" }}>
                   Gouvernorat *
@@ -921,7 +908,7 @@ function AddEdit({ _setmodel, error, model = new DeliveryModel() }) {
               </div>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+            <div className="responsive-grid-2">
               <div>
                 <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", marginBottom: "3px", display: "block" }}>
                   Cité / Ville :

@@ -4,5 +4,6 @@ export default class TarifModel {
   tarifDelivery = 7.0;
   pickupPrice = 1.5;
   commissionDriver = 2.5;
+  commissionReturn = 0.0;
   remark = "";
 }

@@ -1,28 +1,27 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import {
+  FaEnvelope,
+  FaIdCard,
+  FaMapMarkerAlt,
+  FaPhoneAlt,
+  FaUserPlus,
+  FaWarehouse
+} from "react-icons/fa";
 import { useHistory } from "react-router-dom";
 import { useRecoilState, useRecoilValue, useSetRecoilState } from "recoil";
 import { Button, Input, Modal, SelectPicker } from "rsuite";
 import Pagination from "rsuite/Pagination";
 import Swal from "sweetalert2";
-import {
-  FaPhoneAlt,
-  FaWarehouse,
-  FaIdCard,
-  FaMapMarkerAlt,
-  FaEnvelope,
-  FaUserPlus,
-  FaExternalLinkAlt,
-} from "react-icons/fa";
 import { APi } from "../../Api/";
-import { exportAddAtom } from "../../Atoms/exportAdd.atom";
-import { DepotAgentsList, DEFAULT_DEPOT_AGENTS } from "../../Atoms/depotAgents.atom";
-import { preparationPlacesState } from "../../Atoms/preparationPlaces.atom";
 import { currentDepotIdState } from "../../Atoms/auth.atom";
+import { DepotAgentsList } from "../../Atoms/depotAgents.atom";
+import { exportAddAtom } from "../../Atoms/exportAdd.atom";
+import { preparationPlacesState } from "../../Atoms/preparationPlaces.atom";
 import ExportAdd from "../../Components/Common/ExportAdd";
 import Filter from "../../Components/Common/Filter";
 import Grid from "../../Components/Grid";
-import AddEdit from "./AddEdit.component";
 import ResetPassword from "../Auth/ResetPassword";
+import AddEdit from "./AddEdit.component";
 
 export default function DepotAgents() {
   const history = useHistory();
@@ -101,7 +100,17 @@ export default function DepotAgents() {
         setState((prev) => ({ ...prev, loading: false }));
       })
       .catch(() => {
-        setState((prev) => ({ ...prev, loading: false }));
+        APi.createAPIEndpoint(APi.ENDPOINTS.DepotAgent, filterModel)
+          .fetchAll()
+          .then((res) => {
+            const list = res.data?.data || res.data;
+            if (Array.isArray(list)) {
+              persistAgents(list);
+            }
+          })
+          .finally(() => {
+            setState((prev) => ({ ...prev, loading: false }));
+          });
       });
   };
 

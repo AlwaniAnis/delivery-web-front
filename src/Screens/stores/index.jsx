@@ -3,7 +3,7 @@ import { useRecoilState, useRecoilValue } from "recoil";
 import { Button, Input, Modal } from "rsuite";
 import Pagination from "rsuite/Pagination";
 import Swal from "sweetalert2";
-import { FaStore, FaPhoneAlt, FaEnvelope, FaMapMarkerAlt, FaFileInvoice, FaWarehouse } from "react-icons/fa";
+import { FaStore, FaPhoneAlt, FaEnvelope, FaMapMarkerAlt, FaFileInvoice, FaWarehouse, FaCompass, FaExternalLinkAlt } from "react-icons/fa";
 import { APi } from "../../Api/";
 import { exportAddAtom } from "../../Atoms/exportAdd.atom";
 import { preparationPlacesState } from "../../Atoms/preparationPlaces.atom";
@@ -32,6 +32,8 @@ export default function Stores(props) {
   const [model, setmodel] = useState({
     contacts: [],
     preparationPlaceId: 1,
+    latitude: 36.8065,
+    longitude: 10.1815,
   });
   const [userModel, setuserModel] = useState({
     email: "",
@@ -50,6 +52,8 @@ export default function Stores(props) {
     setmodel({
       contacts: [],
       preparationPlaceId: depotsList?.[0]?.id || 1,
+      latitude: depotsList?.[0]?.latitude || 36.8065,
+      longitude: depotsList?.[0]?.longitude || 10.1815,
     });
     setError("");
   };
@@ -91,15 +95,31 @@ export default function Stores(props) {
     setstate((prev) => {
       return { ...prev, loading: true };
     });
+    const latVal =
+      model.latitude !== undefined && model.latitude !== null && model.latitude !== ""
+        ? Number(model.latitude)
+        : model.Latitude !== undefined && model.Latitude !== null
+        ? Number(model.Latitude)
+        : 36.8065;
+    const lngVal =
+      model.longitude !== undefined && model.longitude !== null && model.longitude !== ""
+        ? Number(model.longitude)
+        : model.Longitude !== undefined && model.Longitude !== null
+        ? Number(model.Longitude)
+        : 10.1815;
+
     let m = {
       ...model,
       preparationPlaceId: placeId,
       depotId: placeId,
+      latitude: latVal,
+      longitude: lngVal,
     };
 
-    m.contacts = m.contacts.map((el) => {
-      delete el.id;
-      return el;
+    m.contacts = (m.contacts || []).map((el) => {
+      const copy = { ...el };
+      delete copy.id;
+      return copy;
     });
     m.isDefault = false;
     if (m.id) {
@@ -162,8 +182,14 @@ export default function Stores(props) {
   };
   const getBYId = (id) => {
     setError("");
-
-    setmodel(data.find((el) => el.id == id));
+    const found = data.find((el) => el.id == id);
+    if (found) {
+      setmodel({
+        ...found,
+        latitude: found.latitude ?? found.Latitude ?? 36.8065,
+        longitude: found.longitude ?? found.Longitude ?? 10.1815,
+      });
+    }
   };
   // LIFE CYCLES
   useEffect(() => fetch(), [isDepotAgent, currentDepotId]);
@@ -186,6 +212,8 @@ export default function Stores(props) {
       <ExportAdd
         size="md"
         noExport
+        title={model?.id ? `Modifier la Boutique : ${model.name_fr || ""}` : "Ajouter une Boutique Partenaire"}
+        ActionOnClose={reset}
         save={save}
         AddComponent={
           <AddEdit error={error} model={model} setmodel={setmodel} />
@@ -456,6 +484,59 @@ const columns = [
             <span>—</span>
           )}
         </div>
+      );
+    },
+  },
+  {
+    value: "latitude",
+    value2: "longitude",
+    name: "Position GPS",
+    render: (lat, lng, _, row) => {
+      const resolvedLat = lat ?? row?.latitude ?? row?.Latitude;
+      const resolvedLng = lng ?? row?.longitude ?? row?.Longitude;
+      const hasCoords =
+        resolvedLat !== undefined &&
+        resolvedLat !== null &&
+        resolvedLat !== "" &&
+        resolvedLng !== undefined &&
+        resolvedLng !== null &&
+        resolvedLng !== "" &&
+        (Number(resolvedLat) !== 0 || Number(resolvedLng) !== 0);
+
+      if (!hasCoords) {
+        return <span style={{ color: "#94a3b8", fontSize: "0.78rem" }}>Non défini</span>;
+      }
+
+      const numLat = Number(resolvedLat).toFixed(4);
+      const numLng = Number(resolvedLng).toFixed(4);
+      const mapUrl = `https://www.google.com/maps?q=${Number(resolvedLat)},${Number(resolvedLng)}`;
+
+      return (
+        <a
+          href={mapUrl}
+          target="_blank"
+          rel="noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "5px",
+            background: "#eef2ff",
+            color: "#4338ca",
+            border: "1px solid #c7d2fe",
+            padding: "3px 8px",
+            borderRadius: "6px",
+            fontSize: "0.75rem",
+            fontFamily: "monospace",
+            fontWeight: 700,
+            textDecoration: "none",
+          }}
+          title="Ouvrir la position GPS sur Google Maps"
+        >
+          <FaCompass size={11} style={{ color: "#4f46e5" }} />
+          <span>{numLat}, {numLng}</span>
+          <FaExternalLinkAlt size={9} />
+        </a>
       );
     },
   },

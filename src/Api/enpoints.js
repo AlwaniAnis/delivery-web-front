@@ -10,6 +10,7 @@ export const ENDPOINTS = {
   Statistics: "Statistics",
   PreparationPlace: "PreparationPlace",
   DepotAgent: "AgentDepot",
+  AgentDepot: "AgentDepot",
   Tarif: "Tarif",
   DriverPayment: "DriverPayment",
   Reclamation: "Reclamation",
