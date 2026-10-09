@@ -2,7 +2,10 @@ import { useEffect, useState } from "react";
 import { Link, Route, Switch, useHistory, useLocation } from "react-router-dom";
 import { useRecoilState, useSetRecoilState } from "recoil";
 import { Container, Content, Dropdown, Header, Sidebar } from "rsuite";
-
+import {
+  startDriverNotifications,
+  stopDriverNotifications,
+} from "./Notifications/signalR";
 // Icons
 import { BiTrip } from "react-icons/bi";
 import {
@@ -59,6 +62,7 @@ import DepotAgents from "./Screens/DepotAgents";
 import DepotAgentWorkspace from "./Screens/DepotAgentWorkspace";
 import DriverPayments from "./Screens/DriverPayments";
 import Drivers from "./Screens/Drivers";
+import GeneralConfigPage from "./Screens/GeneralConfig";
 import GlobalContacts from "./Screens/GlobalContacts";
 import MyMap from "./Screens/Map";
 import NotPaidDeliveries from "./Screens/NotPaid";
@@ -100,6 +104,21 @@ const App = () => {
     : {};
 
   // Load initial stores, drivers, depots, depot agents, global contacts, and tariffs from API
+  useEffect(() => {
+    const auth = JSON.parse(localStorage.getItem("auth") || "{}");
+
+    if (auth.role !== "driver" || !auth.driverId) return;
+
+    const handleNotification = (message) => {
+      console.log("New driver notification:", message);
+    };
+
+    startDriverNotifications(handleNotification).catch(console.error);
+
+    return () => {
+      stopDriverNotifications(handleNotification).catch(console.error);
+    };
+  }, []);
   useEffect(() => {
     APi.createAPIEndpoint(APi.ENDPOINTS.Driver, {
       page: 1,
@@ -705,6 +724,14 @@ const App = () => {
                     <span className="nav-icon"><FaTags /></span>
                     <span className="nav-label">Grille Tarifaire</span>
                   </Link>
+                     <Link
+                    to="/general_config"
+                    className={`nav-link-item ${location.pathname === "/general_config" ? "active" : ""}`}
+                    onClick={() => setExpand(false)}
+                  >
+                    <span className="nav-icon"><FaTags /></span>
+                    <span className="nav-label"> Config General</span>
+                  </Link>
                   <Link
                     to="/reclamations"
                     className={`nav-link-item ${location.pathname === "/reclamations" ? "active" : ""}`}
@@ -1047,6 +1074,7 @@ const App = () => {
               <Route path="/our_store" component={OurStore} />
               <Route path="/users" component={Users} />
               <Route path="/tarifs" component={isAdmin ? Tarifs : Deliveries} />
+              <Route path="/general_config" component={isAdmin ? GeneralConfigPage : Deliveries} />
               <Route path="/driver_payments" component={DriverPayments} />
               <Route path="/store_recap" component={StoreDailyRecap} />
               <Route path="/reclamations" component={Reclamations} />
