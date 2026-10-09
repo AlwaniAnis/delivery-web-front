@@ -44,6 +44,7 @@ export default function NotPaidDeliveries() {
     storeId: 0,
     driverId: 0,
     preparationPlaceId: isDepotAgent ? Number(currentDepotId) || 1 : 0,
+    placeId: isDepotAgent ? Number(currentDepotId) || 1 : 0,
   });
 
   const [drivers] = useRecoilState(DriversList);

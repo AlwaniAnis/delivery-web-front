@@ -20,6 +20,7 @@ export const AuthService = () => {
     login: (data) => AXIOS.post("Auth/login", data),
     loginDriver: (data) => AXIOS.post("Auth/loginDriver", data),
     loginB2B: (data) => AXIOS.post("Auth/loginB2B", data),
+    loginDepotAgent: (data) => AXIOS.post("Auth/LoginAgentDepot", data),
     register_admin: (data) => AXIOS.post("Auth/", data),
     update_profile: (data) =>
       AXIOS.post("Auth/update-profile", data, { headers: getHeaders() }),

@@ -146,13 +146,13 @@ function AddEdit({ _setmodel, error, model, drivers = [], stores = [], depotAgen
               })}
               block
               placeholder="Sélectionner l'agent de dépôt..."
-              value={model.depotAgentId}
+              value={model.AgentDepotId ?? model.depotAgentId}
               onChange={(depotAgentId) => {
                 const matched = (agentsList || []).find((el) => el.id === depotAgentId);
                 const placeId = matched ? Number(matched.preparationPlaceId || matched.depotId || 1) : 1;
                 _setmodel((prev) => ({
                   ...prev,
-                  depotAgentId,
+                  AgentDepotId: depotAgentId,
                   preparationPlaceId: placeId,
                   depotId: placeId,
                   firstName: prev.firstName || matched?.firstName,

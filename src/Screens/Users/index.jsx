@@ -37,6 +37,7 @@ export default function Users() {
   const [model, setModel] = useState({
     role: "driver",
     position: "Driver",
+    AgentDepotId: null,
     userName: "",
     firstName: "",
     lastName: "",
@@ -49,6 +50,7 @@ export default function Users() {
     setModel({
       role: "driver",
       position: "Driver",
+      AgentDepotId: null,
       userName: "",
       firstName: "",
       lastName: "",
@@ -78,10 +80,15 @@ export default function Users() {
       setError("Le nom d'utilisateur est obligatoire.");
       return;
     }
+    const user = {
+      ...model,
+      AgentDepotId: model.AgentDepotId ?? model.depotAgentId,
+    };
+    delete user.depotAgentId;
     setState((prev) => ({ ...prev, loading: true }));
     if (model.id) {
       APi.createAPIEndpoint(APi.ENDPOINTS.Accounts)
-        .update(model.id, model)
+        .update(model.id, user)
         .then(() => {
           fetchUsers();
           setState((prev) => ({ ...prev, open: false, loading: false }));
@@ -100,7 +107,7 @@ export default function Users() {
         });
     } else {
       APi.createAPIEndpoint(APi.ENDPOINTS.Accounts)
-        .create(model)
+        .create(user)
         .then(() => {
           fetchUsers();
           reset();
@@ -169,8 +176,9 @@ export default function Users() {
     }
 
     let depotAgentName = "";
-    if (u.depotAgentId || u.preparationPlaceId) {
-      const a = depotAgents.find((el) => el.id === Number(u.depotAgentId));
+    const agentDepotId = u.AgentDepotId ?? u.depotAgentId;
+    if (agentDepotId || u.preparationPlaceId) {
+      const a = depotAgents.find((el) => el.id === Number(agentDepotId));
       const dp = depots.find((el) => el.id === Number(u.preparationPlaceId || a?.preparationPlaceId));
       depotAgentName = `${a?.firstName || ""} ${a?.lastName || ""} ${dp?.name || ""}`.toLowerCase();
     }
@@ -295,7 +303,7 @@ export default function Users() {
       render: (position, driverId, storeId, roleVal, row) => {
         const r = String(position || roleVal || "").toLowerCase();
         if (r === "depotagent" || r.includes("depot")) {
-          const agent = depotAgents.find((el) => el.id === Number(row?.depotAgentId));
+          const agent = depotAgents.find((el) => el.id === Number(row?.AgentDepotId ?? row?.depotAgentId));
           const placeId = Number(row?.preparationPlaceId || row?.depotId || agent?.preparationPlaceId || 1);
           const dep = depots.find((el) => el.id === placeId);
           return (

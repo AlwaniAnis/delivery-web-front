@@ -83,7 +83,7 @@ export default function DepotAgentWorkspace() {
   const activeAgent =
     depotAgents.find(
       (a) =>
-        Number(a.id) === Number(currentUser?.depotAgentId) ||
+        Number(a.id) === Number(currentUser?.AgentDepotId ?? currentUser?.depotAgentId) ||
         Number(a.preparationPlaceId || a.depotId) === Number(activeDepot.id)
     ) || depotAgents[0];
 
@@ -93,6 +93,8 @@ export default function DepotAgentWorkspace() {
       q: searchQuery,
       page,
       take,
+      preparationPlaceId: Number(currentDepotId) || 1,
+      placeId: Number(currentDepotId) || 1,
     };
     if (statusFilter > 0) params.status = statusFilter;
     if (driverFilter > 0) params.driverId = driverFilter;

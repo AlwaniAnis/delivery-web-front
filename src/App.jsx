@@ -92,10 +92,21 @@ const App = () => {
 
   const location = useLocation();
   const history = useHistory();
+  const isDepotAgent = normalizeRole(activeRole) === "depotAgent";
+  const depotFilter = isDepotAgent
+    ? {
+        preparationPlaceId: Number(currentDepotId) || 1,
+        placeId: Number(currentDepotId) || 1,
+      }
+    : {};
 
   // Load initial stores, drivers, depots, and tariffs from API
   useEffect(() => {
-    APi.createAPIEndpoint(APi.ENDPOINTS.Driver, { page: 1, take: 1000 })
+    APi.createAPIEndpoint(APi.ENDPOINTS.Driver, {
+      page: 1,
+      take: 1000,
+      ...depotFilter,
+    })
       .fetchAll()
       .then((res) => {
         if (res.data?.data) setDriversList(res.data.data);
@@ -103,7 +114,7 @@ const App = () => {
       })
       .catch(() => {});
 
-    APi.createAPIEndpoint(APi.ENDPOINTS.Store + "/getAll", {})
+    APi.createAPIEndpoint(APi.ENDPOINTS.Store + "/getAll", depotFilter)
       .fetchAll()
       .then((res) => {
         if (Array.isArray(res.data)) setStoresList(res.data);
@@ -127,22 +138,25 @@ const App = () => {
       })
       .catch(() => {});
 
-    APi.createAPIEndpoint(APi.ENDPOINTS.Reclamation, {})
-      .fetchAll()
+    const reclamationEndpoint = isDepotAgent
+      ? `${APi.ENDPOINTS.Reclamation}/depot/${depotFilter.preparationPlaceId}`
+      : APi.ENDPOINTS.Reclamation;
+    const reclamationRequest = APi.createAPIEndpoint(reclamationEndpoint);
+    (isDepotAgent ? reclamationRequest.customGet() : reclamationRequest.fetchAll())
       .then((res) => {
         if (Array.isArray(res.data)) setReclamationsList(res.data);
         else if (Array.isArray(res.data?.data)) setReclamationsList(res.data.data);
       })
       .catch(() => {});
 
-    APi.createAPIEndpoint(APi.ENDPOINTS.GlobalContact, {})
+    APi.createAPIEndpoint(APi.ENDPOINTS.GlobalContact+"/getAll", {})
       .fetchAll()
       .then((res) => {
         if (Array.isArray(res.data)) setGlobalContactsList(res.data);
         else if (Array.isArray(res.data?.data)) setGlobalContactsList(res.data.data);
       })
       .catch(() => {});
-  }, []);
+  }, [isDepotAgent, currentDepotId]);
 
   // Sync auth on mount
   useEffect(() => {
@@ -180,7 +194,6 @@ const App = () => {
   const currentRole = normalizeRole(activeRole);
   const isDriver = currentRole === "driver";
   const isB2BClient = currentRole === "B2Bclient";
-  const isDepotAgent = currentRole === "depotAgent";
   const isAdmin = !isDriver && !isB2BClient && !isDepotAgent;
   const isAdminStoreModule = isAdmin && adminModule === "store";
   const isB2B = isB2BClient || isAdminStoreModule;
@@ -254,6 +267,7 @@ const App = () => {
         : "Tous les Récaps Journaliers (Boutiques)";
     }
     if (path === "/reclamations") {
+      if (isDepotAgent) return "Réclamations des Boutiques du Dépôt";
       return isB2B ? "Mes Réclamations & Support" : "Réclamations Boutiques (Support Admin)";
     }
     if (path === "/contacts") {
@@ -550,6 +564,14 @@ const App = () => {
                 >
                   <span className="nav-icon"><FaMoneyCheckAlt /></span>
                   <span className="nav-label">Recouvrement Livreur (Solde)</span>
+                </Link>
+                <Link
+                  to="/reclamations"
+                  className={`nav-link-item ${location.pathname === "/reclamations" ? "active" : ""}`}
+                  onClick={() => setExpand(false)}
+                >
+                  <span className="nav-icon"><FaCommentDots /></span>
+                  <span className="nav-label">Réclamations des Boutiques</span>
                 </Link>
               </div>
             )}

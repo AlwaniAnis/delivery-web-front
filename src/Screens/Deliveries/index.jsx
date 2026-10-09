@@ -37,7 +37,12 @@ import AddEdit from "./addEdit.component";
 import useB2B from "../../hooks/useB2B";
 import { StoresList } from "../../Atoms/stores.atom";
 import { preparationPlacesState } from "../../Atoms/preparationPlaces.atom";
-import { activeRoleState, currentDriverIdState } from "../../Atoms/auth.atom";
+import {
+  activeRoleState,
+  currentDepotIdState,
+  currentDriverIdState,
+  normalizeRole,
+} from "../../Atoms/auth.atom";
 export default function Deliveries(props) {
   // STATE
   const [data, setdata] = useState([]);
@@ -69,6 +74,8 @@ export default function Deliveries(props) {
   const activeRole = useRecoilValue(activeRoleState);
   const isDriver = activeRole === "driver";
   const currentDriverId = useRecoilValue(currentDriverIdState);
+  const currentDepotId = useRecoilValue(currentDepotIdState);
+  const isDepotAgent = normalizeRole(activeRole) === "depotAgent";
   const depotsList = useRecoilValue(preparationPlacesState);
 
   const [changedDriverModel, setchangedDriverModel] = useState({
@@ -94,6 +101,10 @@ export default function Deliveries(props) {
       ...filterModel,
       storeId: isB2B ? store.id || 1 : filterModel.storeId,
     };
+    if (isDepotAgent) {
+      fetchParams.preparationPlaceId = Number(currentDepotId) || 1;
+      fetchParams.placeId = Number(currentDepotId) || 1;
+    }
     if (isDriver) {
       fetchParams.driverId = driverIdParam;
     }
@@ -1323,7 +1334,7 @@ export default function Deliveries(props) {
   }
   useEffect(() => {
     fetch();
-  }, [store.id, activeRole, isB2B, currentDriverId, filterModel.page, filterModel.take]);
+  }, [store.id, activeRole, isB2B, currentDriverId, currentDepotId, filterModel.page, filterModel.take]);
   return (
     <div>
       {" "}

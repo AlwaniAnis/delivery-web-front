@@ -22,6 +22,8 @@ const useB2B = () => {
   const isB2B = normalizedRole === "B2Bclient" || isAdminStoreModule;
 
   useEffect(() => {
+    if (normalizedRole === "depotAgent") return;
+
     let user = localStorage.getItem("auth");
     if (user) {
       try {
@@ -43,9 +45,8 @@ const useB2B = () => {
         }
       } catch (e) {}
     }
-  }, [logged, setstore]);
+  }, [logged, normalizedRole, setstore]);
 
   return { isB2B, isAdminStoreModule };
 };
 export default useB2B;
-

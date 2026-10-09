@@ -20,7 +20,12 @@ import {
 import { APi } from "../../Api";
 import { exportAddAtom } from "../../Atoms/exportAdd.atom";
 import { DriversList } from "../../Atoms/drivers.atom";
-import { activeRoleState, currentDriverIdState, normalizeRole } from "../../Atoms/auth.atom";
+import {
+  activeRoleState,
+  currentDepotIdState,
+  currentDriverIdState,
+  normalizeRole,
+} from "../../Atoms/auth.atom";
 import { driverPaymentsState, DEFAULT_DRIVER_PAYMENTS } from "../../Atoms/driverPayments.atom";
 import ExportAdd from "../../Components/Common/ExportAdd";
 import Grid from "../../Components/Grid";
@@ -33,8 +38,10 @@ export default function DriverPayments() {
   const [drivers, setDriversList] = useRecoilState(DriversList);
   const activeRole = useRecoilValue(activeRoleState);
   const currentDriverId = useRecoilValue(currentDriverIdState);
+  const currentDepotId = useRecoilValue(currentDepotIdState);
 
   const isDriver = normalizeRole(activeRole) === "driver";
+  const isDepotAgent = normalizeRole(activeRole) === "depotAgent";
 
   const location = useLocation();
   const queryParams = new URLSearchParams(location.search);
@@ -95,13 +102,22 @@ export default function DriverPayments() {
 
   // Load deliveries for optional linking
   useEffect(() => {
-    APi.createAPIEndpoint(APi.ENDPOINTS.Delivery, { page: 1, take: 50 })
+    APi.createAPIEndpoint(APi.ENDPOINTS.Delivery, {
+      page: 1,
+      take: 50,
+      ...(isDepotAgent
+        ? {
+            preparationPlaceId: Number(currentDepotId) || 1,
+            placeId: Number(currentDepotId) || 1,
+          }
+        : {}),
+    })
       .fetchAll()
       .then((res) => {
         setDeliveries(res.data?.data || res.data || []);
       })
       .catch(() => {});
-  }, []);
+  }, [isDepotAgent, currentDepotId]);
 
   useEffect(() => {
     fetchPayments();

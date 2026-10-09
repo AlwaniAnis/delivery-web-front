@@ -4,5 +4,4 @@ export default class DriverPaymentModel {
   amount = 0;
   date = new Date().toISOString().split("T")[0];
   comment = "";
-  deliveryId = null;
 }

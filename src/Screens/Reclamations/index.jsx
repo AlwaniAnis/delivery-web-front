@@ -28,7 +28,12 @@ import { reclamationsState } from "../../Atoms/reclamations.atom";
 import { globalContactsState } from "../../Atoms/globalContacts.atom";
 import { MyStore } from "../../Atoms/store.atom";
 import { StoresList } from "../../Atoms/stores.atom";
-import { activeRoleState, currentUserState, normalizeRole } from "../../Atoms/auth.atom";
+import {
+  activeRoleState,
+  currentDepotIdState,
+  currentUserState,
+  normalizeRole,
+} from "../../Atoms/auth.atom";
 import useB2B from "../../hooks/useB2B";
 
 const RECLAMATION_CATEGORIES = [
@@ -59,12 +64,14 @@ export default function Reclamations() {
   const currentStore = useRecoilValue(MyStore);
   const storesList = useRecoilValue(StoresList);
   const activeRole = useRecoilValue(activeRoleState);
+  const currentDepotId = useRecoilValue(currentDepotIdState);
   const currentUser = useRecoilValue(currentUserState);
   const history = useHistory();
 
   const normalizedRole = normalizeRole(activeRole);
   const { isB2B } = useB2B();
   const isAdmin = !isB2B && normalizedRole === "admin";
+  const isDepotAgent = normalizedRole === "depotAgent";
 
   const activeStoreId = Number(
     currentStore?.id || currentUser?.storeId || currentUser?.eStoreId || 1
@@ -72,6 +79,7 @@ export default function Reclamations() {
 
   const [loading, setLoading] = useState(false);
   const [deliveries, setDeliveries] = useState([]);
+  const [depotReclamations, setDepotReclamations] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState(0);
   const [storeFilter, setStoreFilter] = useState(isB2B ? activeStoreId : 0);
@@ -154,6 +162,18 @@ export default function Reclamations() {
         return;
       }
 
+      if (isDepotAgent) {
+        const res = await APi.createAPIEndpoint(
+          `${APi.ENDPOINTS.Reclamation}/depot/${currentDepotId}`
+        ).customGet();
+        const list = res.data?.data || res.data;
+        if (Array.isArray(list)) {
+          setDepotReclamations(list.map(normalizeReclamation));
+        }
+        setLoading(false);
+        return;
+      }
+
       if (storeFilter) {
         const res = await APi.createAPIEndpoint(
           `${APi.ENDPOINTS.Reclamation}/store/${storeFilter}`
@@ -208,6 +228,10 @@ export default function Reclamations() {
     if (isB2B && activeStoreId) {
       query.storeId = activeStoreId;
     }
+    if (isDepotAgent) {
+      query.preparationPlaceId = Number(currentDepotId) || 1;
+      query.placeId = Number(currentDepotId) || 1;
+    }
     APi.createAPIEndpoint(APi.ENDPOINTS.Delivery, query)
       .fetchAll()
       .then((res) => {
@@ -222,7 +246,7 @@ export default function Reclamations() {
   useEffect(() => {
     fetchReclamations();
     fetchStoreDeliveries();
-  }, [activeStoreId, isB2B, storeFilter, storesList.length]);
+  }, [activeStoreId, currentDepotId, isB2B, isDepotAgent, storeFilter, storesList]);
 
   // Create a new Reclamation
   const handleCreateReclamation = () => {
@@ -464,7 +488,10 @@ export default function Reclamations() {
   };
 
   // Filter Reclamations for current role
-  const roleScopedReclamations = reclamations.filter((r) => {
+  const roleScopedReclamations = (isDepotAgent ? depotReclamations : reclamations).filter((r) => {
+    if (isDepotAgent) {
+      return true;
+    }
     if (isB2B && activeStoreId) {
       return Number(r.storeId || r.eStoreId) === Number(activeStoreId);
     }
@@ -537,9 +564,11 @@ export default function Reclamations() {
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
               <h2 style={{ margin: 0, fontSize: "1.35rem", fontWeight: 800, color: "#fff" }}>
-                {isB2B
-                  ? "Mes Réclamations & Support Boutique"
-                  : "Gestion des Réclamations Boutiques"}
+                {isDepotAgent
+                  ? "Réclamations des Boutiques de votre Dépôt"
+                  : isB2B
+                    ? "Mes Réclamations & Support Boutique"
+                    : "Gestion des Réclamations Boutiques"}
               </h2>
               <span
                 style={{
@@ -551,13 +580,19 @@ export default function Reclamations() {
                   fontWeight: 700,
                 }}
               >
-                {isB2B ? "Espace Boutique Partenaire" : "Support & Réponses Admin"}
+                {isDepotAgent
+                  ? "Consultation du Dépôt"
+                  : isB2B
+                    ? "Espace Boutique Partenaire"
+                    : "Support & Réponses Admin"}
               </span>
             </div>
             <p style={{ margin: "4px 0 0", fontSize: "0.85rem", color: "#94a3b8" }}>
-              {isB2B
-                ? "Soumettez vos réclamations concernant vos colis ou encaissements et consultez les réponses de l'administration"
-                : "Consultez les réclamations envoyées par les boutiques partenaires et répondez directement à chaque demande"}
+              {isDepotAgent
+                ? "Consultez les réclamations des boutiques rattachées à votre dépôt."
+                : isB2B
+                  ? "Soumettez vos réclamations concernant vos colis ou encaissements et consultez les réponses de l'administration"
+                  : "Consultez les réclamations envoyées par les boutiques partenaires et répondez directement à chaque demande"}
             </p>
           </div>
         </div>
@@ -581,25 +616,27 @@ export default function Reclamations() {
             {isAdmin ? "Gérer les Contacts Globaux" : "Contacts Utiles Support"}
           </Button>
 
-          <Button
-            appearance="primary"
-            onClick={() => {
-              setFormError("");
-              setCreateModalOpen(true);
-            }}
-            style={{
-              background: "linear-gradient(135deg, #4f46e5 0%, #2563eb 100%)",
-              fontWeight: 800,
-              borderRadius: "10px",
-              padding: "10px 18px",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "8px",
-              boxShadow: "0 4px 12px rgba(37, 99, 235, 0.35)",
-            }}
-          >
-            <FaPlus /> Nouvelle Réclamation
-          </Button>
+          {!isDepotAgent && (
+            <Button
+              appearance="primary"
+              onClick={() => {
+                setFormError("");
+                setCreateModalOpen(true);
+              }}
+              style={{
+                background: "linear-gradient(135deg, #4f46e5 0%, #2563eb 100%)",
+                fontWeight: 800,
+                borderRadius: "10px",
+                padding: "10px 18px",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "8px",
+                boxShadow: "0 4px 12px rgba(37, 99, 235, 0.35)",
+              }}
+            >
+              <FaPlus /> Nouvelle Réclamation
+            </Button>
+          )}
         </div>
       </div>
 
@@ -1112,20 +1149,22 @@ export default function Reclamations() {
                             {isAdmin ? "Répondre" : "Consulter"}
                           </button>
 
-                          <button
-                            onClick={(e) => handleDelete(rec, e)}
-                            style={{
-                              background: "#fef2f2",
-                              color: "#dc2626",
-                              border: "1px solid #fecaca",
-                              borderRadius: "8px",
-                              padding: "6px 8px",
-                              cursor: "pointer",
-                            }}
-                            title="Supprimer"
-                          >
-                            <FaTrash size={11} />
-                          </button>
+                          {!isDepotAgent && (
+                            <button
+                              onClick={(e) => handleDelete(rec, e)}
+                              style={{
+                                background: "#fef2f2",
+                                color: "#dc2626",
+                                border: "1px solid #fecaca",
+                                borderRadius: "8px",
+                                padding: "6px 8px",
+                                cursor: "pointer",
+                              }}
+                              title="Supprimer"
+                            >
+                              <FaTrash size={11} />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1426,56 +1465,57 @@ export default function Reclamations() {
                 })}
               </div>
 
-              {/* Reply Input Box */}
-              <div
-                style={{
-                  background: "#f8fafc",
-                  border: "1px solid #cbd5e1",
-                  borderRadius: "12px",
-                  padding: "12px",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "10px",
-                }}
-              >
-                {isAdmin && (
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px" }}>
-                    <label style={{ fontSize: "0.8rem", fontWeight: 800, color: "#334155" }}>
-                      Mettre à jour le statut :
+              {!isDepotAgent && (
+                <div
+                  style={{
+                    background: "#f8fafc",
+                    border: "1px solid #cbd5e1",
+                    borderRadius: "12px",
+                    padding: "12px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "10px",
+                  }}
+                >
+                  {isAdmin && (
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px" }}>
+                      <label style={{ fontSize: "0.8rem", fontWeight: 800, color: "#334155" }}>
+                        Mettre à jour le statut :
+                      </label>
+                      <SelectPicker
+                        data={RECLAMATION_STATUSES.map((st) => ({
+                          label: st.label,
+                          value: st.value,
+                        }))}
+                        cleanable={false}
+                        searchable={false}
+                        value={replyStatus}
+                        onChange={(val) => setReplyStatus(val)}
+                        style={{ width: "220px" }}
+                      />
+                    </div>
+                  )}
+
+                  <div>
+                    <label style={{ fontSize: "0.8rem", fontWeight: 800, color: "#334155", marginBottom: "4px", display: "block" }}>
+                      {isAdmin
+                        ? "Réponse de l'Administration à la Boutique :"
+                        : "Ajouter un message / précision :"}
                     </label>
-                    <SelectPicker
-                      data={RECLAMATION_STATUSES.map((st) => ({
-                        label: st.label,
-                        value: st.value,
-                      }))}
-                      cleanable={false}
-                      searchable={false}
-                      value={replyStatus}
-                      onChange={(val) => setReplyStatus(val)}
-                      style={{ width: "220px" }}
+                    <Input
+                      as="textarea"
+                      rows={3}
+                      placeholder={
+                        isAdmin
+                          ? "Saisissez votre réponse pour la boutique partenaire..."
+                          : "Ajouter un complément d'information..."
+                      }
+                      value={replyText}
+                      onChange={(val) => setReplyText(val)}
                     />
                   </div>
-                )}
-
-                <div>
-                  <label style={{ fontSize: "0.8rem", fontWeight: 800, color: "#334155", marginBottom: "4px", display: "block" }}>
-                    {isAdmin
-                      ? "Réponse de l'Administration à la Boutique :"
-                      : "Ajouter un message / précision :"}
-                  </label>
-                  <Input
-                    as="textarea"
-                    rows={3}
-                    placeholder={
-                      isAdmin
-                        ? "Saisissez votre réponse pour la boutique partenaire..."
-                        : "Ajouter un complément d'information..."
-                    }
-                    value={replyText}
-                    onChange={(val) => setReplyText(val)}
-                  />
                 </div>
-              </div>
+              )}
             </div>
           )}
         </Modal.Body>
@@ -1483,15 +1523,17 @@ export default function Reclamations() {
           <Button onClick={() => setSelectedRec(null)} appearance="subtle">
             Fermer
           </Button>
-          <Button
-            onClick={handleSendReply}
-            loading={submittingReply}
-            appearance="primary"
-            style={{ background: "#059669", fontWeight: 700 }}
-          >
-            <FaReply style={{ marginRight: 6 }} />
-            {isAdmin ? "Envoyer la Réponse" : "Envoyer le Message"}
-          </Button>
+          {!isDepotAgent && (
+            <Button
+              onClick={handleSendReply}
+              loading={submittingReply}
+              appearance="primary"
+              style={{ background: "#059669", fontWeight: 700 }}
+            >
+              <FaReply style={{ marginRight: 6 }} />
+              {isAdmin ? "Envoyer la Réponse" : "Envoyer le Message"}
+            </Button>
+          )}
         </Modal.Footer>
       </Modal>
     </div>

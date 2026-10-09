@@ -13,9 +13,17 @@ import Grid from "../../Components/Grid";
 import validate from "../../Helpers/validate";
 import AddEdit from "./AddEdit.component";
 import ResetPassword from "../Auth/ResetPassword";
+import {
+  activeRoleState,
+  currentDepotIdState,
+  normalizeRole,
+} from "../../Atoms/auth.atom";
 export default function Stores(props) {
   // STATE
   const depotsList = useRecoilValue(preparationPlacesState);
+  const activeRole = useRecoilValue(activeRoleState);
+  const currentDepotId = useRecoilValue(currentDepotIdState);
+  const isDepotAgent = normalizeRole(activeRole) === "depotAgent";
   const [data, setdata] = useState([]);
   const [totalCount, settotalCount] = useState(0);
   const [filterModel, setfilterModel] = useState({ q: "", page: 1, take: 20 });
@@ -50,7 +58,15 @@ export default function Stores(props) {
     setstate((prev) => {
       return { ...prev, loading: true };
     });
-    APi.createAPIEndpoint(APi.ENDPOINTS.Store, filterModel)
+    APi.createAPIEndpoint(APi.ENDPOINTS.Store, {
+      ...filterModel,
+      ...(isDepotAgent
+        ? {
+            preparationPlaceId: Number(currentDepotId) || 1,
+            placeId: Number(currentDepotId) || 1,
+          }
+        : {}),
+    })
       .fetchAll()
       .then((res) => {
         setdata(res.data.data);
@@ -150,7 +166,7 @@ export default function Stores(props) {
     setmodel(data.find((el) => el.id == id));
   };
   // LIFE CYCLES
-  useEffect(() => fetch(), []);
+  useEffect(() => fetch(), [isDepotAgent, currentDepotId]);
   return (
     <div>
       <Filter search={() => fetch()}>

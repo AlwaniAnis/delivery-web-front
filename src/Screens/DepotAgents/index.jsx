@@ -91,7 +91,7 @@ export default function DepotAgents() {
 
   const fetch = () => {
     setState((prev) => ({ ...prev, loading: true }));
-    APi.createAPIEndpoint(APi.ENDPOINTS.DepotAgent, filterModel)
+    APi.createAPIEndpoint(APi.ENDPOINTS.DepotAgent +"/GetAll")
       .fetchAll()
       .then((res) => {
         const list = res.data?.data || res.data;
@@ -449,7 +449,7 @@ export default function DepotAgents() {
                 phoneNumber: m.phone1 || "",
                 role: "DepotAgent",
                 position: "DepotAgent",
-                depotAgentId: dataKey,
+                agentDepotId: dataKey,
                 preparationPlaceId: m.preparationPlaceId || m.depotId || 1,
               };
               delete _m.id;

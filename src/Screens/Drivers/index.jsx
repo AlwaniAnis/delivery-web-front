@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useRecoilState } from "recoil";
+import { useRecoilState, useRecoilValue } from "recoil";
 import { Button, Input, Modal } from "rsuite";
 import Pagination from "rsuite/Pagination";
 import Swal from "sweetalert2";
@@ -12,6 +12,7 @@ import Grid from "../../Components/Grid";
 import validate from "../../Helpers/validate";
 import AddEdit from "./AddEdit.component";
 import ResetPassword from "../Auth/ResetPassword";
+import { activeRoleState, currentDepotIdState, normalizeRole } from "../../Atoms/auth.atom";
 export default function Drivers(props) {
   // STATE
   const [data, setdata] = useState([]);
@@ -43,6 +44,9 @@ export default function Drivers(props) {
   // ATOMS
   const [state, setstate] = useRecoilState(exportAddAtom);
   const [show, setshow] = useState(0);
+  const activeRole = useRecoilValue(activeRoleState);
+  const currentDepotId = useRecoilValue(currentDepotIdState);
+  const isDepotAgent = normalizeRole(activeRole) === "depotAgent";
 
   // HELPERS
   const reset = () => {
@@ -66,7 +70,15 @@ export default function Drivers(props) {
     setstate((prev) => {
       return { ...prev, loading: true };
     });
-    APi.createAPIEndpoint(APi.ENDPOINTS.Driver, filterModel)
+    APi.createAPIEndpoint(APi.ENDPOINTS.Driver, {
+      ...filterModel,
+      ...(isDepotAgent
+        ? {
+            preparationPlaceId: Number(currentDepotId) || 1,
+            placeId: Number(currentDepotId) || 1,
+          }
+        : {}),
+    })
       .fetchAll()
       .then((res) => {
         setdata(res.data.data);
@@ -150,7 +162,7 @@ export default function Drivers(props) {
     setmodel(data.find((el) => el.id == id));
   };
   // LIFE CYCLES
-  useEffect(() => fetch(), []);
+  useEffect(() => fetch(), [isDepotAgent, currentDepotId]);
   return (
     <div>
       <Filter search={() => fetch()}>

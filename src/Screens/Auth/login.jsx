@@ -30,7 +30,7 @@ export default function Login() {
   const setCurrentDriverId = useSetRecoilState(currentDriverIdState);
   const setCurrentDepotId = useSetRecoilState(currentDepotIdState);
 
-  // Selected Profile: 'admin' | 'driver' | 'B2Bclient' | 'depotAgent'
+  // Selected Profile: 'Admin' | 'driver' | 'B2Bclient' | 'depotAgent'
   const [selectedRole, setSelectedRole] = useState("admin");
 
   const [model, setModel] = useState({
@@ -100,7 +100,12 @@ export default function Login() {
     } else if (selectedRole === "B2Bclient") {
       endpointName = "Auth/loginB2B";
       authPromise = AuthService().loginB2B(payload);
-    } else {
+    } 
+    else if (selectedRole === "depotAgent") {
+      endpointName = "Auth/LoginAgentDepot";
+      authPromise = AuthService().loginDepotAgent(payload);
+    }
+    else {
       endpointName = "Auth/login";
       authPromise = AuthService().login(payload);
     }
