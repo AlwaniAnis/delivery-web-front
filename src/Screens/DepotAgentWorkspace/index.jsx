@@ -26,6 +26,7 @@ import { currentDepotIdState, currentUserState } from "../../Atoms/auth.atom";
 import {
   DeliveryStatus,
   DeliveryResultOptions,
+  RefundCauseOptions,
   getOperationalStatus,
   getDeliveryResult,
   getPickupDriver,
@@ -72,6 +73,68 @@ export default function DepotAgentWorkspace() {
   // Step 5: Store Recap Filter state (0 = Toutes les boutiques du dépôt, or specific storeId)
   const [recapSelectedStoreId, setRecapSelectedStoreId] = useState(0);
   const [recapStoreSearch, setRecapStoreSearch] = useState("");
+
+  // Refund modal state for Depot Agent
+  const [refundModalDelivery, setRefundModalDelivery] = useState(null);
+  const [refundAmountVal, setRefundAmountVal] = useState(0);
+  const [refundCauseVal, setRefundCauseVal] = useState(1);
+  const [refundCauseDescVal, setRefundCauseDescVal] = useState("");
+
+  const openRefundModal = (del) => {
+    const defaultAmt = Number(del?.refundAmount ?? del?.RefundAmount ?? del?.cost) || getDeliveryTotalPrice(del);
+    setRefundModalDelivery(del);
+    setRefundAmountVal(defaultAmt);
+    setRefundCauseVal(Number(del?.refundCause ?? del?.RefundCause) || 1);
+    setRefundCauseDescVal(del?.refundCauseDescription ?? del?.RefundCauseDescription ?? "");
+  };
+
+  const handleSaveDepotRefund = () => {
+    if (!refundModalDelivery) return;
+    const delId = Number(refundModalDelivery.id);
+    const nowIso = new Date().toISOString();
+    const refundPayload = {
+      deliveryId: delId,
+      DeliveryId: delId,
+      refundDate: nowIso,
+      RefundDate: nowIso,
+      refundAmount: Number(refundAmountVal) || 0,
+      RefundAmount: Number(refundAmountVal) || 0,
+      refundCause: Number(refundCauseVal) || 1,
+      RefundCause: Number(refundCauseVal) || 1,
+      refundCauseDescription: refundCauseDescVal || "",
+      RefundCauseDescription: refundCauseDescVal || "",
+    };
+
+    APi.createAPIEndpoint(`${ENDPOINTS.Delivery}/refund`)
+      .customPost(refundPayload)
+      .finally(() => {
+        setDeliveries((prev) =>
+          prev.map((d) =>
+            d.id === delId
+              ? {
+                  ...d,
+                  result: 7,
+                  status: 5,
+                  operationalStatus: 5,
+                  isRefunded: true,
+                  refundDate: nowIso,
+                  refundAmount: Number(refundAmountVal) || 0,
+                  refundCause: Number(refundCauseVal) || 1,
+                  refundCauseDescription: refundCauseDescVal || "",
+                }
+              : d
+          )
+        );
+        setRefundModalDelivery(null);
+        Swal.fire({
+          icon: "success",
+          title: "Remboursement Enregistré !",
+          html: `Colis <b>#${refundModalDelivery.qrCodeContent || delId}</b> remboursé à hauteur de <b>${Number(refundAmountVal).toFixed(3)} TND</b>.`,
+          timer: 2000,
+          showConfirmButton: false,
+        });
+      });
+  };
 
   // Local tracking for confirmed depot receptions & return receptions
   const [verifiedPickupIds, setVerifiedPickupIds] = useState(() => {
@@ -1498,6 +1561,22 @@ export default function DepotAgentWorkspace() {
                               >
                                 ↩️ Retour Définitif Boutique
                               </button>
+                              <button
+                                onClick={() => openRefundModal(del)}
+                                style={{
+                                  background: "#fdf2f8",
+                                  color: "#9d174d",
+                                  border: "1px solid #fbcfe8",
+                                  borderRadius: "6px",
+                                  padding: "6px 10px",
+                                  fontWeight: 700,
+                                  fontSize: "0.75rem",
+                                  cursor: "pointer",
+                                }}
+                                title="Enregistrer un remboursement (Refund) pour ce colis"
+                              >
+                                💸 Rembourser
+                              </button>
                             </div>
                           </td>
                         </tr>
@@ -1673,6 +1752,7 @@ export default function DepotAgentWorkspace() {
                     <th style={{ padding: "10px 12px", fontSize: "0.75rem", color: "#475569" }}>BOUTIQUE</th>
                     <th style={{ padding: "10px 12px", fontSize: "0.75rem", color: "#475569" }}>MONTANT</th>
                     <th style={{ padding: "10px 12px", fontSize: "0.75rem", color: "#475569" }}>LIVREUR AFFECTÉ</th>
+                    <th style={{ padding: "10px 12px", fontSize: "0.75rem", color: "#475569", textAlign: "right" }}>RETOUR / REMB.</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1732,6 +1812,42 @@ export default function DepotAgentWorkspace() {
                               if (targetId) handleAssignDeliveryDriverBulk([del.id], targetId);
                             }}
                           />
+                        </td>
+                        <td style={{ padding: "10px 12px", textAlign: "right" }}>
+                          <div style={{ display: "inline-flex", gap: "5px", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                            <button
+                              onClick={() => handleConfirmUndeliveredReturn(del, "final_return")}
+                              style={{
+                                background: "#f5f3ff",
+                                color: "#6d28d9",
+                                border: "1px solid #ddd6fe",
+                                borderRadius: "6px",
+                                padding: "5px 8px",
+                                fontSize: "0.72rem",
+                                fontWeight: 700,
+                                cursor: "pointer",
+                              }}
+                              title="Marquer ce colis comme Retourné Définitivement à la Boutique (ReturnedToSender = 6)"
+                            >
+                              ↩️ Retour Boutique
+                            </button>
+                            <button
+                              onClick={() => openRefundModal(del)}
+                              style={{
+                                background: "#fdf2f8",
+                                color: "#9d174d",
+                                border: "1px solid #fbcfe8",
+                                borderRadius: "6px",
+                                padding: "5px 8px",
+                                fontSize: "0.72rem",
+                                fontWeight: 700,
+                                cursor: "pointer",
+                              }}
+                              title="Enregistrer un remboursement (Refund) pour ce colis"
+                            >
+                              💸 Rembourser
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -1990,8 +2106,25 @@ export default function DepotAgentWorkspace() {
                                   fontWeight: 700,
                                   cursor: "pointer",
                                 }}
+                                title="Stocker au dépôt pour une autre tentative"
                               >
-                                Réceptionner Dépôt
+                                Autre tentative
+                              </button>
+                              <button
+                                onClick={() => handleConfirmUndeliveredReturn(ud, "final_return")}
+                                style={{
+                                  background: "#7c3aed",
+                                  color: "#fff",
+                                  border: "none",
+                                  borderRadius: "5px",
+                                  padding: "3px 7px",
+                                  fontSize: "0.7rem",
+                                  fontWeight: 700,
+                                  cursor: "pointer",
+                                }}
+                                title="Retour définitif à la boutique (ReturnedToSender = 6)"
+                              >
+                                ↩️ Retour Boutique
                               </button>
                             </div>
                           </div>
@@ -2386,6 +2519,91 @@ export default function DepotAgentWorkspace() {
           </div>
         </div>
       )}
+
+      {/* MODAL: ENREGISTRER UN REMBOURSEMENT (REFUND) */}
+      <Modal
+        size="sm"
+        open={Boolean(refundModalDelivery)}
+        onClose={() => setRefundModalDelivery(null)}
+      >
+        <Modal.Header>
+          <Modal.Title>
+            💸 Rembourser le Colis #{refundModalDelivery?.qrCodeContent || refundModalDelivery?.id}
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            <div>
+              <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: "4px" }}>
+                Montant Remboursé (TND) :
+              </label>
+              <Input
+                type="number"
+                value={refundAmountVal}
+                onChange={(v) => setRefundAmountVal(v)}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: "4px" }}>
+                Motif du Remboursement (RefundCause) :
+              </label>
+              <SelectPicker
+                data={RefundCauseOptions}
+                searchable={false}
+                cleanable={false}
+                block
+                value={refundCauseVal}
+                onChange={(v) => setRefundCauseVal(v ?? 1)}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: "4px" }}>
+                Description / Commentaire :
+              </label>
+              <Input
+                as="textarea"
+                rows={2}
+                placeholder="Précisez la cause du remboursement..."
+                value={refundCauseDescVal}
+                onChange={(v) => setRefundCauseDescVal(v)}
+              />
+            </div>
+          </div>
+        </Modal.Body>
+        <Modal.Footer>
+          <button
+            onClick={handleSaveDepotRefund}
+            style={{
+              background: "#be185d",
+              color: "#ffffff",
+              border: "none",
+              borderRadius: "8px",
+              padding: "8px 16px",
+              fontWeight: 800,
+              fontSize: "0.82rem",
+              cursor: "pointer",
+              marginRight: "8px",
+            }}
+          >
+            ✓ Confirmer le Remboursement
+          </button>
+          <button
+            onClick={() => setRefundModalDelivery(null)}
+            style={{
+              background: "#f1f5f9",
+              color: "#475569",
+              border: "none",
+              borderRadius: "8px",
+              padding: "8px 14px",
+              fontWeight: 700,
+              fontSize: "0.82rem",
+              cursor: "pointer",
+            }}
+          >
+            Annuler
+          </button>
+        </Modal.Footer>
+      </Modal>
     </div>
   );
 }

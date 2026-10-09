@@ -578,13 +578,69 @@ export default function Deliveries(props) {
       });
   };
 
-  const openOutcomeModal = (row) => {
+  const openOutcomeModal = (row, presetResult = null) => {
     const defaultAmt = getDeliveryTotalPrice(row);
     setResultModalRow(row);
-    setSelectedResultVal(getDeliveryResult(row) || 1);
+    setSelectedResultVal(presetResult !== null ? presetResult : getDeliveryResult(row) || 1);
     setRefundAmountVal(Number(row?.refundAmount ?? row?.RefundAmount) || defaultAmt);
     setRefundCauseVal(Number(row?.refundCause ?? row?.RefundCause) || 1);
     setRefundCauseDescVal(row?.refundCauseDescription ?? row?.RefundCauseDescription ?? "");
+  };
+
+  // Mark a delivery as Returned to Store (Result = 6 ReturnedToSender + waitToReturnToSenderDate)
+  const handleMarkReturnedToStore = (row) => {
+    const nowIso = new Date().toISOString();
+    Swal.fire({
+      title: "Confirmer le Retour Définitif à la Boutique ?",
+      html: `Le colis <b>#${row?.qrCodeContent || row?.code || row?.id}</b> sera marqué comme <b>Retourné à l'Expéditeur / Boutique (Result = 6)</b> et apparaîtra dans le récapitulatif journalier de la boutique.`,
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonColor: "#7c3aed",
+      cancelButtonColor: "#64748b",
+      confirmButtonText: "↩️ Oui, Retourné à la Boutique",
+      cancelButtonText: "Annuler",
+    }).then((res) => {
+      if (!res.isConfirmed) return;
+      APi.createAPIEndpoint(`${APi.ENDPOINTS.Delivery}/changeResult/${row.id}/6`)
+        .update2({
+          deliveryId: row.id,
+          result: 6,
+          waitToReturnToSenderDate: nowIso,
+        })
+        .catch(() =>
+          APi.createAPIEndpoint(`${APi.ENDPOINTS.Delivery}/changeResult/${row.id}/6`, {
+            result: 6,
+          }).customPost({
+            deliveryId: row.id,
+            result: 6,
+            waitToReturnToSenderDate: nowIso,
+          })
+        )
+        .finally(() => {
+          setdata((prev) =>
+            prev.map((d) =>
+              d.id === row.id
+                ? {
+                    ...d,
+                    result: 6,
+                    status: 5,
+                    operationalStatus: 5,
+                    waitToReturnToSenderDate: nowIso,
+                    finalReturnToStore: true,
+                  }
+                : d
+            )
+          );
+          Swal.fire({
+            icon: "success",
+            title: "Colis Retourné à la Boutique !",
+            html: `Colis <b>#${row?.qrCodeContent || row?.id}</b> enregistré en <b>Retour Définitif Boutique</b>.`,
+            timer: 1800,
+            showConfirmButton: false,
+          });
+          fetch();
+        });
+    });
   };
 
   const handleSaveDeliveryOutcome = () => {
@@ -636,28 +692,22 @@ export default function Deliveries(props) {
 
     if (resultNum === 7) {
       const refundPayload = {
-        deliveryId: delId,
-        id: delId,
-        amount: Number(refundAmountVal) || 0,
+        deliveryId: Number(delId),
+        DeliveryId: Number(delId),
+        refundDate: nowIso,
+        RefundDate: nowIso,
         refundAmount: Number(refundAmountVal) || 0,
-        cause: Number(refundCauseVal) || 1,
+        RefundAmount: Number(refundAmountVal) || 0,
         refundCause: Number(refundCauseVal) || 1,
+        RefundCause: Number(refundCauseVal) || 1,
         refundCauseDescription: refundCauseDescVal || "",
-        description: refundCauseDescVal || "",
+        RefundCauseDescription: refundCauseDescVal || "",
       };
-      // Refund endpoint: DeliveryController.Refund
-      APi.createAPIEndpoint(`${APi.ENDPOINTS.Delivery}/refund`, {
-        id: delId,
-        deliveryId: delId,
-        amount: Number(refundAmountVal) || 0,
-        cause: Number(refundCauseVal) || 1,
-        description: refundCauseDescVal || "",
-      })
-        .create(refundPayload)
-        .catch(() =>
-          APi.createAPIEndpoint(`${APi.ENDPOINTS.Delivery}/refund/${delId}`).customPut(refundPayload)
-        )
-        .catch(() => {});
+      // Refund endpoint: POST /api/Delivery/refund (RefundModel)
+      APi.createAPIEndpoint(`${APi.ENDPOINTS.Delivery}/refund`)
+        .customPost(refundPayload)
+        .finally(() => finishOutcomeUpdate());
+      return;
     }
 
     const outcomePayload = {
@@ -1210,39 +1260,69 @@ export default function Deliveries(props) {
         const hasDeliveryDriver = Boolean(getDeliveryDriverId(row));
         const isPaid = Boolean(row?.isPaid ?? row?.IsPaid);
 
-        // Admin and Store (B2B) cannot perform Agent Dépôt or Driver delivery actions (strict separation of concerns)
+        // Admin cannot perform pickup/delivery driver actions, but CAN make a Refund (Remboursement)
         if (isB2B || isAdminGlobal) {
+          const isAlreadyRefunded = Boolean(row?.isRefunded ?? row?.IsRefunded) || resVal === 7;
           return (
-            <span
-              style={{
-                fontSize: "0.73rem",
-                color: opStatus === 5 ? "#15803d" : "#475569",
-                background: opStatus === 5 ? "#f0fdf4" : "#f8fafc",
-                border: opStatus === 5 ? "1px solid #bbf7d0" : "1px solid #e2e8f0",
-                padding: "4px 9px",
-                borderRadius: "6px",
-                fontWeight: 700,
-                display: "inline-block",
-              }}
+            <div
+              style={{ display: "flex", flexDirection: "column", gap: "5px", alignItems: "flex-start" }}
+              onClick={(e) => e.stopPropagation()}
             >
-              {opStatus === 1
-                ? "1. En attente de ramassage"
-                : opStatus === 2
-                ? "2. En transit vers dépôt"
-                : opStatus === 3
-                ? hasDeliveryDriver
-                  ? "3. Au dépôt (Livreur affecté)"
-                  : "3. Au dépôt logistique"
-                : opStatus === 4
-                ? "4. En cours de livraison"
-                : resVal === 1
-                ? isPaid
-                  ? "5. Livré & Encaissé"
-                  : "5. Livré (Attente caisse)"
-                : resVal === 6
-                ? "5. Retourné à la boutique"
-                : "5. Traitement terminé"}
-            </span>
+              <span
+                style={{
+                  fontSize: "0.73rem",
+                  color: opStatus === 5 ? "#15803d" : "#475569",
+                  background: opStatus === 5 ? "#f0fdf4" : "#f8fafc",
+                  border: opStatus === 5 ? "1px solid #bbf7d0" : "1px solid #e2e8f0",
+                  padding: "4px 9px",
+                  borderRadius: "6px",
+                  fontWeight: 700,
+                  display: "inline-block",
+                }}
+              >
+                {opStatus === 1
+                  ? "1. En attente de ramassage"
+                  : opStatus === 2
+                  ? "2. En transit vers dépôt"
+                  : opStatus === 3
+                  ? hasDeliveryDriver
+                    ? "3. Au dépôt (Livreur affecté)"
+                    : "3. Au dépôt logistique"
+                  : opStatus === 4
+                  ? "4. En cours de livraison"
+                  : resVal === 1
+                  ? isPaid
+                    ? "5. Livré & Encaissé"
+                    : "5. Livré (Attente caisse)"
+                  : resVal === 6
+                  ? "5. Retourné à la boutique"
+                  : resVal === 7
+                  ? "5. Remboursé"
+                  : "5. Traitement terminé"}
+              </span>
+
+              {isAdminGlobal && !isAlreadyRefunded && (
+                <button
+                  onClick={() => openOutcomeModal(row, 7)}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "4px",
+                    padding: "4px 9px",
+                    background: "#fdf2f8",
+                    color: "#9d174d",
+                    border: "1px solid #fbcfe8",
+                    borderRadius: "6px",
+                    fontSize: "0.71rem",
+                    fontWeight: 800,
+                    cursor: "pointer",
+                  }}
+                  title="Enregistrer un remboursement (Refund) pour ce colis"
+                >
+                  💸 Rembourser
+                </button>
+              )}
+            </div>
           );
         }
 
@@ -1359,6 +1439,55 @@ export default function Deliveries(props) {
                   </span>
                 )}
               </>
+            )}
+
+            {/* DEPOT AGENT: Refund (Rembourser) & Return to Store (Retour Boutique) actions */}
+            {isDepotAgent && opStatus >= 2 && (
+              <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", width: "100%", marginTop: "2px" }}>
+                {resVal !== 6 && resVal !== 1 && (
+                  <button
+                    onClick={() => handleMarkReturnedToStore(row)}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "4px",
+                      padding: "4px 8px",
+                      background: "#f5f3ff",
+                      color: "#6d28d9",
+                      border: "1px solid #ddd6fe",
+                      borderRadius: "6px",
+                      fontSize: "0.7rem",
+                      fontWeight: 800,
+                      cursor: "pointer",
+                    }}
+                    title="Marquer ce colis comme Retourné Définitivement à la Boutique (ReturnedToSender = 6)"
+                  >
+                    ↩️ Retour Boutique
+                  </button>
+                )}
+
+                {resVal !== 7 && !row?.isRefunded && (
+                  <button
+                    onClick={() => openOutcomeModal(row, 7)}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "4px",
+                      padding: "4px 8px",
+                      background: "#fdf2f8",
+                      color: "#9d174d",
+                      border: "1px solid #fbcfe8",
+                      borderRadius: "6px",
+                      fontSize: "0.7rem",
+                      fontWeight: 800,
+                      cursor: "pointer",
+                    }}
+                    title="Enregistrer un remboursement (Refund) pour ce colis"
+                  >
+                    💸 Rembourser
+                  </button>
+                )}
+              </div>
             )}
 
             {/* DRIVER ONLY: Take assigned parcel (StartDelivery), Record Outcome (SetDeliveryResult), or Return Undelivered to Depot */}
