@@ -1,16 +1,16 @@
 import { useEffect, useState } from "react";
 import {
-    FaBell,
-    FaCheckCircle,
-    FaClock,
-    FaCog,
-    FaEnvelope,
-    FaSave,
-    FaSms,
-    FaTruck,
-    FaUndoAlt,
+  FaBell,
+  FaCheckCircle,
+  FaClock,
+  FaCog,
+  FaEnvelope,
+  FaSave,
+  FaSms,
+  FaTruck,
+  FaUndoAlt,
 } from "react-icons/fa";
-import { Button, Input, InputNumber, Loader, Message, Toggle } from "rsuite";
+import { Button, Input, Loader, Message, Toggle } from "rsuite";
 import Swal from "sweetalert2";
 import { createAPIEndpoint } from "../../Api/authenticated.requests";
 import { ENDPOINTS } from "../../Api/enpoints";
@@ -146,7 +146,8 @@ export default function GeneralConfigPage() {
   };
 
   const numberInput = (name, min = 1) => (
-    <InputNumber
+    <Input
+    type="number"
       block
       min={min}
       step={1}
