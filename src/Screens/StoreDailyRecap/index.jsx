@@ -332,12 +332,20 @@ export default function StoreDailyRecap() {
             const returnFeeVal = Number(
               del.tarif?.commissionReturn ?? del.commissionReturn ?? del.returnFee ?? 3
             );
-            if (del.isPaid || del.status === 5 || resCode === 1) {
+            const isRefundedDel =
+              resCode === 7 || Boolean(del.isRefunded ?? del.IsRefunded) || Number(del.refundAmount) > 0;
+            const isReturnedDel = resCode === 5 || resCode === 6 || Boolean(del.finalReturnToStore);
+            const isDeliveredDel =
+              !isRefundedDel &&
+              !isReturnedDel &&
+              (resCode === 1 || Boolean(del.isPaid ?? del.IsPaid) || Boolean(del.deliveredDate ?? del.DeliveredDate));
+
+            if (isDeliveredDel) {
               totalPaid += delAmount;
               deliveryFees += delivFeeVal;
-            } else if (resCode === 5 || resCode === 6) {
+            } else if (isReturnedDel) {
               returnFees += returnFeeVal;
-            } else if (resCode === 7 || del.isRefunded || Number(del.refundAmount) > 0) {
+            } else if (isRefundedDel) {
               refundAmount += Number(del.refundAmount ?? del.RefundAmount) || 0;
             }
           });

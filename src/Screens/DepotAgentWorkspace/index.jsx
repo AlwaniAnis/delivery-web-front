@@ -39,9 +39,18 @@ import {
   getPickupDriverId,
   getDeliveryDriver,
   getDeliveryDriverId,
+  getActiveDeliveryDriver,
   getActiveDeliveryDriverId,
   getDeliveryTotalPrice,
   getDeliveryAttempts,
+  isDeliveryDelivered,
+  canRefundDelivery,
+  canReturnToStore,
+  canResendDelivery,
+  buildResentDeliveryState,
+  saveDeliveryLifecycleOverride,
+  applyDeliveryLifecycleOverride,
+  setStoredDeliveryAttempts,
   parseDeliveryLogs,
   appendDeliveryLog,
   getStoredMaxDeliveryAttempts,
@@ -110,15 +119,35 @@ export default function DepotAgentWorkspace() {
   const [refundCauseDescVal, setRefundCauseDescVal] = useState("");
 
   const openRefundModal = (del) => {
+    if (!canRefundDelivery(del)) {
+      Swal.fire({
+        icon: "warning",
+        title: "Remboursement Non Autorisé",
+        html: isDeliveryDelivered(del)
+          ? "Impossible de rembourser une livraison déjà <b>livrée</b>.<br/>Le remboursement s'applique uniquement aux <b>colis perdus ou endommagés</b>."
+          : "Ce colis ne peut pas être remboursé (non ramassé, déjà retourné à la boutique ou déjà remboursé).",
+      });
+      return;
+    }
     const defaultAmt = Number(del?.refundAmount ?? del?.RefundAmount ?? del?.cost) || getDeliveryTotalPrice(del);
     setRefundModalDelivery(del);
     setRefundAmountVal(defaultAmt);
     setRefundCauseVal(Number(del?.refundCause ?? del?.RefundCause) || 1);
-    setRefundCauseDescVal(del?.refundCauseDescription ?? del?.RefundCauseDescription ?? "");
+    setRefundCauseDescVal(
+      del?.refundCauseDescription ?? del?.RefundCauseDescription ?? "Colis perdu / endommagé"
+    );
   };
 
   const handleSaveDepotRefund = () => {
     if (!refundModalDelivery) return;
+    if (!canRefundDelivery(refundModalDelivery)) {
+      Swal.fire({
+        icon: "error",
+        title: "Remboursement Interdit",
+        html: "Impossible de rembourser un colis déjà livré.<br/>Nous remboursons uniquement les <b>colis perdus ou endommagés</b>.",
+      });
+      return;
+    }
     const delId = Number(refundModalDelivery.id);
     const nowIso = new Date().toISOString();
     const refundPayload = {
@@ -292,10 +321,13 @@ export default function DepotAgentWorkspace() {
     })
       .fetchAll()
       .then((res) => {
-        const rows = (res.data?.data || res.data || []).map((el) => ({
-          ...el,
-          cost: getDeliveryTotalPrice(el),
-        }));
+        const rows = (res.data?.data || res.data || []).map((el) => {
+          const withOverride = applyDeliveryLifecycleOverride(el);
+          return {
+            ...withOverride,
+            cost: getDeliveryTotalPrice(withOverride),
+          };
+        });
         setDeliveries(rows);
         setLoading(false);
       })
@@ -619,39 +651,31 @@ export default function DepotAgentWorkspace() {
     // Case A: Undelivered parcel returning from a driver tour
     if (isUndeliveredReturn) {
       const reachedMax = attempts >= maxDeliveryAttempts;
+      if (!reachedMax) {
+        // Iterations < maxDeliveryAttempts: Return to Store is NOT allowed; automatically receive at depot for next attempt
+        handleConfirmUndeliveredReturn(found, "reschedule");
+        return;
+      }
       Swal.fire({
         title: `📷 Retour Scanné — Colis #${found.qrCodeContent || found.id}`,
         html: `
           <div style="text-align:left;font-size:0.9rem;line-height:1.5;">
             <div><b>Client :</b> ${found.customer?.fullName || "Client"} (${found.customer?.city || ""})</div>
-            <div><b>Tentatives effectuées :</b> <span style="font-weight:800;color:${
-              reachedMax ? "#dc2626" : "#2563eb"
-            };">${attempts} / ${maxDeliveryAttempts}</span></div>
-            ${
-              reachedMax
-                ? `<div style="margin-top:8px;padding:8px 10px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#991b1b;font-weight:700;">
-                    ⚠️ Nombre maximum de tentatives atteint (${attempts}/${maxDeliveryAttempts}) !<br/>
-                    Selon la Configuration Générale, ce colis est prêt pour un <b>Retour Définitif à la Boutique</b>.
-                  </div>`
-                : `<div style="margin-top:8px;padding:8px 10px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;color:#1e3a8a;">
-                    ℹ️ Encore ${maxDeliveryAttempts - attempts} tentative(s) possible(s) avant retour obligatoire.
-                  </div>`
-            }
+            <div><b>Tentatives effectuées :</b> <span style="font-weight:800;color:#dc2626;">${attempts} / ${maxDeliveryAttempts}</span></div>
+            <div style="margin-top:8px;padding:8px 10px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#991b1b;font-weight:700;">
+              ⚠️ Nombre maximum de tentatives atteint (${attempts}/${maxDeliveryAttempts}) !<br/>
+              Ce colis est au dépôt avec le nombre maximal d'itérations : vous pouvez confirmer le <b>Retour Définitif à la Boutique</b>.
+            </div>
           </div>
         `,
-        icon: reachedMax ? "warning" : "question",
+        icon: "warning",
         showCancelButton: true,
-        showDenyButton: true,
         confirmButtonColor: "#7c3aed",
-        denyButtonColor: "#2563eb",
-        confirmButtonText: "↩️ Retour Définitif Boutique (Facturer Retour)",
-        denyButtonText: "🏢 Stocker au Dépôt (Nouvelle Tentative)",
+        confirmButtonText: `↩️ Retour Définitif Boutique (${attempts}/${maxDeliveryAttempts})`,
         cancelButtonText: "Annuler",
       }).then((choice) => {
         if (choice.isConfirmed) {
           handleConfirmUndeliveredReturn(found, "final_return");
-        } else if (choice.isDenied) {
-          handleConfirmUndeliveredReturn(found, "reschedule");
         }
       });
       return;
@@ -830,6 +854,15 @@ export default function DepotAgentWorkspace() {
   // --- STEP 2B ACTION: Confirm Reception at Depot of Undelivered Returned Parcels ---
   const handleConfirmUndeliveredReturn = async (del, actionType = "reschedule") => {
     // actionType: "reschedule" (keep at depot for another delivery iteration) | "final_return" (final return to store)
+    const attempts = getDeliveryAttempts(del);
+    if (actionType === "final_return" && attempts < maxDeliveryAttempts) {
+      Swal.fire({
+        icon: "warning",
+        title: "Retour Boutique Non Autorisé",
+        html: `Le retour à la boutique s'applique uniquement lorsque le colis est au dépôt et que le nombre d'itérations atteint le maximum configuré (<b>${attempts} / ${maxDeliveryAttempts} tentative(s)</b>).<br/>Veuillez stocker ce colis au dépôt pour la prochaine tentative.`,
+      });
+      return;
+    }
     const nowIso = new Date().toISOString();
     const nextResult = actionType === "final_return" ? 6 : 5; // 6 = ReturnedToSender, 5 = ReturnedToDepot
     const nextOpStatus = actionType === "final_return" ? 5 : 3; // 3 = AtDepot (ready for next iteration), 5 = Completed
@@ -842,22 +875,59 @@ export default function DepotAgentWorkspace() {
     } catch (e) {}
 
     markReturnConfirmed([del.id]);
+
+    if (actionType === "reschedule") {
+      // Reset old lifecycle fields, keep ONLY logs text for old lifecycle, and increment deliveryAttemptCount
+      const resentDel = buildResentDeliveryState(del, null, null, maxDeliveryAttempts);
+      setLastScannedReception({
+        code: del.qrCodeContent || del.code || del.id,
+        customer: del.customer?.fullName || "Client",
+        time: new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }),
+        type: "return_reschedule",
+      });
+
+      setDeliveries((prev) =>
+        prev.map((d) => (d.id === del.id ? resentDel : d))
+      );
+
+      Swal.fire({
+        icon: "success",
+        title: `Retour au Dépôt Confirmé — Tentative ${resentDel.deliveryAttemptCount}/${maxDeliveryAttempts}`,
+        html: `Le colis <b>#${del.qrCodeContent || del.id}</b> est remis en stock au dépôt (<b>Étape 3</b>) pour un nouveau cycle.<br/><span style="color:#475569;font-size:0.84rem;">Ancien cycle archivé dans <code>logs</code>, état réinitialisé et compteur incrémenté (<b>${resentDel.deliveryAttemptCount}/${maxDeliveryAttempts}</b>). Affectez maintenant un nouveau livreur à l'Étape 3.</span>`,
+        timer: 2600,
+        showConfirmButton: false,
+      });
+      return;
+    }
+
     const nextLogs = appendDeliveryLog(
       del,
-      actionType === "final_return"
-        ? `Retour Définitif Boutique (Scan Dépôt) | Tentatives: ${getDeliveryAttempts(
-            del
-          )}/${maxDeliveryAttempts} | Result ➔ 6 (ReturnedToSender)`
-        : `Retour au Dépôt Stocker pour Nouvelle Tentative | Tentatives: ${getDeliveryAttempts(
-            del
-          )}/${maxDeliveryAttempts} | Statut ➔ 3 (Au Dépôt)`
+      `Retour Définitif Boutique (Scan Dépôt) | Tentatives: ${getDeliveryAttempts(
+        del
+      )}/${maxDeliveryAttempts} | Result ➔ 6 (ReturnedToSender)`
     );
+
+    const finalReturnPatch = {
+      status: 5,
+      operationalStatus: 5,
+      OperationalStatus: 5,
+      result: 6,
+      Result: 6,
+      isAtDepot: true,
+      finalReturnToStore: true,
+      rescheduledForDelivery: false,
+      attemptIncrementedForCycle: false,
+      waitToReturnToSenderDate: nowIso,
+      logs: nextLogs,
+      Logs: nextLogs,
+    };
+    saveDeliveryLifecycleOverride(del.id, finalReturnPatch);
 
     setLastScannedReception({
       code: del.qrCodeContent || del.code || del.id,
       customer: del.customer?.fullName || "Client",
       time: new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }),
-      type: actionType === "final_return" ? "final_return" : "return_reschedule",
+      type: "final_return",
     });
 
     setDeliveries((prev) =>
@@ -865,16 +935,7 @@ export default function DepotAgentWorkspace() {
         d.id === del.id
           ? {
               ...d,
-              status: nextOpStatus,
-              operationalStatus: nextOpStatus,
-              result: actionType === "reschedule" ? 0 : 6,
-              isAtDepot: true,
-              finalReturnToStore: actionType === "final_return",
-              rescheduledForDelivery: actionType === "reschedule",
-              deliveryDriverId: actionType === "reschedule" ? null : d.deliveryDriverId,
-              deliveryDriver: actionType === "reschedule" ? null : d.deliveryDriver,
-              waitToReturnToSenderDate: nowIso,
-              logs: nextLogs,
+              ...finalReturnPatch,
             }
           : d
       )
@@ -882,16 +943,120 @@ export default function DepotAgentWorkspace() {
 
     Swal.fire({
       icon: "success",
-      title:
-        actionType === "final_return"
-          ? "Retour Définitif Boutique Confirmé"
-          : "Retour au Dépôt Confirmé (Nouvelle Tentative)",
-      html:
-        actionType === "final_return"
-          ? `Le colis <b>#${del.qrCodeContent || del.id}</b> est enregistré en <b>Retour Définitif à la Boutique (Result = 6)</b>.<br/><span style="color:#dc2626;font-weight:700;">Le tarif de retour est appliqué sur le récap de la boutique.</span>`
-          : `Le colis <b>#${del.qrCodeContent || del.id}</b> est remis en stock au dépôt (<b>Étape 3</b>) pour une prochaine tentative de livraison (0 TND facturé à la boutique).`,
+      title: "Retour Définitif Boutique Confirmé",
+      html: `Le colis <b>#${del.qrCodeContent || del.id}</b> est enregistré en <b>Retour Définitif à la Boutique (Result = 6)</b>.<br/><span style="color:#dc2626;font-weight:700;">Le tarif de retour est appliqué sur le récap de la boutique.</span>`,
       timer: 2400,
       showConfirmButton: false,
+    });
+  };
+
+  // --- Direct Resend with New Driver after Completed Cycle ---
+  const handleResendDeliveryWithNewDriver = (del) => {
+    const currentAttempts = getDeliveryAttempts(del);
+    if (currentAttempts >= maxDeliveryAttempts) {
+      Swal.fire({
+        icon: "warning",
+        title: "Nombre Maximum de Tentatives Atteint",
+        html: `Ce colis a déjà atteint <b>${currentAttempts}/${maxDeliveryAttempts} tentative(s)</b>.<br/>Veuillez procéder au <b>Retour Boutique</b>.`,
+      });
+      return;
+    }
+
+    const options = (depotDrivers.length > 0 ? depotDrivers : drivers).reduce((acc, d) => {
+      const name = `${d.firstName || ""} ${d.lastName || ""}`.trim() || d.name || `Livreur #${d.id}`;
+      acc[d.id] = `${name} (${d.carNumber || "Véhicule"})`;
+      return acc;
+    }, {});
+
+    const oldDriver = getActiveDeliveryDriver(del);
+    const oldDriverName = oldDriver
+      ? `${oldDriver.firstName || ""} ${oldDriver.lastName || ""}`.trim() || oldDriver.name
+      : "Non spécifié";
+    const oldResVal = getDeliveryResult(del);
+    const oldResLabel =
+      DeliveryResultOptions.find((o) => o.value === oldResVal)?.shortLabel ||
+      DeliveryResultOptions.find((o) => o.value === oldResVal)?.label ||
+      "Cycle terminé";
+    const nextAttempts = currentAttempts + 1;
+
+    Swal.fire({
+      title: `🔄 Renvoyer le Colis #${del.qrCodeContent || del.code || del.id}`,
+      html: `
+        <div style="text-align:left; font-size:0.84rem; color:#334155; line-height:1.5;">
+          <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:10px 12px; margin-bottom:10px;">
+            <div><strong>Ancien cycle :</strong> ${oldResLabel} (Livreur : ${oldDriverName})</div>
+            <div><strong>Nouvelle tentative :</strong> <span style="color:#4f46e5; font-weight:800;">${currentAttempts} ➔ ${nextAttempts} / ${maxDeliveryAttempts}</span> (<code>deliveryAttemptCount = ${nextAttempts}</code>)</div>
+            <div style="font-size:0.76rem; color:#64748b; margin-top:4px;">
+              ℹ️ Seul le texte du journal (<code>logs</code>) de l'ancien cycle est conservé. L'état du colis est réinitialisé au dépôt avec le nouveau livreur.
+            </div>
+          </div>
+          <label style="font-weight:700; color:#0f172a;">Sélectionnez le nouveau livreur de livraison :</label>
+        </div>
+      `,
+      input: "select",
+      inputOptions: options,
+      inputValue: "",
+      inputPlaceholder: "Choisir le nouveau livreur...",
+      showCancelButton: true,
+      confirmButtonText: `🔄 Affecter & Renvoyer (Tentative ${nextAttempts}/${maxDeliveryAttempts})`,
+      confirmButtonColor: "#4f46e5",
+      cancelButtonText: "Annuler",
+      inputValidator: (val) => {
+        if (!val) return "Veuillez sélectionner un nouveau livreur.";
+        return null;
+      },
+    }).then((res) => {
+      if (!res.isConfirmed || !res.value) return;
+      const drvId = Number(res.value);
+      const chosenDriver =
+        depotDrivers.find((d) => Number(d.id) === drvId) ||
+        drivers.find((d) => Number(d.id) === drvId);
+      const drvFullName = chosenDriver
+        ? `${chosenDriver.firstName || ""} ${chosenDriver.lastName || ""}`.trim() || chosenDriver.name
+        : `Livreur #${drvId}`;
+
+      markReturnConfirmed([del.id]);
+      const resentRow = buildResentDeliveryState(del, drvId, chosenDriver, maxDeliveryAttempts);
+
+      pushDriverNotification({
+        driverId: drvId,
+        title: `🚚 Renvoi Livraison (${activeDepot.name})`,
+        message: `${drvFullName} : Colis #${del.qrCodeContent || del.id} réaffecté pour une nouvelle tentative (${nextAttempts}/${maxDeliveryAttempts}).`,
+        type: "delivery_assignment",
+        count: 1,
+      });
+
+      Promise.allSettled([
+        APi.createAPIEndpoint(ENDPOINTS.Delivery + "/changeDriver").create({
+          driverId: drvId,
+          deliveries: [del.id],
+        }),
+        APi.createAPIEndpoint(`${ENDPOINTS.Driver}/${drvId}/assignDelivery/${del.id}`).customPost({
+          deliveryAttemptCount: nextAttempts,
+          logs: resentRow.logs,
+        }),
+        APi.createAPIEndpoint(`${ENDPOINTS.Delivery}/changeResult/${del.id}/0`).update2({
+          deliveryId: del.id,
+          result: 0,
+          deliveryAttemptCount: nextAttempts,
+          logs: resentRow.logs,
+        }),
+        APi.createAPIEndpoint(`${ENDPOINTS.Delivery}/changeStatus/${del.id}/3`).update2({
+          deliveryAttemptCount: nextAttempts,
+          logs: resentRow.logs,
+        }),
+      ]).finally(() => {
+        setDeliveries((prev) =>
+          prev.map((d) => (d.id === del.id ? resentRow : d))
+        );
+        Swal.fire({
+          icon: "success",
+          title: `Colis Renvoyé — Tentative ${nextAttempts}/${maxDeliveryAttempts} !`,
+          html: `Nouveau livreur affecté : <b>${drvFullName}</b>.<br/>Seul le texte <code>logs</code> de l'ancien cycle a été conservé.`,
+          timer: 2300,
+          showConfirmButton: false,
+        });
+      });
     });
   };
 
@@ -937,18 +1102,35 @@ export default function DepotAgentWorkspace() {
     });
 
     setDeliveries((prev) =>
-      prev.map((d) =>
-        deliveryIds.includes(d.id)
-          ? {
-              ...d,
-              driverId: Number(targetDriverId),
-              deliveryDriverId: Number(targetDriverId),
-              driver: chosenDriver || d.driver,
-              deliveryDriver: chosenDriver || d.deliveryDriver,
-              preparationPlaceId: activeDepot.id,
-            }
-          : d
-      )
+      prev.map((d) => {
+        if (!deliveryIds.includes(d.id)) return d;
+        const updatedLogs = appendDeliveryLog(
+          d,
+          `Affectation Livreur au Dépôt (${activeDepot.name}) | Livreur: ${driverFullName} | Tentative N°${Math.max(
+            1,
+            getDeliveryAttempts(d)
+          )}/${maxDeliveryAttempts}`
+        );
+        const patch = {
+          driverId: Number(targetDriverId),
+          deliveryDriverId: Number(targetDriverId),
+          DeliveryDriverId: Number(targetDriverId),
+          driver: chosenDriver || d.driver,
+          deliveryDriver: chosenDriver || d.deliveryDriver,
+          DeliveryDriver: chosenDriver || d.deliveryDriver,
+          preparationPlaceId: activeDepot.id,
+          status: 3,
+          operationalStatus: 3,
+          result: 0,
+          logs: updatedLogs,
+          Logs: updatedLogs,
+        };
+        saveDeliveryLifecycleOverride(d.id, patch);
+        return {
+          ...d,
+          ...patch,
+        };
+      })
     );
 
     setSelectedAtDepotIds([]);
@@ -2157,56 +2339,77 @@ export default function DepotAgentWorkspace() {
                               >
                                 📷 Scanner #{qrCode}
                               </button>
-                              {!reachedMax && (
+                              {!reachedMax ? (
+                                <>
+                                  <button
+                                    onClick={() => handleResendDeliveryWithNewDriver(del)}
+                                    style={{
+                                      background: "#4f46e5",
+                                      color: "#ffffff",
+                                      border: "none",
+                                      borderRadius: "6px",
+                                      padding: "6px 10px",
+                                      fontWeight: 800,
+                                      fontSize: "0.74rem",
+                                      cursor: "pointer",
+                                    }}
+                                    title="Renvoyer ce colis : affecter un nouveau livreur, conserver uniquement les logs de l'ancien cycle et incrémenter les tentatives"
+                                  >
+                                    🔄 Renvoyer & Affecter Livreur ({attempts}/{maxDeliveryAttempts})
+                                  </button>
+                                  <button
+                                    onClick={() => handleConfirmUndeliveredReturn(del, "reschedule")}
+                                    style={{
+                                      background: "#2563eb",
+                                      color: "#ffffff",
+                                      border: "none",
+                                      borderRadius: "6px",
+                                      padding: "6px 10px",
+                                      fontWeight: 700,
+                                      fontSize: "0.74rem",
+                                      cursor: "pointer",
+                                    }}
+                                    title="Stocker au dépôt pour une autre tentative de livraison"
+                                  >
+                                    🏢 Stocker ({attempts}/{maxDeliveryAttempts})
+                                  </button>
+                                </>
+                              ) : (
                                 <button
-                                  onClick={() => handleConfirmUndeliveredReturn(del, "reschedule")}
+                                  onClick={() => handleConfirmUndeliveredReturn(del, "final_return")}
                                   style={{
-                                    background: "#2563eb",
+                                    background: "#dc2626",
                                     color: "#ffffff",
                                     border: "none",
+                                    borderRadius: "6px",
+                                    padding: "6px 10px",
+                                    fontWeight: 800,
+                                    fontSize: "0.74rem",
+                                    cursor: "pointer",
+                                  }}
+                                  title={`Confirmer comme retour définitif à la boutique (${attempts}/${maxDeliveryAttempts} tentatives atteintes)`}
+                                >
+                                  ↩️ Retour Boutique ({attempts}/{maxDeliveryAttempts})
+                                </button>
+                              )}
+                              {canRefundDelivery(del) && (
+                                <button
+                                  onClick={() => openRefundModal(del)}
+                                  style={{
+                                    background: "#fdf2f8",
+                                    color: "#9d174d",
+                                    border: "1px solid #fbcfe8",
                                     borderRadius: "6px",
                                     padding: "6px 10px",
                                     fontWeight: 700,
                                     fontSize: "0.74rem",
                                     cursor: "pointer",
                                   }}
-                                  title="Stocker au dépôt pour une autre tentative de livraison"
+                                  title="Rembourser ce colis (uniquement si colis perdu ou endommagé)"
                                 >
-                                  🏢 Stocker ({attempts}/{maxDeliveryAttempts})
+                                  💸 Rembourser
                                 </button>
                               )}
-                              <button
-                                onClick={() => handleConfirmUndeliveredReturn(del, "final_return")}
-                                style={{
-                                  background: reachedMax ? "#dc2626" : "#7c3aed",
-                                  color: "#ffffff",
-                                  border: "none",
-                                  borderRadius: "6px",
-                                  padding: "6px 10px",
-                                  fontWeight: 800,
-                                  fontSize: "0.74rem",
-                                  cursor: "pointer",
-                                }}
-                                title="Confirmer comme retour définitif à la boutique (ReturnedToSender = 6)"
-                              >
-                                ↩️ {reachedMax ? "Retour Boutique Obligatoire (Max)" : "Retour Définitif Boutique"}
-                              </button>
-                              <button
-                                onClick={() => openRefundModal(del)}
-                                style={{
-                                  background: "#fdf2f8",
-                                  color: "#9d174d",
-                                  border: "1px solid #fbcfe8",
-                                  borderRadius: "6px",
-                                  padding: "6px 10px",
-                                  fontWeight: 700,
-                                  fontSize: "0.74rem",
-                                  cursor: "pointer",
-                                }}
-                                title="Enregistrer un remboursement (Refund) pour ce colis"
-                              >
-                                💸 Rembourser
-                              </button>
                             </div>
                           </td>
                         </tr>
@@ -2445,38 +2648,42 @@ export default function DepotAgentWorkspace() {
                         </td>
                         <td style={{ padding: "10px 12px", textAlign: "right" }}>
                           <div style={{ display: "inline-flex", gap: "5px", flexWrap: "wrap", justifyContent: "flex-end" }}>
-                            <button
-                              onClick={() => handleConfirmUndeliveredReturn(del, "final_return")}
-                              style={{
-                                background: "#f5f3ff",
-                                color: "#6d28d9",
-                                border: "1px solid #ddd6fe",
-                                borderRadius: "6px",
-                                padding: "5px 8px",
-                                fontSize: "0.72rem",
-                                fontWeight: 700,
-                                cursor: "pointer",
-                              }}
-                              title="Marquer ce colis comme Retourné Définitivement à la Boutique (ReturnedToSender = 6)"
-                            >
-                              ↩️ Retour Boutique
-                            </button>
-                            <button
-                              onClick={() => openRefundModal(del)}
-                              style={{
-                                background: "#fdf2f8",
-                                color: "#9d174d",
-                                border: "1px solid #fbcfe8",
-                                borderRadius: "6px",
-                                padding: "5px 8px",
-                                fontSize: "0.72rem",
-                                fontWeight: 700,
-                                cursor: "pointer",
-                              }}
-                              title="Enregistrer un remboursement (Refund) pour ce colis"
-                            >
-                              💸 Rembourser
-                            </button>
+                            {canReturnToStore(del, maxDeliveryAttempts) && (
+                              <button
+                                onClick={() => handleConfirmUndeliveredReturn(del, "final_return")}
+                                style={{
+                                  background: "#f5f3ff",
+                                  color: "#6d28d9",
+                                  border: "1px solid #ddd6fe",
+                                  borderRadius: "6px",
+                                  padding: "5px 8px",
+                                  fontSize: "0.72rem",
+                                  fontWeight: 700,
+                                  cursor: "pointer",
+                                }}
+                                title={`Marquer ce colis au dépôt comme Retourné Définitivement à la Boutique (${getDeliveryAttempts(del)}/${maxDeliveryAttempts} tentatives atteintes)`}
+                              >
+                                ↩️ Retour Boutique ({getDeliveryAttempts(del)}/{maxDeliveryAttempts})
+                              </button>
+                            )}
+                            {canRefundDelivery(del) && (
+                              <button
+                                onClick={() => openRefundModal(del)}
+                                style={{
+                                  background: "#fdf2f8",
+                                  color: "#9d174d",
+                                  border: "1px solid #fbcfe8",
+                                  borderRadius: "6px",
+                                  padding: "5px 8px",
+                                  fontSize: "0.72rem",
+                                  fontWeight: 700,
+                                  cursor: "pointer",
+                                }}
+                                title="Rembourser ce colis (uniquement si colis perdu ou endommagé)"
+                              >
+                                💸 Rembourser
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -2724,38 +2931,59 @@ export default function DepotAgentWorkspace() {
                               #{ud.qrCodeContent || ud.id} ({ud.customer?.fullName})
                             </span>
                             <div style={{ display: "flex", gap: "4px" }}>
-                              <button
-                                onClick={() => handleConfirmUndeliveredReturn(ud, "reschedule")}
-                                style={{
-                                  background: "#d97706",
-                                  color: "#fff",
-                                  border: "none",
-                                  borderRadius: "5px",
-                                  padding: "3px 7px",
-                                  fontSize: "0.7rem",
-                                  fontWeight: 700,
-                                  cursor: "pointer",
-                                }}
-                                title="Stocker au dépôt pour une autre tentative"
-                              >
-                                Autre tentative
-                              </button>
-                              <button
-                                onClick={() => handleConfirmUndeliveredReturn(ud, "final_return")}
-                                style={{
-                                  background: "#7c3aed",
-                                  color: "#fff",
-                                  border: "none",
-                                  borderRadius: "5px",
-                                  padding: "3px 7px",
-                                  fontSize: "0.7rem",
-                                  fontWeight: 700,
-                                  cursor: "pointer",
-                                }}
-                                title="Retour définitif à la boutique (ReturnedToSender = 6)"
-                              >
-                                ↩️ Retour Boutique
-                              </button>
+                              {getDeliveryAttempts(ud) < maxDeliveryAttempts ? (
+                                <>
+                                  <button
+                                    onClick={() => handleResendDeliveryWithNewDriver(ud)}
+                                    style={{
+                                      background: "#4f46e5",
+                                      color: "#fff",
+                                      border: "none",
+                                      borderRadius: "5px",
+                                      padding: "3px 7px",
+                                      fontSize: "0.7rem",
+                                      fontWeight: 700,
+                                      cursor: "pointer",
+                                    }}
+                                    title="Renvoyer ce colis : affecter un nouveau livreur, garder uniquement les logs de l'ancien cycle et incrémenter les tentatives"
+                                  >
+                                    🔄 Renvoyer ({getDeliveryAttempts(ud)}/{maxDeliveryAttempts})
+                                  </button>
+                                  <button
+                                    onClick={() => handleConfirmUndeliveredReturn(ud, "reschedule")}
+                                    style={{
+                                      background: "#d97706",
+                                      color: "#fff",
+                                      border: "none",
+                                      borderRadius: "5px",
+                                      padding: "3px 7px",
+                                      fontSize: "0.7rem",
+                                      fontWeight: 700,
+                                      cursor: "pointer",
+                                    }}
+                                    title="Stocker au dépôt pour une autre tentative"
+                                  >
+                                    🏢 Stocker ({getDeliveryAttempts(ud)}/{maxDeliveryAttempts})
+                                  </button>
+                                </>
+                              ) : (
+                                <button
+                                  onClick={() => handleConfirmUndeliveredReturn(ud, "final_return")}
+                                  style={{
+                                    background: "#7c3aed",
+                                    color: "#fff",
+                                    border: "none",
+                                    borderRadius: "5px",
+                                    padding: "3px 7px",
+                                    fontSize: "0.7rem",
+                                    fontWeight: 700,
+                                    cursor: "pointer",
+                                  }}
+                                  title={`Retour définitif à la boutique (${getDeliveryAttempts(ud)}/${maxDeliveryAttempts} tentatives atteintes)`}
+                                >
+                                  ↩️ Retour Boutique ({getDeliveryAttempts(ud)}/{maxDeliveryAttempts})
+                                </button>
+                              )}
                             </div>
                           </div>
                         ))}
@@ -2901,10 +3129,8 @@ export default function DepotAgentWorkspace() {
                 (d) => Number(d.eStoreId ?? d.storeId ?? d.EStoreId) === storeId
               );
 
-              // Delivered parcels for this store
-              const deliveredStoreColis = storeDeliveries.filter(
-                (d) => getDeliveryResult(d) === 1 || d.isPaid || d.status === 5
-              );
+              // Delivered parcels for this store (strictly delivered, never returned or refunded)
+              const deliveredStoreColis = storeDeliveries.filter((d) => isDeliveryDelivered(d));
 
               // Final returned parcels to store (Result === 6 ReturnedToSender or finalReturnToStore === true)
               // Explicitly excludes delayed/rescheduled parcels kept at depot for another iteration
@@ -3163,6 +3389,59 @@ export default function DepotAgentWorkspace() {
         </Modal.Header>
         <Modal.Body>
           <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            <div
+              style={{
+                fontSize: "0.75rem",
+                color: "#831843",
+                background: "#fce7f3",
+                border: "1px solid #fbcfe8",
+                padding: "8px 10px",
+                borderRadius: "8px",
+                fontWeight: 600,
+              }}
+            >
+              ℹ️ Les livraisons déjà livrées ne peuvent pas être remboursées. Le remboursement s'applique uniquement aux <strong>colis perdus ou endommagés</strong>.
+            </div>
+            <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setRefundCauseVal(1);
+                  setRefundCauseDescVal("Colis perdu dans le circuit logistique");
+                }}
+                style={{
+                  background: Number(refundCauseVal) === 1 ? "#be185d" : "#ffffff",
+                  color: Number(refundCauseVal) === 1 ? "#ffffff" : "#9d174d",
+                  border: "1px solid #f472b6",
+                  borderRadius: "6px",
+                  padding: "4px 9px",
+                  fontSize: "0.74rem",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                📦 Colis Perdu
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setRefundCauseVal(2);
+                  setRefundCauseDescVal("Colis endommagé / cassé pendant le transport");
+                }}
+                style={{
+                  background: Number(refundCauseVal) === 2 ? "#be185d" : "#ffffff",
+                  color: Number(refundCauseVal) === 2 ? "#ffffff" : "#9d174d",
+                  border: "1px solid #f472b6",
+                  borderRadius: "6px",
+                  padding: "4px 9px",
+                  fontSize: "0.74rem",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                💔 Colis Endommagé
+              </button>
+            </div>
             <div>
               <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: "4px" }}>
                 Montant Remboursé (TND) :

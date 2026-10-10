@@ -150,11 +150,11 @@ export const DeliveryResultOptions = [
 ];
 
 // Refund Cause (Core.Entities.RefundCause enum: None = 0, DeliveryIssue = 1, ProductIssue = 2, Other = 4)
+// Note: Delivered parcels cannot be refunded. Only lost or damaged parcels in the logistics circuit can be refunded.
 export const RefundCauseOptions = [
-  { label: "Aucun (None)", value: 0 },
-  { label: "Problème Livraison", value: 1 },
-  { label: "Problème Produit", value: 2 },
-  { label: "Autre", value: 4 },
+  { label: "Colis Perdu (Lost / Problème Livraison)", value: 1 },
+  { label: "Colis Endommagé / Cassé (Damaged / Problème Produit)", value: 2 },
+  { label: "Autre sinistre (Other)", value: 4 },
 ];
 
 // Helpers to normalize new Core.Entities.Delivery schema fields
@@ -212,6 +212,79 @@ export const getOperationalStatus = (row) => {
   if (isAtDepot || numOp === 3) return 3;
   if (isPickedUp || numOp === 2) return 2;
   return 1;
+};
+
+export const isDeliveryDelivered = (row) => {
+  if (!row) return false;
+  const resVal = getDeliveryResult(row);
+  if (resVal === 1) return true;
+  if (row.isPaid || row.IsPaid) return true;
+  if (
+    (row.deliveredDate || row.DeliveredDate) &&
+    resVal !== 5 &&
+    resVal !== 6 &&
+    resVal !== 7 &&
+    !row.isRefunded &&
+    !row.IsRefunded
+  ) {
+    return true;
+  }
+  return false;
+};
+
+export const isDeliveryAtDepot = (row) => {
+  if (!row) return false;
+  if (isDeliveryDelivered(row)) return false;
+  const resVal = getDeliveryResult(row);
+  if (
+    resVal === 6 ||
+    row.finalReturnToStore ||
+    resVal === 7 ||
+    row.isRefunded ||
+    row.IsRefunded
+  ) {
+    return false;
+  }
+  const op = getOperationalStatus(row);
+  if (op === 3) return true;
+  if (resVal === 5) return true;
+  if (
+    Boolean(
+      row.isAtDepot ??
+        row.IsAtDepot ??
+        row.atDepotConfirmedDate ??
+        row.AtDepotConfirmedDate
+    ) &&
+    op !== 4
+  ) {
+    return true;
+  }
+  return false;
+};
+
+// Delivered deliveries CANNOT be refunded; only undelivered parcels in the logistics circuit (lost or damaged) can be refunded
+export const canRefundDelivery = (row) => {
+  if (!row) return false;
+  if (isDeliveryDelivered(row)) return false;
+  const opStatus = getOperationalStatus(row);
+  const resVal = getDeliveryResult(row);
+  const isAlreadyRefunded = Boolean(row.isRefunded ?? row.IsRefunded) || resVal === 7;
+  if (opStatus < 2) return false;
+  if (isAlreadyRefunded) return false;
+  if (resVal === 6 || row.finalReturnToStore) return false;
+  return true;
+};
+
+// Return to Store is ONLY allowed when the delivery is at the depot AND iterations >= general config maxDeliveryAttempts
+export const canReturnToStore = (row, maxAttemptsInput) => {
+  if (!row) return false;
+  if (!isDeliveryAtDepot(row)) return false;
+  const maxAtt =
+    Number(maxAttemptsInput) >= 1
+      ? Number(maxAttemptsInput)
+      : getStoredMaxDeliveryAttempts();
+  const attempts = getDeliveryAttempts(row);
+  return attempts >= maxAtt;
 };
 
 export const getDeliveryDriver = (row) => {
@@ -284,6 +357,15 @@ export const getDeliveryTotalPrice = (row) => {
 
 export const getDeliveryAttempts = (row) => {
   if (!row) return 0;
+  let storedAttempts = 0;
+  if (row.id !== undefined && row.id !== null) {
+    try {
+      const attemptsMap = JSON.parse(localStorage.getItem("tawsil_delivery_attempts") || "{}");
+      if (attemptsMap[row.id] !== undefined && !Number.isNaN(Number(attemptsMap[row.id]))) {
+        storedAttempts = Math.max(0, Number(attemptsMap[row.id]));
+      }
+    } catch {}
+  }
   const raw =
     row.deliveryAttemptCount ??
     row.DeliveryAttemptCount ??
@@ -296,11 +378,179 @@ export const getDeliveryAttempts = (row) => {
     row.numberOfAttempts ??
     row.NumberOfAttempts;
   if (raw !== undefined && raw !== null && !Number.isNaN(Number(raw))) {
-    return Math.max(0, Number(raw));
+    return Math.max(0, Number(raw), storedAttempts);
   }
+  if (storedAttempts > 0) return storedAttempts;
   const op = getOperationalStatus(row);
   if (op >= 4) return 1;
   return 0;
+};
+
+export const setStoredDeliveryAttempts = (deliveryId, count) => {
+  if (deliveryId === undefined || deliveryId === null) return;
+  try {
+    const attemptsMap = JSON.parse(localStorage.getItem("tawsil_delivery_attempts") || "{}");
+    attemptsMap[deliveryId] = Math.max(0, Number(count) || 0);
+    localStorage.setItem("tawsil_delivery_attempts", JSON.stringify(attemptsMap));
+  } catch {}
+};
+
+export const saveDeliveryLifecycleOverride = (deliveryId, patch) => {
+  if (deliveryId === undefined || deliveryId === null || !patch) return;
+  try {
+    const map = JSON.parse(localStorage.getItem("tawsil_delivery_lifecycle_state") || "{}");
+    map[deliveryId] = {
+      ...(map[deliveryId] || {}),
+      ...patch,
+      updatedAt: Date.now(),
+    };
+    localStorage.setItem("tawsil_delivery_lifecycle_state", JSON.stringify(map));
+  } catch {}
+};
+
+export const applyDeliveryLifecycleOverride = (row) => {
+  if (!row || row.id === undefined || row.id === null) return row;
+  let merged = { ...row };
+  try {
+    const map = JSON.parse(localStorage.getItem("tawsil_delivery_lifecycle_state") || "{}");
+    if (map[row.id]) {
+      merged = { ...merged, ...map[row.id] };
+    }
+  } catch {}
+  const attempts = getDeliveryAttempts(merged);
+  merged.deliveryAttemptCount = attempts;
+  merged.DeliveryAttemptCount = attempts;
+  merged.deliveryAttempts = attempts;
+  merged.attempts = attempts;
+  const logsLines = parseDeliveryLogs(merged);
+  if (logsLines.length > 0) {
+    merged.logs = logsLines.join("\n");
+    merged.Logs = merged.logs;
+  }
+  return merged;
+};
+
+// Checks if a delivery has completed a delivery cycle without being delivered, returned to sender, or refunded
+export const hasCompletedUndeliveredCycle = (row) => {
+  if (!row) return false;
+  if (isDeliveryDelivered(row)) return false;
+  const resVal = getDeliveryResult(row);
+  if (resVal === 6 || row.finalReturnToStore) return false;
+  if (resVal === 7 || row.isRefunded || row.IsRefunded) return false;
+  const opStatus = getOperationalStatus(row);
+  if (opStatus === 5 || (resVal >= 2 && resVal <= 5)) {
+    return true;
+  }
+  return false;
+};
+
+// A completed undelivered cycle can be resent if attempts < maxDeliveryAttempts
+export const canResendDelivery = (row, maxAttemptsInput) => {
+  if (!row) return false;
+  if (!hasCompletedUndeliveredCycle(row)) return false;
+  const maxAtt =
+    Number(maxAttemptsInput) >= 1
+      ? Number(maxAttemptsInput)
+      : getStoredMaxDeliveryAttempts();
+  const attempts = getDeliveryAttempts(row);
+  return attempts < maxAtt;
+};
+
+// Resets old lifecycle fields, keeps only the log text from the old lifecycle, assigns the new driver, and increments deliveryAttemptCount
+export const buildResentDeliveryState = (row, newDriverId, chosenDriver, maxAttemptsInput) => {
+  const maxAtt =
+    Number(maxAttemptsInput) >= 1
+      ? Number(maxAttemptsInput)
+      : getStoredMaxDeliveryAttempts();
+  const prevAttempts = getDeliveryAttempts(row);
+  const nextAttempts = prevAttempts + 1;
+
+  const oldDriver = getActiveDeliveryDriver(row);
+  const oldDriverName = oldDriver
+    ? `${oldDriver.firstName || ""} ${oldDriver.lastName || ""}`.trim() ||
+      oldDriver.name ||
+      `#${oldDriver.id}`
+    : getActiveDeliveryDriverId(row)
+    ? `Livreur #${getActiveDeliveryDriverId(row)}`
+    : "Non assigné";
+
+  const oldResVal = getDeliveryResult(row);
+  const oldResObj = DeliveryResultOptions.find((o) => o.value === oldResVal);
+  const oldResLabel = oldResObj
+    ? oldResObj.shortLabel || oldResObj.label
+    : "Cycle terminé (Non livré)";
+
+  const newDriverName = chosenDriver
+    ? `${chosenDriver.firstName || ""} ${chosenDriver.lastName || ""}`.trim() ||
+      chosenDriver.name ||
+      `Livreur #${newDriverId}`
+    : newDriverId
+    ? `Livreur #${newDriverId}`
+    : "En attente d'affectation";
+
+  // Ensure old lifecycle summary is preserved in logs before resetting old lifecycle fields
+  const archiveText = `Fin Ancien Cycle (Cycle #${Math.max(
+    1,
+    prevAttempts
+  )}) | Ancien Livreur: ${oldDriverName} | Résultat: ${oldResLabel}`;
+  const resendText = newDriverId
+    ? `🔄 Renvoi Livraison (Nouveau Cycle — Tentative N°${nextAttempts}/${maxAtt}) | Nouveau Livreur affecté: ${newDriverName} | Ancien cycle réinitialisé (seul l'historique logs est conservé)`
+    : `🔄 Retour Dépôt pour Nouveau Cycle (Tentative N°${nextAttempts}/${maxAtt}) | Ancien cycle réinitialisé (seul l'historique logs est conservé)`;
+
+  appendDeliveryLog(row, archiveText);
+  const updatedLogs = appendDeliveryLog(row, resendText);
+
+  setStoredDeliveryAttempts(row?.id, nextAttempts);
+
+  const patch = {
+    status: 3,
+    operationalStatus: 3,
+    OperationalStatus: 3,
+    result: 0,
+    Result: 0,
+    isPickedUp: true,
+    IsPickedUp: true,
+    isAtDepot: true,
+    IsAtDepot: true,
+    driverId: newDriverId ? Number(newDriverId) : null,
+    deliveryDriverId: newDriverId ? Number(newDriverId) : null,
+    DeliveryDriverId: newDriverId ? Number(newDriverId) : null,
+    driver: chosenDriver || null,
+    deliveryDriver: chosenDriver || null,
+    DeliveryDriver: chosenDriver || null,
+    // Reset old lifecycle fields so only logs text is kept from old lifecycle
+    deliveredDate: null,
+    DeliveredDate: null,
+    deliveryDate: null,
+    waitToReturnToSenderDate: null,
+    returnedToDepotByDriver: false,
+    pendingDepotReturn: false,
+    finalReturnToStore: false,
+    isPaid: false,
+    IsPaid: false,
+    datePayment: null,
+    isRefunded: false,
+    IsRefunded: false,
+    refundDate: null,
+    refundAmount: 0,
+    refundCause: 0,
+    refundCauseDescription: "",
+    rescheduledForDelivery: true,
+    attemptIncrementedForCycle: true,
+    deliveryAttemptCount: nextAttempts,
+    DeliveryAttemptCount: nextAttempts,
+    deliveryAttempts: nextAttempts,
+    attempts: nextAttempts,
+    logs: updatedLogs,
+    Logs: updatedLogs,
+  };
+
+  saveDeliveryLifecycleOverride(row?.id, patch);
+
+  return {
+    ...row,
+    ...patch,
+  };
 };
 
 export const parseDeliveryLogs = (row) => {

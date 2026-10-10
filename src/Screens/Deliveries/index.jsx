@@ -54,6 +54,14 @@ import {
   getActiveDeliveryDriver,
   getActiveDeliveryDriverId,
   getDeliveryTotalPrice,
+  isDeliveryDelivered,
+  canRefundDelivery,
+  canReturnToStore,
+  canResendDelivery,
+  buildResentDeliveryState,
+  saveDeliveryLifecycleOverride,
+  applyDeliveryLifecycleOverride,
+  setStoredDeliveryAttempts,
   dateTypes,
 } from "../../Constants/types";
 import {
@@ -290,7 +298,7 @@ export default function Deliveries(props) {
           ? res.data
           : [];
         const mappedRows = rawList.map((el) => {
-          let _el = { ...el };
+          let _el = applyDeliveryLifecycleOverride({ ...el });
           _el.coliItems = (_el.coliItems || []).map((c) => {
             let _c = { ...c };
             _c.index = _c.id;
@@ -644,6 +652,20 @@ export default function Deliveries(props) {
           type: "delivery",
           message: `${drvFullName} : 1 livraison a été assignée`,
         });
+        const updatedLogs = appendDeliveryLog(
+          delivery,
+          `Affectation Livreur au Dépôt | Livreur: ${drvFullName} | Tentative N°${Math.max(
+            1,
+            getDeliveryAttempts(delivery)
+          )}/${maxDeliveryAttempts}`
+        );
+        saveDeliveryLifecycleOverride(delivery.id, {
+          driverId: drvId,
+          deliveryDriverId: drvId,
+          driver: chosenDriver || delivery.driver,
+          deliveryDriver: chosenDriver || delivery.deliveryDriver,
+          logs: updatedLogs,
+        });
         APi.createAPIEndpoint(`${APi.ENDPOINTS.Driver}/${drvId}/assignDelivery/${delivery.id}`)
           .customPost({})
           .catch(() =>
@@ -662,6 +684,7 @@ export default function Deliveries(props) {
                       deliveryDriverId: drvId,
                       driver: chosenDriver || d.driver,
                       deliveryDriver: chosenDriver || d.deliveryDriver,
+                      logs: updatedLogs,
                     }
                   : d
               )
@@ -676,6 +699,126 @@ export default function Deliveries(props) {
             fetch();
           });
       }
+    });
+  };
+
+  // Resend a delivery after a completed cycle:
+  // 1) Assign a new delivery driver
+  // 2) Keep ONLY the log text for the old lifecycle (resetting old outcome/dates/status)
+  // 3) Increment deliveryAttemptCount (+1)
+  const handleResendDelivery = (delivery) => {
+    const currentAttempts = getDeliveryAttempts(delivery);
+    if (!canResendDelivery(delivery, maxDeliveryAttempts)) {
+      Swal.fire({
+        icon: "warning",
+        title: "Renvoi Non Autorisé",
+        html:
+          currentAttempts >= maxDeliveryAttempts
+            ? `Ce colis a déjà atteint le nombre maximum de tentatives configuré (<b>${currentAttempts}/${maxDeliveryAttempts}</b>).<br/>Veuillez procéder au <b>Retour Boutique</b>.`
+            : "Seul un colis ayant terminé un cycle sans être livré (ni remboursé, ni retourné à la boutique) peut être renvoyé.",
+      });
+      return;
+    }
+
+    const availableDrivers = (scopedDrivers && scopedDrivers.length > 0 ? scopedDrivers : drivers) || [];
+    const options = availableDrivers.reduce((acc, d) => {
+      const name = d.name || `${d.firstName || ""} ${d.lastName || ""}`.trim() || `Livreur #${d.id}`;
+      acc[d.id] = `${name} (${d.carNumber || "Véhicule"})`;
+      return acc;
+    }, {});
+
+    const oldDriver = getActiveDeliveryDriver(delivery);
+    const oldDriverName = oldDriver
+      ? `${oldDriver.firstName || ""} ${oldDriver.lastName || ""}`.trim() || oldDriver.name
+      : "Non spécifié";
+    const oldResVal = getDeliveryResult(delivery);
+    const oldResLabel =
+      DeliveryResultOptions.find((o) => o.value === oldResVal)?.shortLabel ||
+      DeliveryResultOptions.find((o) => o.value === oldResVal)?.label ||
+      "Cycle terminé";
+    const nextAttempts = currentAttempts + 1;
+
+    Swal.fire({
+      title: `🔄 Renvoyer le Colis #${delivery.qrCodeContent || delivery.code || delivery.id}`,
+      html: `
+        <div style="text-align:left; font-size:0.84rem; color:#334155; line-height:1.5;">
+          <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:10px 12px; margin-bottom:10px;">
+            <div><strong>Ancien cycle :</strong> ${oldResLabel} (Livreur : ${oldDriverName})</div>
+            <div><strong>Nouvelle tentative :</strong> <span style="color:#4f46e5; font-weight:800;">${currentAttempts} ➔ ${nextAttempts} / ${maxDeliveryAttempts}</span> (<code>deliveryAttemptCount = ${nextAttempts}</code>)</div>
+            <div style="font-size:0.76rem; color:#64748b; margin-top:4px;">
+              ℹ️ Seul le texte du journal (<code>logs</code>) de l'ancien cycle est conservé. L'état et le résultat du colis sont réinitialisés pour ce nouveau livreur.
+            </div>
+          </div>
+          <label style="font-weight:700; color:#0f172a;">Sélectionnez le nouveau livreur de livraison :</label>
+        </div>
+      `,
+      input: "select",
+      inputOptions: options,
+      inputValue: "",
+      inputPlaceholder: "Choisir le nouveau livreur...",
+      showCancelButton: true,
+      confirmButtonText: `🔄 Affecter & Renvoyer (Tentative ${nextAttempts}/${maxDeliveryAttempts})`,
+      confirmButtonColor: "#4f46e5",
+      cancelButtonText: "Annuler",
+      inputValidator: (val) => {
+        if (!val) return "Veuillez sélectionner un nouveau livreur pour renvoyer ce colis.";
+        return null;
+      },
+    }).then((res) => {
+      if (!res.isConfirmed || !res.value) return;
+      const drvId = Number(res.value);
+      const chosenDriver = drivers.find((d) => Number(d.id) === drvId);
+      const drvFullName = chosenDriver
+        ? `${chosenDriver.firstName || ""} ${chosenDriver.lastName || ""}`.trim() || chosenDriver.name
+        : `Livreur #${drvId}`;
+
+      const resentRow = buildResentDeliveryState(
+        delivery,
+        drvId,
+        chosenDriver,
+        maxDeliveryAttempts
+      );
+
+      pushDriverNotification({
+        driverId: drvId,
+        driverName: drvFullName,
+        count: 1,
+        type: "delivery",
+        message: `${drvFullName} : Colis #${delivery.qrCodeContent || delivery.id} renvoyé (Tentative ${nextAttempts}/${maxDeliveryAttempts})`,
+      });
+
+      Promise.allSettled([
+        APi.createAPIEndpoint(APi.ENDPOINTS.Delivery + "/changeDriver").create({
+          driverId: drvId,
+          deliveries: [delivery.id],
+        }),
+        APi.createAPIEndpoint(`${APi.ENDPOINTS.Driver}/${drvId}/assignDelivery/${delivery.id}`).customPost({
+          deliveryAttemptCount: nextAttempts,
+          logs: resentRow.logs,
+        }),
+        APi.createAPIEndpoint(`${APi.ENDPOINTS.Delivery}/changeResult/${delivery.id}/0`).update2({
+          deliveryId: delivery.id,
+          result: 0,
+          deliveryAttemptCount: nextAttempts,
+          logs: resentRow.logs,
+        }),
+        APi.createAPIEndpoint(`${APi.ENDPOINTS.Delivery}/changeStatus/${delivery.id}/3`).update2({
+          deliveryAttemptCount: nextAttempts,
+          logs: resentRow.logs,
+        }),
+      ]).finally(() => {
+        setdata((prev) =>
+          prev.map((d) => (d.id === delivery.id ? resentRow : d))
+        );
+        Swal.fire({
+          icon: "success",
+          title: `Colis Renvoyé — Tentative ${nextAttempts}/${maxDeliveryAttempts} !`,
+          html: `Nouveau livreur affecté : <b>${drvFullName}</b>.<br/>Ancien cycle archivé dans <code>logs</code> et état réinitialisé au dépôt.`,
+          timer: 2200,
+          showConfirmButton: false,
+        });
+        fetch();
+      });
     });
   };
 
@@ -704,16 +847,29 @@ export default function Deliveries(props) {
         drivers[0]?.id ||
         1
     );
-    const nextAttempts = getDeliveryAttempts(delivery) + 1;
+    const currentAtt = getDeliveryAttempts(delivery);
+    const nextAttempts = delivery.attemptIncrementedForCycle
+      ? Math.max(1, currentAtt)
+      : currentAtt + 1;
     const updatedLogs = appendDeliveryLog(
       delivery,
       `Sortie en Livraison | Livreur #${drvId} | Tentative N°${nextAttempts}/${maxDeliveryAttempts} (deliveryAttemptCount = ${nextAttempts})`
     );
-    try {
-      const attemptsMap = JSON.parse(localStorage.getItem("tawsil_delivery_attempts") || "{}");
-      attemptsMap[delivery.id] = nextAttempts;
-      localStorage.setItem("tawsil_delivery_attempts", JSON.stringify(attemptsMap));
-    } catch {}
+    setStoredDeliveryAttempts(delivery.id, nextAttempts);
+    saveDeliveryLifecycleOverride(delivery.id, {
+      status: 4,
+      operationalStatus: 4,
+      OperationalStatus: 4,
+      deliveryDriverId: drvId,
+      driverId: drvId,
+      deliveryAttemptCount: nextAttempts,
+      DeliveryAttemptCount: nextAttempts,
+      deliveryAttempts: nextAttempts,
+      attempts: nextAttempts,
+      attemptIncrementedForCycle: false,
+      logs: updatedLogs,
+      Logs: updatedLogs,
+    });
 
     APi.createAPIEndpoint(`${APi.ENDPOINTS.Driver}/${drvId}/startDelivery/${delivery.id}`)
       .customPost({
@@ -742,6 +898,7 @@ export default function Deliveries(props) {
                   deliveryAttemptCount: nextAttempts,
                   deliveryAttempts: nextAttempts,
                   attempts: nextAttempts,
+                  attemptIncrementedForCycle: false,
                   logs: updatedLogs,
                 }
               : d
@@ -750,7 +907,7 @@ export default function Deliveries(props) {
         Swal.fire({
           icon: "success",
           title: `Livraison Démarrée (Tentative ${nextAttempts}/${maxDeliveryAttempts}) !`,
-          text: "Le colis est maintenant En Cours de Livraison (+1 tentative comptabilisée dans deliveryAttemptCount & logs).",
+          text: "Le colis est maintenant En Cours de Livraison (deliveryAttemptCount & logs mis à jour).",
           timer: 1800,
           showConfirmButton: false,
         });
@@ -790,20 +947,46 @@ export default function Deliveries(props) {
   };
 
   const openOutcomeModal = (row, presetResult = null) => {
+    if (presetResult === 7 && !canRefundDelivery(row)) {
+      Swal.fire({
+        icon: "warning",
+        title: "Remboursement Non Autorisé",
+        html: isDeliveryDelivered(row)
+          ? "Impossible de rembourser une livraison déjà <b>livrée</b>.<br/>Le remboursement est réservé uniquement aux <b>colis perdus ou endommagés</b>."
+          : "Ce colis ne peut pas être remboursé (colis non encore ramassé, déjà retourné à la boutique ou déjà remboursé).",
+      });
+      return;
+    }
     const defaultAmt = getDeliveryTotalPrice(row);
     setResultModalRow(row);
     setSelectedResultVal(presetResult !== null ? presetResult : getDeliveryResult(row) || 1);
     setRefundAmountVal(Number(row?.refundAmount ?? row?.RefundAmount) || defaultAmt);
     setRefundCauseVal(Number(row?.refundCause ?? row?.RefundCause) || 1);
-    setRefundCauseDescVal(row?.refundCauseDescription ?? row?.RefundCauseDescription ?? "");
+    setRefundCauseDescVal(
+      row?.refundCauseDescription ??
+        row?.RefundCauseDescription ??
+        (presetResult === 7 ? "Colis perdu / endommagé" : "")
+    );
   };
 
   // Mark a delivery as Returned to Store (Result = 6 ReturnedToSender + waitToReturnToSenderDate)
+  // Applied ONLY if the delivery is at depot AND number of iterations >= general config maxDeliveryAttempts
   const handleMarkReturnedToStore = (row) => {
+    const attempts = getDeliveryAttempts(row);
+    if (!canReturnToStore(row, maxDeliveryAttempts)) {
+      Swal.fire({
+        icon: "warning",
+        title: "Retour Boutique Non Autorisé",
+        html: `Le retour définitif à la boutique est autorisé uniquement lorsque :<br/>
+          1. Le colis se trouve <b>au Dépôt</b><br/>
+          2. Le nombre de tentatives atteint le maximum configuré (<b>${attempts} / ${maxDeliveryAttempts} tentative(s)</b>).`,
+      });
+      return;
+    }
     const nowIso = new Date().toISOString();
     Swal.fire({
       title: "Confirmer le Retour Définitif à la Boutique ?",
-      html: `Le colis <b>#${row?.qrCodeContent || row?.code || row?.id}</b> sera marqué comme <b>Retourné à l'Expéditeur / Boutique (Result = 6)</b> et apparaîtra dans le récapitulatif journalier de la boutique.`,
+      html: `Le colis <b>#${row?.qrCodeContent || row?.code || row?.id}</b> est au dépôt avec <b>${attempts}/${maxDeliveryAttempts} tentatives</b>.<br/>Il sera marqué comme <b>Retourné à l'Expéditeur / Boutique (Result = 6)</b> et apparaîtra dans le récapitulatif journalier de la boutique.`,
       icon: "question",
       showCancelButton: true,
       confirmButtonColor: "#7c3aed",
@@ -828,6 +1011,23 @@ export default function Deliveries(props) {
           })
         )
         .finally(() => {
+          const nextLogs = appendDeliveryLog(
+            row,
+            `↩️ Retour Définitif à la Boutique (Result = 6) | Tentatives atteintes: ${attempts}/${maxDeliveryAttempts}`
+          );
+          saveDeliveryLifecycleOverride(row.id, {
+            result: 6,
+            Result: 6,
+            status: 5,
+            operationalStatus: 5,
+            OperationalStatus: 5,
+            waitToReturnToSenderDate: nowIso,
+            finalReturnToStore: true,
+            rescheduledForDelivery: false,
+            attemptIncrementedForCycle: false,
+            logs: nextLogs,
+            Logs: nextLogs,
+          });
           setdata((prev) =>
             prev.map((d) =>
               d.id === row.id
@@ -838,6 +1038,7 @@ export default function Deliveries(props) {
                     operationalStatus: 5,
                     waitToReturnToSenderDate: nowIso,
                     finalReturnToStore: true,
+                    logs: nextLogs,
                   }
                 : d
             )
@@ -865,32 +1066,68 @@ export default function Deliveries(props) {
     const resultNum = Number(selectedResultVal);
     const nowIso = new Date().toISOString();
 
+    if (resultNum === 7 && !canRefundDelivery(resultModalRow)) {
+      Swal.fire({
+        icon: "error",
+        title: "Remboursement Interdit",
+        html: "Impossible de rembourser un colis déjà livré.<br/>Nous remboursons uniquement les <b>colis perdus ou endommagés</b>.",
+      });
+      return;
+    }
+
+    if (resultNum === 6 && !canReturnToStore(resultModalRow, maxDeliveryAttempts)) {
+      Swal.fire({
+        icon: "error",
+        title: "Retour Boutique Non Autorisé",
+        html: `Le retour à la boutique s'applique uniquement si le colis est au dépôt et que le nombre de tentatives atteint le maximum configuré (${getDeliveryAttempts(
+          resultModalRow
+        )}/${maxDeliveryAttempts}).`,
+      });
+      return;
+    }
+
     const finishOutcomeUpdate = () => {
+      const outcomeLabel =
+        DeliveryResultOptions.find((o) => o.value === resultNum)?.label || "Enregistré";
+      const nextLogs = appendDeliveryLog(
+        resultModalRow,
+        `Résultat de Livraison enregistré : ${outcomeLabel} (Result = ${resultNum}) | Tentative N°${getDeliveryAttempts(
+          resultModalRow
+        )}/${maxDeliveryAttempts}`
+      );
+      const outcomePatch = {
+        result: resultNum,
+        Result: resultNum,
+        status: 5,
+        operationalStatus: 5,
+        OperationalStatus: 5,
+        deliveredDate: resultNum === 1 ? nowIso : resultModalRow.deliveredDate,
+        deliveryDate: resultNum === 1 ? nowIso : resultModalRow.deliveryDate,
+        waitToReturnToSenderDate:
+          resultNum === 5 || resultNum === 6 ? nowIso : resultModalRow.waitToReturnToSenderDate,
+        isRefunded: resultNum === 7 ? true : resultModalRow.isRefunded,
+        refundDate: resultNum === 7 ? nowIso : resultModalRow.refundDate,
+        refundAmount: resultNum === 7 ? Number(refundAmountVal) : resultModalRow.refundAmount,
+        refundCause: resultNum === 7 ? Number(refundCauseVal) : resultModalRow.refundCause,
+        refundCauseDescription:
+          resultNum === 7 ? refundCauseDescVal : resultModalRow.refundCauseDescription,
+        rescheduledForDelivery: false,
+        attemptIncrementedForCycle: false,
+        logs: nextLogs,
+        Logs: nextLogs,
+      };
+      saveDeliveryLifecycleOverride(delId, outcomePatch);
       setdata((prev) =>
         prev.map((d) =>
           d.id === delId
             ? {
                 ...d,
-                result: resultNum,
-                status: 5,
-                operationalStatus: 5,
-                deliveredDate: resultNum === 1 ? nowIso : d.deliveredDate,
-                deliveryDate: resultNum === 1 ? nowIso : d.deliveryDate,
-                waitToReturnToSenderDate:
-                  resultNum === 5 || resultNum === 6 ? nowIso : d.waitToReturnToSenderDate,
-                isRefunded: resultNum === 7 ? true : d.isRefunded,
-                refundDate: resultNum === 7 ? nowIso : d.refundDate,
-                refundAmount: resultNum === 7 ? Number(refundAmountVal) : d.refundAmount,
-                refundCause: resultNum === 7 ? Number(refundCauseVal) : d.refundCause,
-                refundCauseDescription:
-                  resultNum === 7 ? refundCauseDescVal : d.refundCauseDescription,
+                ...outcomePatch,
               }
             : d
         )
       );
       setResultModalRow(null);
-      const outcomeLabel =
-        DeliveryResultOptions.find((o) => o.value === resultNum)?.label || "Enregistré";
       Swal.fire({
         icon: "success",
         title: "Résultat de Livraison Enregistré !",
@@ -1652,26 +1889,74 @@ export default function Deliveries(props) {
                   : "5. Traitement terminé"}
               </span>
 
-              {isAdminGlobal && !isAlreadyRefunded && (
-                <button
-                  onClick={() => openOutcomeModal(row, 7)}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "4px",
-                    padding: "4px 9px",
-                    background: "#fdf2f8",
-                    color: "#9d174d",
-                    border: "1px solid #fbcfe8",
-                    borderRadius: "6px",
-                    fontSize: "0.71rem",
-                    fontWeight: 800,
-                    cursor: "pointer",
-                  }}
-                  title="Enregistrer un remboursement (Refund) pour ce colis"
-                >
-                  💸 Rembourser
-                </button>
+              {isAdminGlobal && (
+                <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
+                  {canResendDelivery(row, maxDeliveryAttempts) && (
+                    <button
+                      onClick={() => handleResendDelivery(row)}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px",
+                        padding: "4px 9px",
+                        background: "#eef2ff",
+                        color: "#4338ca",
+                        border: "1px solid #c7d2fe",
+                        borderRadius: "6px",
+                        fontSize: "0.71rem",
+                        fontWeight: 800,
+                        cursor: "pointer",
+                      }}
+                      title="Renvoyer ce colis : affecter un nouveau livreur, conserver uniquement les logs de l'ancien cycle et incrémenter le nombre de tentatives"
+                    >
+                      🔄 Renvoyer ({getDeliveryAttempts(row)}/{maxDeliveryAttempts})
+                    </button>
+                  )}
+
+                  {canReturnToStore(row, maxDeliveryAttempts) && (
+                    <button
+                      onClick={() => handleMarkReturnedToStore(row)}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px",
+                        padding: "4px 9px",
+                        background: "#f5f3ff",
+                        color: "#6d28d9",
+                        border: "1px solid #ddd6fe",
+                        borderRadius: "6px",
+                        fontSize: "0.71rem",
+                        fontWeight: 800,
+                        cursor: "pointer",
+                      }}
+                      title={`Marquer ce colis au dépôt comme Retourné Définitivement à la Boutique (${getDeliveryAttempts(row)}/${maxDeliveryAttempts} tentatives atteintes)`}
+                    >
+                      ↩️ Retour Boutique ({getDeliveryAttempts(row)}/{maxDeliveryAttempts})
+                    </button>
+                  )}
+
+                  {canRefundDelivery(row) && (
+                    <button
+                      onClick={() => openOutcomeModal(row, 7)}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px",
+                        padding: "4px 9px",
+                        background: "#fdf2f8",
+                        color: "#9d174d",
+                        border: "1px solid #fbcfe8",
+                        borderRadius: "6px",
+                        fontSize: "0.71rem",
+                        fontWeight: 800,
+                        cursor: "pointer",
+                      }}
+                      title="Rembourser ce colis (uniquement si colis perdu ou endommagé — non applicable aux colis livrés)"
+                    >
+                      💸 Rembourser
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           );
@@ -1792,10 +2077,32 @@ export default function Deliveries(props) {
               </>
             )}
 
-            {/* DEPOT AGENT: Refund (Rembourser) & Return to Store (Retour Boutique) actions */}
+            {/* DEPOT AGENT: Resend (Renvoyer), Return to Store (Retour Boutique) & Refund (Rembourser) actions */}
             {isDepotAgent && opStatus >= 2 && (
               <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", width: "100%", marginTop: "2px" }}>
-                {resVal !== 6 && resVal !== 1 && (
+                {canResendDelivery(row, maxDeliveryAttempts) && (
+                  <button
+                    onClick={() => handleResendDelivery(row)}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "4px",
+                      padding: "4px 8px",
+                      background: "#eef2ff",
+                      color: "#4338ca",
+                      border: "1px solid #c7d2fe",
+                      borderRadius: "6px",
+                      fontSize: "0.7rem",
+                      fontWeight: 800,
+                      cursor: "pointer",
+                    }}
+                    title="Renvoyer ce colis : affecter un nouveau livreur, conserver uniquement les logs de l'ancien cycle et incrémenter le nombre de tentatives"
+                  >
+                    🔄 Renvoyer ({getDeliveryAttempts(row)}/{maxDeliveryAttempts})
+                  </button>
+                )}
+
+                {canReturnToStore(row, maxDeliveryAttempts) && (
                   <button
                     onClick={() => handleMarkReturnedToStore(row)}
                     style={{
@@ -1811,13 +2118,13 @@ export default function Deliveries(props) {
                       fontWeight: 800,
                       cursor: "pointer",
                     }}
-                    title="Marquer ce colis comme Retourné Définitivement à la Boutique (ReturnedToSender = 6)"
+                    title={`Marquer ce colis au dépôt comme Retourné Définitivement à la Boutique (${getDeliveryAttempts(row)}/${maxDeliveryAttempts} tentatives atteintes)`}
                   >
-                    ↩️ Retour Boutique
+                    ↩️ Retour Boutique ({getDeliveryAttempts(row)}/{maxDeliveryAttempts})
                   </button>
                 )}
 
-                {resVal !== 7 && !row?.isRefunded && (
+                {canRefundDelivery(row) && (
                   <button
                     onClick={() => openOutcomeModal(row, 7)}
                     style={{
@@ -1833,7 +2140,7 @@ export default function Deliveries(props) {
                       fontWeight: 800,
                       cursor: "pointer",
                     }}
-                    title="Enregistrer un remboursement (Refund) pour ce colis"
+                    title="Rembourser ce colis (uniquement si colis perdu ou endommagé — non applicable aux colis livrés)"
                   >
                     💸 Rembourser
                   </button>
@@ -2926,15 +3233,29 @@ export default function Deliveries(props) {
           }
 
           const ids = toTake.map((d) => d.id);
-          try {
-            const attemptsMap = JSON.parse(
-              localStorage.getItem("tawsil_delivery_attempts") || "{}"
+          toTake.forEach((d) => {
+            const curAtt = getDeliveryAttempts(d);
+            const nextAtt = d.attemptIncrementedForCycle ? Math.max(1, curAtt) : curAtt + 1;
+            setStoredDeliveryAttempts(d.id, nextAtt);
+            const updatedLogs = appendDeliveryLog(
+              d,
+              `Sortie en Livraison | Livreur #${drvId} | Tentative N°${nextAtt}/${maxDeliveryAttempts}`
             );
-            toTake.forEach((d) => {
-              attemptsMap[d.id] = getDeliveryAttempts(d) + 1;
+            saveDeliveryLifecycleOverride(d.id, {
+              status: 4,
+              operationalStatus: 4,
+              OperationalStatus: 4,
+              deliveryDriverId: drvId,
+              driverId: drvId,
+              deliveryAttemptCount: nextAtt,
+              DeliveryAttemptCount: nextAtt,
+              deliveryAttempts: nextAtt,
+              attempts: nextAtt,
+              attemptIncrementedForCycle: false,
+              logs: updatedLogs,
+              Logs: updatedLogs,
             });
-            localStorage.setItem("tawsil_delivery_attempts", JSON.stringify(attemptsMap));
-          } catch {}
+          });
 
           try {
             await Promise.allSettled(
@@ -2945,18 +3266,21 @@ export default function Deliveries(props) {
           } catch (e) {}
 
           setdata((prev) =>
-            prev.map((d) =>
-              ids.includes(d.id)
-                ? {
-                    ...d,
-                    status: 4,
-                    operationalStatus: 4,
-                    deliveryDriverId: drvId,
-                    deliveryAttempts: getDeliveryAttempts(d) + 1,
-                    attempts: getDeliveryAttempts(d) + 1,
-                  }
-                : d
-            )
+            prev.map((d) => {
+              if (!ids.includes(d.id)) return d;
+              const curAtt = getDeliveryAttempts(d);
+              const nextAtt = d.attemptIncrementedForCycle ? Math.max(1, curAtt) : curAtt + 1;
+              return {
+                ...d,
+                status: 4,
+                operationalStatus: 4,
+                deliveryDriverId: drvId,
+                deliveryAttemptCount: nextAtt,
+                deliveryAttempts: nextAtt,
+                attempts: nextAtt,
+                attemptIncrementedForCycle: false,
+              };
+            })
           );
           setcheckeds([]);
           Swal.fire({
@@ -3704,7 +4028,12 @@ export default function Deliveries(props) {
                 Résultat de la Livraison (Outcome) :
               </label>
               <SelectPicker
-                data={DeliveryResultOptions.filter((o) => o.value > 0)}
+                data={DeliveryResultOptions.filter((o) => {
+                  if (o.value <= 0) return false;
+                  if (o.value === 7) return !isDriver && canRefundDelivery(resultModalRow);
+                  if (o.value === 6) return !isDriver && canReturnToStore(resultModalRow, maxDeliveryAttempts);
+                  return true;
+                })}
                 searchable={false}
                 cleanable={false}
                 block
@@ -3726,7 +4055,59 @@ export default function Deliveries(props) {
                 }}
               >
                 <div style={{ fontWeight: 800, fontSize: "0.8rem", color: "#9d174d" }}>
-                  Enregistrement d'un Remboursement (DeliveryController.Refund)
+                  Enregistrement d'un Remboursement (Colis Perdu ou Endommagé uniquement)
+                </div>
+                <div
+                  style={{
+                    fontSize: "0.74rem",
+                    color: "#831843",
+                    background: "#fce7f3",
+                    padding: "6px 8px",
+                    borderRadius: "6px",
+                    fontWeight: 600,
+                  }}
+                >
+                  ℹ️ Les livraisons livrées ne peuvent pas être remboursées. Ce remboursement indemnise la boutique uniquement en cas de colis perdu ou endommagé.
+                </div>
+                <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRefundCauseVal(1);
+                      setRefundCauseDescVal("Colis perdu dans le circuit logistique");
+                    }}
+                    style={{
+                      background: Number(refundCauseVal) === 1 ? "#be185d" : "#ffffff",
+                      color: Number(refundCauseVal) === 1 ? "#ffffff" : "#9d174d",
+                      border: "1px solid #f472b6",
+                      borderRadius: "6px",
+                      padding: "4px 9px",
+                      fontSize: "0.73rem",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    📦 Colis Perdu
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRefundCauseVal(2);
+                      setRefundCauseDescVal("Colis endommagé / cassé pendant le transport");
+                    }}
+                    style={{
+                      background: Number(refundCauseVal) === 2 ? "#be185d" : "#ffffff",
+                      color: Number(refundCauseVal) === 2 ? "#ffffff" : "#9d174d",
+                      border: "1px solid #f472b6",
+                      borderRadius: "6px",
+                      padding: "4px 9px",
+                      fontSize: "0.73rem",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    💔 Colis Endommagé
+                  </button>
                 </div>
                 <div>
                   <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: "4px" }}>
