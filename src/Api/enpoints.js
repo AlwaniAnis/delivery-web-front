@@ -15,4 +15,6 @@ export const ENDPOINTS = {
   DriverPayment: "DriverPayment",
   Reclamation: "Reclamation",
   GlobalContact: "GlobalContact",
+  Upload: "Upload",
+  "GeneralConfig": "GeneralConfig",
 };

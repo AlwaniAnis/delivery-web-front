@@ -1,16 +1,11 @@
 import { useEffect, useState } from "react";
 import {
-  FaBell,
   FaCheckCircle,
-  FaClock,
   FaCog,
-  FaEnvelope,
   FaSave,
-  FaSms,
-  FaTruck,
-  FaUndoAlt,
+  FaTruck
 } from "react-icons/fa";
-import { Button, Input, Loader, Message, Toggle } from "rsuite";
+import { Button, Input, Loader, Message } from "rsuite";
 import Swal from "sweetalert2";
 import { createAPIEndpoint } from "../../Api/authenticated.requests";
 import { ENDPOINTS } from "../../Api/enpoints";
@@ -145,16 +140,19 @@ export default function GeneralConfigPage() {
     display: "block",
   };
 
-  const numberInput = (name, min = 1) => (
+  const numberInput = (name) => (
     <Input
     type="number"
       block
-      min={min}
-      step={1}
       value={model[name]}
-      onChange={(value) =>
-        updateField(name, value === null ? min : Number(value))
-      }
+     
+      onChange={(val) => {
+              const parsed = val === "" ? "" : parseInt(val);
+            updateField( name,
+                Number.isNaN(parsed) ? 1 : parsed,
+              
+              );
+            }}
     />
   );
 
@@ -219,9 +217,7 @@ export default function GeneralConfigPage() {
             >
               Configuration Générale
             </h2>
-            <p style={{ margin: "5px 0 0", fontSize: "0.85rem", color: "#cbd5e1" }}>
-              Gérez les règles de livraison, les notifications et les retours au dépôt.
-            </p>
+           
           </div>
         </div>
 
@@ -279,7 +275,7 @@ export default function GeneralConfigPage() {
               Nombre maximal de tentatives avant l'application des règles de suivi.
             </small>
           </div>
-
+{/* 
           <div>
             <label style={labelStyle}>
               <FaClock style={{ marginRight: "6px", color: "#64748b" }} />
@@ -289,11 +285,11 @@ export default function GeneralConfigPage() {
             <small style={{ color: "#64748b" }}>
               Délai minimal prévu entre deux tentatives de livraison.
             </small>
-          </div>
+          </div> */}
         </div>
 
         {/* Notifications */}
-        <div style={cardStyle}>
+        {/* <div style={cardStyle}>
           <h3 style={sectionTitleStyle}>
             <FaBell style={{ color: "#d97706" }} />
             Notifications
@@ -366,10 +362,10 @@ export default function GeneralConfigPage() {
               Le backend devra remplacer {"{date}"} avant l'envoi.
             </small>
           </div>
-        </div>
+        </div> */}
 
         {/* Automatic return */}
-        <div style={cardStyle}>
+        {/* <div style={cardStyle}>
           <h3 style={sectionTitleStyle}>
             <FaUndoAlt style={{ color: "#dc2626" }} />
             Retour automatique au dépôt
@@ -419,7 +415,7 @@ export default function GeneralConfigPage() {
             Cette page enregistre les paramètres. Le traitement automatique doit
             être implémenté dans le backend.
           </Message>
-        </div>
+        </div> */}
       </div>
 
       <div
