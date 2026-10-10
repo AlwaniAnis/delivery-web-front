@@ -1,6 +1,14 @@
 import ImageIcon from "@rsuite/icons/Image";
 import React, { useEffect, useRef, useState } from "react";
-import { FaMapMarker, FaPhoneAlt, FaWarehouse, FaBoxOpen } from "react-icons/fa";
+import {
+  FaMapMarker,
+  FaPhoneAlt,
+  FaWarehouse,
+  FaBoxOpen,
+  FaCamera,
+  FaTimes,
+  FaBarcode,
+} from "react-icons/fa";
 import { ImPrinter } from "react-icons/im";
 import { useRecoilState, useRecoilValue } from "recoil";
 import {
@@ -36,6 +44,9 @@ import {
   RefundCauseOptions,
   getOperationalStatus,
   getDeliveryResult,
+  getDeliveryAttempts,
+  parseDeliveryLogs,
+  appendDeliveryLog,
   getPickupDriver,
   getPickupDriverId,
   getDeliveryDriver,
@@ -45,6 +56,10 @@ import {
   getDeliveryTotalPrice,
   dateTypes,
 } from "../../Constants/types";
+import {
+  pushDriverNotification,
+  getStoredDriverNotifications,
+} from "../../Notifications/signalR";
 import validate from "../../Helpers/validate";
 import DeliveryModel from "../../Models/deliveryModel";
 import AddEdit from "./addEdit.component";
@@ -135,6 +150,91 @@ export default function Deliveries(props) {
   const [refundAmountVal, setRefundAmountVal] = useState(0);
   const [refundCauseVal, setRefundCauseVal] = useState(1);
   const [refundCauseDescVal, setRefundCauseDescVal] = useState("");
+  const [maxDeliveryAttempts, setMaxDeliveryAttempts] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("tawsil_general_config") || "{}");
+      return Number(saved.maxDeliveryAttempts) >= 1 ? Number(saved.maxDeliveryAttempts) : 3;
+    } catch {
+      return 3;
+    }
+  });
+  const [driverPickupScanInput, setDriverPickupScanInput] = useState("");
+  const [lastDriverPickupScan, setLastDriverPickupScan] = useState(null);
+  const [allStoreDeliveriesForPickup, setAllStoreDeliveriesForPickup] = useState([]);
+  const [driverCameraActive, setDriverCameraActive] = useState(false);
+  const [driverCameraError, setDriverCameraError] = useState("");
+  const driverVideoRef = useRef(null);
+  const driverStreamRef = useRef(null);
+  const driverScanTimerRef = useRef(null);
+  const driverAutoValidateTimeoutRef = useRef(null);
+  const driverGlobalBufferRef = useRef("");
+  const driverLastKeystrokeRef = useRef(0);
+  const driverScanHandlerRef = useRef(null);
+
+  const stopDriverCamera = () => {
+    if (driverScanTimerRef.current) {
+      clearInterval(driverScanTimerRef.current);
+      driverScanTimerRef.current = null;
+    }
+    if (driverStreamRef.current) {
+      driverStreamRef.current.getTracks().forEach((t) => t.stop());
+      driverStreamRef.current = null;
+    }
+    setDriverCameraActive(false);
+  };
+
+  useEffect(() => {
+    return () => stopDriverCamera();
+  }, []);
+
+  // Global Bluetooth / USB Douchette Keyboard-Wedge listener for Driver Store Pickup
+  useEffect(() => {
+    if (!isDriver) return;
+    const onGlobalDriverKeyDown = (e) => {
+      const tag = document.activeElement?.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select") return;
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
+
+      const now = Date.now();
+      if (now - driverLastKeystrokeRef.current > 150) {
+        driverGlobalBufferRef.current = "";
+      }
+      driverLastKeystrokeRef.current = now;
+
+      if (e.key === "Enter" || e.key === "Tab") {
+        if (driverGlobalBufferRef.current.trim().length >= 2) {
+          e.preventDefault();
+          const scanned = driverGlobalBufferRef.current.trim();
+          driverGlobalBufferRef.current = "";
+          setDriverPickupScanInput(scanned);
+          if (driverScanHandlerRef.current) {
+            driverScanHandlerRef.current(scanned);
+          }
+        }
+        return;
+      }
+
+      if (e.key && e.key.length === 1) {
+        driverGlobalBufferRef.current += e.key;
+        const currentBuf = driverGlobalBufferRef.current;
+        setDriverPickupScanInput(currentBuf);
+        if (driverAutoValidateTimeoutRef.current) {
+          clearTimeout(driverAutoValidateTimeoutRef.current);
+        }
+        driverAutoValidateTimeoutRef.current = setTimeout(() => {
+          if (driverGlobalBufferRef.current.trim().length >= 3) {
+            const finalCode = driverGlobalBufferRef.current.trim();
+            driverGlobalBufferRef.current = "";
+            if (driverScanHandlerRef.current) {
+              driverScanHandlerRef.current(finalCode);
+            }
+          }
+        }, 220);
+      }
+    };
+    window.addEventListener("keydown", onGlobalDriverKeyDown);
+    return () => window.removeEventListener("keydown", onGlobalDriverKeyDown);
+  }, [isDriver]);
   // ATOMS
   const [state, setstate] = useRecoilState(exportAddAtom);
   // HELPERS
@@ -157,7 +257,28 @@ export default function Deliveries(props) {
     };
     if (isDriver) {
       fetchParams.driverId = driverIdParam;
+      // Also fetch pending store deliveries so the driver can scan extra unassigned store parcels packed late
+      APi.createAPIEndpoint(APi.ENDPOINTS.Delivery, { page: 1, take: 300 })
+        .fetchAll()
+        .then((allRes) => {
+          const allRaw = Array.isArray(allRes.data?.data)
+            ? allRes.data.data
+            : Array.isArray(allRes.data)
+            ? allRes.data
+            : [];
+          setAllStoreDeliveriesForPickup(allRaw);
+        })
+        .catch(() => {});
     }
+    APi.createAPIEndpoint(APi.ENDPOINTS.GeneralConfig)
+      .customGet()
+      .then((cfgRes) => {
+        const mAtt = Number(
+          cfgRes?.data?.maxDeliveryAttempts ?? cfgRes?.data?.MaxDeliveryAttempts
+        );
+        if (mAtt >= 1) setMaxDeliveryAttempts(mAtt);
+      })
+      .catch(() => {});
     APi.createAPIEndpoint(APi.ENDPOINTS.Delivery, fetchParams)
       .fetchAll()
       .then((res) => {
@@ -346,7 +467,7 @@ export default function Deliveries(props) {
     setError("");
   };
 
-  // --- PICKUP & BRING TO DEPOT HANDLERS ---
+  // --- PICKUP & BRING TO DEPOT HANDLERS (SCANNER-ONLY TO PREVENT MISTAKES & MESS) ---
   const handlePickup = (delivery) => {
     const isCurrentUserDriver = activeRole === "driver";
     let targetDriverId = isCurrentUserDriver
@@ -354,6 +475,43 @@ export default function Deliveries(props) {
       : getPickupDriverId(delivery);
 
     const availableDrivers = scopedDrivers.length > 0 ? scopedDrivers : drivers || [];
+    const expectedCode = String(delivery.qrCodeContent || delivery.code || delivery.id).trim();
+
+    const promptScannerVerificationAndExecute = (drvId) => {
+      Swal.fire({
+        title: "📷 Scan Obligatoire — Ramassage Boutique",
+        html: `
+          <div style="text-align:left; font-size:0.86rem; line-height:1.5; color:#334155;">
+            <p>Le ramassage (Pickup) chez la boutique doit être validé <strong>exclusivement par Scanner</strong> pour éviter toute erreur.</p>
+            <p>Scannez le code du colis attendu : <strong style="font-family:monospace; color:#0f172a;">#${expectedCode}</strong></p>
+          </div>
+        `,
+        input: "text",
+        inputValue: expectedCode,
+        inputPlaceholder: "Scannez le QR Code / Code-barres du colis...",
+        showCancelButton: true,
+        confirmButtonColor: "#059669",
+        confirmButtonText: "📷 Valider Scan & Ramasser",
+        cancelButtonText: "Annuler",
+        preConfirm: (scannedVal) => {
+          const clean = String(scannedVal || "").replace(/^#/, "").trim().toLowerCase();
+          if (
+            clean !== expectedCode.toLowerCase() &&
+            clean !== String(delivery.id).toLowerCase()
+          ) {
+            Swal.showValidationMessage(
+              `Le code scanné (${scannedVal || "vide"}) ne correspond pas au colis #${expectedCode} !`
+            );
+            return false;
+          }
+          return true;
+        },
+      }).then((scanRes) => {
+        if (scanRes.isConfirmed) {
+          executePickup(Number(drvId), delivery.id);
+        }
+      });
+    };
 
     if (!targetDriverId) {
       const options = availableDrivers.reduce((acc, d) => {
@@ -365,28 +523,36 @@ export default function Deliveries(props) {
 
       Swal.fire({
         title: "Sélectionner le Livreur Ramasseur",
-        text: "Ce chauffeur ramassera le colis en boutique et recevra son tarif de pickup.",
+        text: "Ce chauffeur scannera le colis en boutique et recevra son tarif de pickup.",
         input: "select",
         inputOptions: options,
         inputPlaceholder: "Choisir le chauffeur...",
         showCancelButton: true,
-        confirmButtonText: "Confirmer le Ramassage (Pickup)",
+        confirmButtonText: "Continuer vers le Scan QR",
         confirmButtonColor: "#2563eb",
         cancelButtonText: "Annuler",
       }).then((res) => {
         if (res.isConfirmed && res.value) {
-          executePickup(Number(res.value), delivery.id);
+          promptScannerVerificationAndExecute(Number(res.value));
         }
       });
     } else {
-      executePickup(Number(targetDriverId), delivery.id);
+      promptScannerVerificationAndExecute(Number(targetDriverId));
     }
   };
 
   const executePickup = (drvId, delId) => {
     const chosenDriver = drivers.find((d) => Number(d.id) === Number(drvId));
+    const drvName = chosenDriver
+      ? `${chosenDriver.firstName || ""} ${chosenDriver.lastName || ""}`.trim() || chosenDriver.name
+      : `Chauffeur #${drvId}`;
+    const targetRow = data.find((d) => Number(d.id) === Number(delId));
+    const updatedLogs = appendDeliveryLog(
+      targetRow || { id: delId },
+      `Ramassage Boutique (Scan QR) | Chauffeur Pickup: ${drvName} | Statut ➔ 2 (En transit vers dépôt)`
+    );
     APi.createAPIEndpoint(`${APi.ENDPOINTS.Driver}/${drvId}/pickup/${delId}`)
-      .customPost({})
+      .customPost({ logs: updatedLogs })
       .then(() => {
         setdata((prev) =>
           prev.map((d) =>
@@ -398,6 +564,7 @@ export default function Deliveries(props) {
                   isPickedUp: true,
                   pickupDriverId: drvId,
                   pickupDriver: chosenDriver || d.pickupDriver,
+                  logs: updatedLogs,
                 }
               : d
           )
@@ -405,7 +572,7 @@ export default function Deliveries(props) {
         Swal.fire({
           icon: "success",
           title: "Colis Ramassé en Boutique (Pickup) !",
-          html: `Le chauffeur a confirmé le ramassage du colis en boutique (<b>isPickedUp = true</b>).<br/><span style="color:#475569; font-size:0.88rem;">Statut Opérationnel ➔ <b>Ramassé (Pickup)</b>. Prochaine étape : confirmation de réception au dépôt.</span>`,
+          html: `Le chauffeur a confirmé le ramassage du colis en boutique par scanner (<b>isPickedUp = true</b>).<br/><span style="color:#475569; font-size:0.88rem;">Statut Opérationnel ➔ <b>Ramassé (Pickup)</b>. Journal (logs) mis à jour.</span>`,
         });
         fetch();
       })
@@ -420,6 +587,7 @@ export default function Deliveries(props) {
                   isPickedUp: true,
                   pickupDriverId: drvId,
                   pickupDriver: chosenDriver || d.pickupDriver,
+                  logs: updatedLogs,
                 }
               : d
           )
@@ -427,7 +595,7 @@ export default function Deliveries(props) {
         Swal.fire({
           icon: "success",
           title: "Colis Ramassé en Boutique (Pickup) !",
-          html: `Colis pris en charge par le livreur (<b>isPickedUp = true</b>).<br/><span style="color:#475569; font-size:0.88rem;">Statut Opérationnel ➔ <b>Ramassé (Pickup)</b>.</span>`,
+          html: `Colis pris en charge par le livreur par scanner (<b>isPickedUp = true</b>).<br/><span style="color:#475569; font-size:0.88rem;">Statut Opérationnel ➔ <b>Ramassé (Pickup)</b>.</span>`,
         });
         fetch();
       });
@@ -465,6 +633,17 @@ export default function Deliveries(props) {
       if (res.isConfirmed && res.value) {
         const drvId = Number(res.value);
         const chosenDriver = drivers.find((d) => Number(d.id) === drvId);
+        const drvFullName = chosenDriver
+          ? `${chosenDriver.firstName || ""} ${chosenDriver.lastName || ""}`.trim() ||
+            chosenDriver.name
+          : `Livreur #${drvId}`;
+        pushDriverNotification({
+          driverId: drvId,
+          driverName: drvFullName,
+          count: 1,
+          type: "delivery",
+          message: `${drvFullName} : 1 livraison a été assignée`,
+        });
         APi.createAPIEndpoint(`${APi.ENDPOINTS.Driver}/${drvId}/assignDelivery/${delivery.id}`)
           .customPost({})
           .catch(() =>
@@ -489,8 +668,8 @@ export default function Deliveries(props) {
             );
             Swal.fire({
               icon: "success",
-              title: "Livreur de Livraison Affecté !",
-              text: `Colis assigné à ${chosenDriver ? `${chosenDriver.firstName || ""} ${chosenDriver.lastName || ""}` : `#${drvId}`}.`,
+              title: "Livreur de Livraison Affecté & Notifié !",
+              text: `Colis assigné à ${drvFullName} (Notification envoyée).`,
               timer: 1600,
               showConfirmButton: false,
             });
@@ -525,22 +704,54 @@ export default function Deliveries(props) {
         drivers[0]?.id ||
         1
     );
+    const nextAttempts = getDeliveryAttempts(delivery) + 1;
+    const updatedLogs = appendDeliveryLog(
+      delivery,
+      `Sortie en Livraison | Livreur #${drvId} | Tentative N°${nextAttempts}/${maxDeliveryAttempts} (deliveryAttemptCount = ${nextAttempts})`
+    );
+    try {
+      const attemptsMap = JSON.parse(localStorage.getItem("tawsil_delivery_attempts") || "{}");
+      attemptsMap[delivery.id] = nextAttempts;
+      localStorage.setItem("tawsil_delivery_attempts", JSON.stringify(attemptsMap));
+    } catch {}
+
     APi.createAPIEndpoint(`${APi.ENDPOINTS.Driver}/${drvId}/startDelivery/${delivery.id}`)
-      .customPost({})
+      .customPost({
+        deliveryAttemptCount: nextAttempts,
+        deliveryAttempts: nextAttempts,
+        attempts: nextAttempts,
+        logs: updatedLogs,
+      })
       .catch(() =>
-        APi.createAPIEndpoint(`${APi.ENDPOINTS.Delivery}/changeStatus/${delivery.id}/4`).update2({})
+        APi.createAPIEndpoint(`${APi.ENDPOINTS.Delivery}/changeStatus/${delivery.id}/4`).update2({
+          deliveryAttemptCount: nextAttempts,
+          deliveryAttempts: nextAttempts,
+          attempts: nextAttempts,
+          logs: updatedLogs,
+        })
       )
       .finally(() => {
         setdata((prev) =>
           prev.map((d) =>
-            d.id === delivery.id ? { ...d, status: 4, operationalStatus: 4, deliveryDriverId: drvId } : d
+            d.id === delivery.id
+              ? {
+                  ...d,
+                  status: 4,
+                  operationalStatus: 4,
+                  deliveryDriverId: drvId,
+                  deliveryAttemptCount: nextAttempts,
+                  deliveryAttempts: nextAttempts,
+                  attempts: nextAttempts,
+                  logs: updatedLogs,
+                }
+              : d
           )
         );
         Swal.fire({
           icon: "success",
-          title: "Livraison Démarrée (StartDelivery) !",
-          text: "Le colis est maintenant En Cours de Livraison.",
-          timer: 1600,
+          title: `Livraison Démarrée (Tentative ${nextAttempts}/${maxDeliveryAttempts}) !`,
+          text: "Le colis est maintenant En Cours de Livraison (+1 tentative comptabilisée dans deliveryAttemptCount & logs).",
+          timer: 1800,
           showConfirmButton: false,
         });
         fetch();
@@ -758,7 +969,41 @@ export default function Deliveries(props) {
         ? activeDepotPlaceId
         : delivery.preparationPlaceId || activeDepotPlaceId || 1
     );
-    executeBringToDepot(Number(targetDriverId), delivery.id, placeId);
+    const expectedCode = String(delivery.qrCodeContent || delivery.code || delivery.id).trim();
+
+    Swal.fire({
+      title: "📷 Scan Obligatoire — Réception au Dépôt",
+      html: `
+        <div style="text-align:left; font-size:0.86rem; line-height:1.5; color:#334155;">
+          <p>La réception d'un colis au dépôt doit se faire <strong>exclusivement par Scanner</strong> pour éviter les erreurs et les pertes.</p>
+          <p>Scannez le code du colis attendu : <strong style="font-family:monospace; color:#0f172a;">#${expectedCode}</strong></p>
+        </div>
+      `,
+      input: "text",
+      inputValue: expectedCode,
+      inputPlaceholder: "Scannez le QR Code / Code-barres du colis...",
+      showCancelButton: true,
+      confirmButtonColor: "#059669",
+      confirmButtonText: "📷 Valider Scan & Réceptionner au Dépôt",
+      cancelButtonText: "Annuler",
+      preConfirm: (scannedVal) => {
+        const clean = String(scannedVal || "").replace(/^#/, "").trim().toLowerCase();
+        if (
+          clean !== expectedCode.toLowerCase() &&
+          clean !== String(delivery.id).toLowerCase()
+        ) {
+          Swal.showValidationMessage(
+            `Le code scanné (${scannedVal || "vide"}) ne correspond pas au colis #${expectedCode} !`
+          );
+          return false;
+        }
+        return true;
+      },
+    }).then((scanRes) => {
+      if (scanRes.isConfirmed) {
+        executeBringToDepot(Number(targetDriverId), delivery.id, placeId);
+      }
+    });
   };
 
   const executeBringToDepot = (drvId, delId, placeId) => {
@@ -840,6 +1085,72 @@ export default function Deliveries(props) {
       });
   };
   // LIFE CYCLES
+
+  const showDeliveryLogsModal = (row) => {
+    const logsList = parseDeliveryLogs(row);
+    const attCount = getDeliveryAttempts(row);
+    const opVal = getOperationalStatus(row);
+    const resVal = getDeliveryResult(row);
+    const resLabel =
+      DeliveryResultOptions.find((r) => r.value === resVal)?.label || "Aucun résultat";
+    const statusLabel =
+      DeliveryStatus.find((s) => s.value === opVal)?.label || `Statut ${opVal}`;
+
+    const fallbackLogs =
+      logsList.length > 0
+        ? logsList
+        : [
+            `[${
+              row?.beginProcessDate
+                ? moment(row.beginProcessDate).format("DD/MM/YYYY HH:mm")
+                : "Création"
+            }] Création du colis #${row?.qrCodeContent || row?.id} | Statut initial: En attente`,
+            opVal >= 2 ? `[Suivi] Ramassé en boutique (isPickedUp = true)` : null,
+            opVal >= 3 ? `[Suivi] Réceptionné au dépôt (isAtDepot = true)` : null,
+            attCount > 0
+              ? `[Suivi] Sortie(s) en livraison : ${attCount} tentative(s) (deliveryAttemptCount = ${attCount})`
+              : null,
+            resVal > 0 ? `[Suivi] Résultat enregistré : ${resLabel}` : null,
+          ].filter(Boolean);
+
+    Swal.fire({
+      title: `📜 Journal & Tentatives — Colis #${row?.qrCodeContent || row?.code || row?.id}`,
+      width: 640,
+      html: `
+        <div style="text-align:left; font-size:0.84rem; color:#1e293b;">
+          <div style="display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:10px 14px; margin-bottom:12px;">
+            <div><strong>Statut actuel :</strong> ${statusLabel}</div>
+            <div><strong>Résultat :</strong> ${resLabel}</div>
+            <div>
+              <strong>deliveryAttemptCount :</strong>
+              <span style="background:${
+                attCount >= maxDeliveryAttempts ? "#fee2e2" : "#e0f2fe"
+              }; color:${
+        attCount >= maxDeliveryAttempts ? "#991b1b" : "#075985"
+      }; padding:2px 8px; border-radius:999px; font-weight:800;">
+                ${attCount} / ${maxDeliveryAttempts} tentative(s)
+              </span>
+            </div>
+          </div>
+          <div style="font-weight:800; font-size:0.78rem; color:#475569; text-transform:uppercase; margin-bottom:6px;">
+            Historique Chronologique (Champ <code>logs</code>) :
+          </div>
+          <div style="max-height:260px; overflow-y:auto; background:#0f172a; color:#e2e8f0; border-radius:10px; padding:12px; font-family:monospace; font-size:0.78rem; line-height:1.6;">
+            ${fallbackLogs
+              .map(
+                (line, idx) =>
+                  `<div style="padding:4px 0; border-bottom:1px solid rgba(255,255,255,0.08);"><span style="color:#38bdf8; font-weight:700;">#${
+                    idx + 1
+                  }</span> ${line}</div>`
+              )
+              .join("")}
+          </div>
+        </div>
+      `,
+      confirmButtonColor: "#2563eb",
+      confirmButtonText: "Fermer",
+    });
+  };
 
   const columns = [
     {
@@ -1108,7 +1419,7 @@ export default function Deliveries(props) {
               ))}
             </div>
 
-            <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", alignItems: "center" }}>
               <span
                 style={{
                   fontSize: "0.66rem",
@@ -1135,6 +1446,46 @@ export default function Deliveries(props) {
               >
                 {isAtDepot ? "✓ Dépôt" : "○ Dépôt"}
               </span>
+              {(() => {
+                const attCount = getDeliveryAttempts(row);
+                const isMax = attCount >= maxDeliveryAttempts;
+                return (
+                  <span
+                    style={{
+                      fontSize: "0.66rem",
+                      fontWeight: 800,
+                      padding: "1px 6px",
+                      borderRadius: "4px",
+                      background: isMax ? "#fee2e2" : "#ede9fe",
+                      color: isMax ? "#991b1b" : "#5b21b6",
+                      border: isMax ? "1px solid #fca5a5" : "1px solid #ddd6fe",
+                    }}
+                    title="Nombre de tentatives de livraison (deliveryAttemptCount)"
+                  >
+                    Tentatives : {attCount}/{maxDeliveryAttempts}
+                  </span>
+                );
+              })()}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  showDeliveryLogsModal(row);
+                }}
+                style={{
+                  fontSize: "0.68rem",
+                  fontWeight: 600,
+                  padding: "2px 8px",
+                  borderRadius: "4px",
+                  background: "#f8fafc",
+                  color: "#475569",
+                  border: "1px solid #cbd5e1",
+                  cursor: "pointer",
+                }}
+                title="Voir les logs"
+              >
+                Logs
+              </button>
             </div>
           </div>
         );
@@ -2386,6 +2737,179 @@ export default function Deliveries(props) {
           return (op === 4 && res !== 1) || (res >= 2 && res <= 4);
         });
 
+        // 5. Driver Store Pickup by Scanner (Assigned + Extra Unassigned Store Deliveries packed late)
+        const assignedStorePickups = data.filter(
+          (d) =>
+            getOperationalStatus(d) === 1 &&
+            Number(getPickupDriverId(d) || d.driverId || 0) === drvId
+        );
+
+        const handleDriverScanStorePickup = async (eOrCode) => {
+          if (eOrCode && typeof eOrCode.preventDefault === "function") {
+            eOrCode.preventDefault();
+          }
+          const rawInput =
+            typeof eOrCode === "string" ? eOrCode : driverPickupScanInput;
+          const rawCode = String(rawInput || "").replace(/^#/, "").trim();
+          if (!rawCode) {
+            Swal.fire(
+              "Code requis",
+              "Veuillez scanner le QR code ou code-barres du colis chez la boutique.",
+              "warning"
+            );
+            return;
+          }
+
+          const combinedPool = [
+            ...data,
+            ...(allStoreDeliveriesForPickup || []).filter(
+              (ext) => !data.some((loc) => Number(loc.id) === Number(ext.id))
+            ),
+          ];
+
+          const matched = combinedPool.find(
+            (d) =>
+              String(d.qrCodeContent || "").toLowerCase() === rawCode.toLowerCase() ||
+              String(d.code || "").toLowerCase() === rawCode.toLowerCase() ||
+              String(d.id) === rawCode
+          );
+
+          if (!matched) {
+            Swal.fire(
+              "Colis introuvable",
+              `Aucun colis ne correspond au code scanné #${rawCode}.`,
+              "error"
+            );
+            return;
+          }
+
+          if (getOperationalStatus(matched) >= 2) {
+            Swal.fire(
+              "Déjà ramassé",
+              `Le colis #${matched.qrCodeContent || matched.id} a déjà été scanné et ramassé.`,
+              "info"
+            );
+            setDriverPickupScanInput("");
+            return;
+          }
+
+          const wasAssignedToMe =
+            Number(getPickupDriverId(matched) || matched.driverId || 0) === drvId;
+          const pickupFee = getDriverTarifForRow(matched).pickupFee;
+
+          try {
+            // If this parcel was NOT assigned to this driver (e.g. packed late by store), link it first
+            if (!wasAssignedToMe) {
+              await APi.createAPIEndpoint(APi.ENDPOINTS.Delivery + "/changeDriver")
+                .create({
+                  driverId: drvId,
+                  deliveries: [matched.id],
+                })
+                .catch(() => {});
+            }
+            await APi.createAPIEndpoint(`${APi.ENDPOINTS.Driver}/${drvId}/pickup/${matched.id}`)
+              .customPost({})
+              .catch(() =>
+                APi.createAPIEndpoint(
+                  `${APi.ENDPOINTS.Delivery}/${matched.id}/confirmPickup`
+                ).customPost({ driverId: drvId })
+              );
+          } catch {}
+
+          const updatedParcel = {
+            ...matched,
+            status: 2,
+            operationalStatus: 2,
+            isPickedUp: true,
+            isAtStore: false,
+            isAtDriver: true,
+            pickupDriverId: drvId,
+            driverId: drvId,
+            pickupDriver: loggedDriver || matched.pickupDriver,
+          };
+
+          setdata((prev) => {
+            const exists = prev.some((d) => Number(d.id) === Number(matched.id));
+            if (exists) {
+              return prev.map((d) =>
+                Number(d.id) === Number(matched.id) ? updatedParcel : d
+              );
+            }
+            return [updatedParcel, ...prev];
+          });
+
+          setDriverPickupScanInput("");
+          setLastDriverPickupScan({
+            code: matched.qrCodeContent || matched.code || matched.id,
+            customer: matched.customer?.fullName || "Client",
+            extraUnassigned: !wasAssignedToMe,
+            fee: pickupFee,
+          });
+
+          Swal.fire({
+            icon: "success",
+            title: wasAssignedToMe
+              ? "📷 Colis Assigné Ramassé par Scan !"
+              : "➕ Colis Supplémentaire (Non Assigné) Ramassé !",
+            html: `
+              <div style="text-align:left; font-size:0.88rem; line-height:1.5;">
+                <p>Colis <strong>#${matched.qrCodeContent || matched.id}</strong> (${
+              matched.customer?.fullName || "Client"
+            }) validé par scanner.</p>
+                ${
+                  !wasAssignedToMe
+                    ? `<div style="background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;padding:8px;border-radius:8px;margin-bottom:8px;">
+                        <strong>➕ Colis supplémentaire boutique :</strong> Ce colis n'était pas dans votre liste initiale (emballé tard par la boutique). Il vous a été rattaché automatiquement.
+                      </div>`
+                    : ""
+                }
+                <p style="color:#059669;font-weight:800;margin:0;">+${pickupFee.toFixed(
+                  3
+                )} TND crédité sur votre solde Pickup !</p>
+              </div>
+            `,
+            timer: 2300,
+            showConfirmButton: false,
+          });
+        };
+
+        driverScanHandlerRef.current = handleDriverScanStorePickup;
+
+        const handleDriverScanInputChange = (val) => {
+          setDriverPickupScanInput(val);
+          if (driverAutoValidateTimeoutRef.current) {
+            clearTimeout(driverAutoValidateTimeoutRef.current);
+          }
+          const clean = String(val || "").replace(/^#/, "").trim();
+          if (!clean || clean.length < 3) return;
+
+          const combinedPool = [
+            ...data,
+            ...(allStoreDeliveriesForPickup || []).filter(
+              (ext) => !data.some((loc) => Number(loc.id) === Number(ext.id))
+            ),
+          ];
+
+          const exactMatch = combinedPool.find(
+            (d) =>
+              String(d.qrCodeContent || "").trim().toLowerCase() === clean.toLowerCase() ||
+              String(d.code || "").trim().toLowerCase() === clean.toLowerCase()
+          );
+
+          if (exactMatch) {
+            driverAutoValidateTimeoutRef.current = setTimeout(() => {
+              handleDriverScanStorePickup(clean);
+            }, 120);
+            return;
+          }
+
+          if (clean.length >= 6) {
+            driverAutoValidateTimeoutRef.current = setTimeout(() => {
+              handleDriverScanStorePickup(clean);
+            }, 380);
+          }
+        };
+
         const handleDriverTakeDeliveries = async (countOrSelected) => {
           let toTake = [];
           const checkedAssigned = assignedAtDepot.filter((d) => checkeds.includes(d.id));
@@ -2403,6 +2927,16 @@ export default function Deliveries(props) {
 
           const ids = toTake.map((d) => d.id);
           try {
+            const attemptsMap = JSON.parse(
+              localStorage.getItem("tawsil_delivery_attempts") || "{}"
+            );
+            toTake.forEach((d) => {
+              attemptsMap[d.id] = getDeliveryAttempts(d) + 1;
+            });
+            localStorage.setItem("tawsil_delivery_attempts", JSON.stringify(attemptsMap));
+          } catch {}
+
+          try {
             await Promise.allSettled(
               ids.map((delId) =>
                 APi.createAPIEndpoint(`${APi.ENDPOINTS.Driver}/${drvId}/startDelivery/${delId}`).customPost({})
@@ -2413,15 +2947,22 @@ export default function Deliveries(props) {
           setdata((prev) =>
             prev.map((d) =>
               ids.includes(d.id)
-                ? { ...d, status: 4, operationalStatus: 4, deliveryDriverId: drvId }
+                ? {
+                    ...d,
+                    status: 4,
+                    operationalStatus: 4,
+                    deliveryDriverId: drvId,
+                    deliveryAttempts: getDeliveryAttempts(d) + 1,
+                    attempts: getDeliveryAttempts(d) + 1,
+                  }
                 : d
             )
           );
           setcheckeds([]);
           Swal.fire({
             icon: "success",
-            title: "Colis Pris en Charge !",
-            html: `Vous avez pris en charge <b>${ids.length} colis</b> pour votre tournée de livraison.`,
+            title: "Colis Pris en Charge (+1 Tentative) !",
+            html: `Vous avez pris en charge <b>${ids.length} colis</b> pour votre tournée de livraison (Tentative comptabilisée).`,
             timer: 1800,
             showConfirmButton: false,
           });
@@ -2459,6 +3000,247 @@ export default function Deliveries(props) {
 
         return (
           <div style={{ margin: "10px 10px 16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+            {/* CARD 0: SCANNER RAMASSAGE BOUTIQUE (ASSIGNED + EXTRA UNASSIGNED STORE PARCELS) */}
+            <div
+              style={{
+                background: "linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%)",
+                border: "2px solid #60a5fa",
+                borderRadius: "14px",
+                padding: "16px 20px",
+                color: "#ffffff",
+                display: "flex",
+                flexDirection: "column",
+                gap: "10px",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "flex-start",
+                  flexWrap: "wrap",
+                  gap: "10px",
+                }}
+              >
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                    <span
+                      style={{
+                        background: "#dbeafe",
+                        color: "#1e3a8a",
+                        padding: "3px 10px",
+                        borderRadius: "999px",
+                        fontSize: "0.7rem",
+                        fontWeight: 900,
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      📷 Ramassage Boutique par Scanner Uniquement
+                    </span>
+                    <span
+                      style={{
+                        background: "rgba(255,255,255,0.18)",
+                        color: "#ffffff",
+                        padding: "3px 10px",
+                        borderRadius: "999px",
+                        fontSize: "0.7rem",
+                        fontWeight: 800,
+                      }}
+                    >
+                      {assignedStorePickups.length} colis assigné(s) à ramasser + Colis supplémentaires autorisés
+                    </span>
+                  </div>
+                  <div style={{ fontSize: "1rem", fontWeight: 800, marginTop: "6px" }}>
+                    Scanner les Colis en Boutique — Douchette Bluetooth / USB ou Caméra (Validation Automatique)
+                  </div>
+                  <div style={{ fontSize: "0.78rem", color: "#bfdbfe" }}>
+                    Scannez avec votre <strong>douchette Bluetooth / USB</strong> ou la <strong>caméra</strong> : validation 100% automatique dès la lecture du code (colis assignés ou préparés en retard par la boutique).
+                  </div>
+                </div>
+              </div>
+
+              <form
+                onSubmit={handleDriverScanStorePickup}
+                style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}
+              >
+                <div style={{ flex: 1, minWidth: "240px", position: "relative" }}>
+                  <FaBarcode
+                    style={{
+                      position: "absolute",
+                      left: "12px",
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      color: "#1e3a8a",
+                    }}
+                  />
+                  <input
+                    type="text"
+                    value={driverPickupScanInput}
+                    onChange={(e) => handleDriverScanInputChange(e.target.value)}
+                    placeholder="Douchette Bluetooth / USB prête : scannez et validation automatique..."
+                    style={{
+                      width: "100%",
+                      padding: "10px 14px 10px 36px",
+                      borderRadius: "10px",
+                      border: "2px solid #93c5fd",
+                      background: "#ffffff",
+                      color: "#0f172a",
+                      fontWeight: 800,
+                      fontFamily: "monospace",
+                      fontSize: "0.9rem",
+                    }}
+                  />
+                </div>
+                <button
+                  type="submit"
+                  style={{
+                    background: "#10b981",
+                    color: "#ffffff",
+                    border: "2px solid #ffffff",
+                    borderRadius: "10px",
+                    padding: "10px 16px",
+                    fontWeight: 900,
+                    fontSize: "0.84rem",
+                    cursor: "pointer",
+                  }}
+                >
+                  Valider Code
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (driverCameraActive) {
+                      stopDriverCamera();
+                      return;
+                    }
+                    setDriverCameraError("");
+                    setDriverCameraActive(true);
+                    try {
+                      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                        setDriverCameraError("Caméra non supportée sur cet appareil.");
+                        return;
+                      }
+                      const stream = await navigator.mediaDevices.getUserMedia({
+                        video: { facingMode: { ideal: "environment" } },
+                      });
+                      driverStreamRef.current = stream;
+                      if (driverVideoRef.current) {
+                        driverVideoRef.current.srcObject = stream;
+                        await driverVideoRef.current.play();
+                        if ("BarcodeDetector" in window) {
+                          const detector = new window.BarcodeDetector({
+                            formats: ["qr_code", "code_128", "ean_13", "code_39"],
+                          });
+                          driverScanTimerRef.current = setInterval(async () => {
+                            if (!driverVideoRef.current || driverVideoRef.current.readyState < 2)
+                              return;
+                            try {
+                              const codes = await detector.detect(driverVideoRef.current);
+                              if (codes && codes.length > 0 && codes[0].rawValue) {
+                                const codeVal = codes[0].rawValue;
+                                stopDriverCamera();
+                                setDriverPickupScanInput(codeVal);
+                                handleDriverScanStorePickup(codeVal);
+                              }
+                            } catch {}
+                          }, 450);
+                        }
+                      }
+                    } catch {
+                      setDriverCameraError("Accès caméra refusé ou indisponible.");
+                    }
+                  }}
+                  style={{
+                    background: driverCameraActive ? "#ef4444" : "#0f172a",
+                    color: "#ffffff",
+                    border: "2px solid #93c5fd",
+                    borderRadius: "10px",
+                    padding: "10px 16px",
+                    fontWeight: 900,
+                    fontSize: "0.84rem",
+                    cursor: "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                  }}
+                >
+                  {driverCameraActive ? (
+                    <>
+                      <FaTimes /> Fermer Caméra
+                    </>
+                  ) : (
+                    <>
+                      <FaCamera /> Scanner avec Caméra
+                    </>
+                  )}
+                </button>
+              </form>
+
+              {driverCameraActive && (
+                <div
+                  style={{
+                    background: "#0f172a",
+                    border: "2px solid #60a5fa",
+                    borderRadius: "10px",
+                    padding: "10px",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: "6px",
+                  }}
+                >
+                  <video
+                    ref={driverVideoRef}
+                    muted
+                    playsInline
+                    style={{
+                      width: "100%",
+                      maxWidth: "380px",
+                      height: "210px",
+                      objectFit: "cover",
+                      borderRadius: "8px",
+                      border: "2px solid #3b82f6",
+                      background: "#000",
+                    }}
+                  />
+                  <span style={{ fontSize: "0.76rem", color: "#bfdbfe", fontWeight: 700 }}>
+                    📷 Pointez la caméra vers le QR Code ou Code-Barres du colis en boutique.
+                  </span>
+                  {driverCameraError && (
+                    <span style={{ fontSize: "0.76rem", color: "#fca5a5", fontWeight: 700 }}>
+                      {driverCameraError}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {lastDriverPickupScan && (
+                <div
+                  style={{
+                    background: "rgba(255,255,255,0.14)",
+                    borderRadius: "8px",
+                    padding: "8px 12px",
+                    fontSize: "0.8rem",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                    gap: "8px",
+                  }}
+                >
+                  <span>
+                    ✅ Dernier scan : <strong>#{lastDriverPickupScan.code}</strong> ({lastDriverPickupScan.customer})
+                    {lastDriverPickupScan.extraUnassigned
+                      ? " · ➕ Colis supplémentaire rattaché !"
+                      : " · Colis assigné"}
+                  </span>
+                  <span style={{ fontWeight: 900, color: "#6ee7b7" }}>
+                    +{Number(lastDriverPickupScan.fee || 0).toFixed(3)} TND
+                  </span>
+                </div>
+              )}
+            </div>
+
             {/* CARD 1: TAKE SOME OR ALL ASSIGNED DELIVERIES */}
             <div
               style={{

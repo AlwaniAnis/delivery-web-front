@@ -11,15 +11,19 @@ import {
   FaEnvelope,
   FaWallet,
   FaWarehouse,
+  FaFileAlt,
+  FaCloudUploadAlt,
+  FaExternalLinkAlt,
 } from "react-icons/fa";
 import { APi } from "../../Api/";
 import { exportAddAtom } from "../../Atoms/exportAdd.atom";
 import { preparationPlacesState } from "../../Atoms/preparationPlaces.atom";
 import { activeRoleState, currentDepotIdState, normalizeRole } from "../../Atoms/auth.atom";
+import { parseDriverDocuments } from "../../Constants/types";
 import ExportAdd from "../../Components/Common/ExportAdd";
 import Filter from "../../Components/Common/Filter";
 import Grid from "../../Components/Grid";
-import AddEdit from "./AddEdit.component";
+import AddEdit, { getDriverUploadUrl } from "./AddEdit.component";
 import ResetPassword from "../Auth/ResetPassword";
 
 export default function Drivers() {
@@ -45,6 +49,7 @@ export default function Drivers() {
     carNumber: "",
     cities: "",
     solde: 0,
+    documents: "",
     preparationPlaceId: isDepotAgent ? Number(currentDepotId || 1) : depotsList?.[0]?.id || 1,
   });
   const [userModel, setuserModel] = useState({
@@ -72,6 +77,7 @@ export default function Drivers() {
       carNumber: "",
       cities: "",
       solde: 0,
+      documents: "",
       preparationPlaceId: isDepotAgent ? Number(currentDepotId || 1) : depotsList?.[0]?.id || 1,
     });
     setError("");
@@ -111,9 +117,12 @@ export default function Drivers() {
         ? currentDepotId || 1
         : model.preparationPlaceId || model.preparationPlace?.id || depotsList?.[0]?.id || 1
     );
+    const docsStr = model.documents ?? model.Documents ?? "";
     const payload = {
       ...model,
       preparationPlaceId: placeId,
+      documents: docsStr,
+      Documents: docsStr,
     };
     delete payload.preparationPlace;
     delete payload.tarifId;
@@ -180,6 +189,7 @@ export default function Drivers() {
     if (found) {
       setmodel({
         ...found,
+        documents: found.documents ?? found.Documents ?? "",
         preparationPlaceId: Number(
           found.preparationPlaceId || found.preparationPlace?.id || depotsList?.[0]?.id || 1
         ),
@@ -224,6 +234,72 @@ export default function Drivers() {
         },
       };
     }
+    if (col.value === "documents") {
+      return {
+        ...col,
+        render: (documents, Documents, id) => {
+          const docs = parseDriverDocuments({ documents, Documents });
+          return (
+            <div style={{ display: "flex", flexDirection: "column", gap: "4px", alignItems: "flex-start" }}>
+              {docs.length > 0 ? (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
+                  {docs.map((fileName, idx) => (
+                    <a
+                      key={`${fileName}-${idx}`}
+                      href={getDriverUploadUrl(fileName)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      style={{
+                        background: "#eff6ff",
+                        color: "#1d4ed8",
+                        border: "1px solid #bfdbfe",
+                        padding: "3px 8px",
+                        borderRadius: "6px",
+                        fontSize: "0.74rem",
+                        fontWeight: 700,
+                        textDecoration: "none",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px",
+                      }}
+                      title={`Ouvrir /uploads/${fileName}`}
+                    >
+                      <FaFileAlt size={10} /> Doc #{idx + 1} <FaExternalLinkAlt size={9} />
+                    </a>
+                  ))}
+                </div>
+              ) : (
+                <span style={{ fontSize: "0.74rem", color: "#94a3b8" }}>Aucun document</span>
+              )}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  getBYId(id);
+                  setstate((prev) => ({ ...prev, open: true }));
+                }}
+                style={{
+                  background: "#f8fafc",
+                  color: "#2563eb",
+                  border: "1px solid #cbd5e1",
+                  padding: "2px 7px",
+                  borderRadius: "5px",
+                  fontSize: "0.7rem",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "4px",
+                }}
+              >
+                <FaCloudUploadAlt size={11} /> {docs.length > 0 ? "Gérer / Ajouter" : "Uploader CIN"}
+              </button>
+            </div>
+          );
+        },
+      };
+    }
     return col;
   });
 
@@ -244,7 +320,20 @@ export default function Drivers() {
         noExport
         save={save}
         AddComponent={
-          <AddEdit error={error} model={model} _setmodel={setmodel} />
+          <AddEdit
+            error={error}
+            model={model}
+            _setmodel={setmodel}
+            onDriverDocumentsSynced={(driverId, nextDocsString) => {
+              setdata((prev) =>
+                prev.map((d) =>
+                  Number(d.id) === Number(driverId)
+                    ? { ...d, documents: nextDocsString, Documents: nextDocsString }
+                    : d
+                )
+              );
+            }}
+          />
         }
       />
       <Grid
@@ -553,5 +642,11 @@ const columns = [
         </a>
       );
     },
+  },
+  {
+    value: "documents",
+    value2: "Documents",
+    value3: "id",
+    name: "Documents (CIN / Pièces)",
   },
 ];

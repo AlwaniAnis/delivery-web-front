@@ -269,7 +269,7 @@ export default function OurStore() {
               Nom de la Boutique / Raison Sociale :
             </label>
             <Input
-              placeholder="Ex: Tawsil Store Tunis"
+              placeholder="Ex: Squad Store Tunis"
               value={model.name_fr || ""}
               onChange={(name_fr) => setmodel((prev) => ({ ...prev, name_fr }))}
             />

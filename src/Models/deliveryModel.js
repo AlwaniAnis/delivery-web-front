@@ -44,6 +44,8 @@ export default class DeliveryModel {
   refundCause = 0;
   refundCauseDescription = "";
   isSettled = false;
+  logs = "";
+  deliveryAttemptCount = 0;
 }
 
 export class ColiItem {

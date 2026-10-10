@@ -146,7 +146,7 @@ export default function StoreSupportBubble() {
                   Assistance & Contact Direct
                 </div>
                 <div style={{ fontSize: "0.74rem", opacity: 0.9, marginTop: "2px" }}>
-                  Dépôt du Territoire & Support Tawsil
+                  Dépôt du Territoire & Support Squad Delivery
                 </div>
               </div>
             </div>
@@ -540,7 +540,7 @@ export default function StoreSupportBubble() {
                                   borderRadius: "6px",
                                 }}
                               >
-                                {gc.department || "Support Tawsil"}
+                                {gc.department || "Support Squad Delivery"}
                               </span>
                               <div style={{ fontWeight: 800, fontSize: "0.88rem", color: "#0f172a", marginTop: "4px" }}>
                                 {gc.title}
@@ -646,7 +646,7 @@ export default function StoreSupportBubble() {
                     color: "#166534",
                   }}
                 >
-                  Envoyez un message WhatsApp directement à votre <strong>Dépôt</strong> ou au <strong>Support Tawsil</strong>.
+                  Envoyez un message WhatsApp directement à votre <strong>Dépôt</strong> ou au <strong>Support Squad Delivery</strong>.
                 </div>
 
                 <div>

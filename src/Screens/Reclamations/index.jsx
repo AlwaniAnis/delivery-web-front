@@ -413,7 +413,7 @@ export default function Reclamations() {
             senderName:
               serverReply?.user?.fullName ||
               (isAdmin
-                ? currentUser?.fullName || "Administration Tawsil"
+                ? currentUser?.fullName || "Administration Squad Delivery"
                 : selectedRec.storeName || currentStore?.name_fr || "Boutique"),
             message: serverReply?.message || replyText.trim(),
             text: serverReply?.message || replyText.trim(),

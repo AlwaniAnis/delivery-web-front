@@ -331,7 +331,7 @@ export default function GlobalContacts() {
             <p style={{ margin: "4px 0 0", fontSize: "0.85rem", color: "#94a3b8" }}>
               {isAdmin
                 ? "Ajoutez et mettez à jour les contacts officiels mis à la disposition des boutiques partenaires"
-                : "Retrouvez tous les numéros directs, WhatsApp et emails des services Tawsil pour vous assister"}
+                : "Retrouvez tous les numéros directs, WhatsApp et emails des services Squad Delivery pour vous assister"}
             </p>
           </div>
         </div>
@@ -802,7 +802,7 @@ export default function GlobalContacts() {
                   Adresse Email :
                 </label>
                 <Input
-                  placeholder="Ex: support@tawsil.tn"
+                  placeholder="Ex: support@squaddelivery.tn"
                   value={editingContact.email}
                   onChange={(val) => setEditingContact((prev) => ({ ...prev, email: val }))}
                 />

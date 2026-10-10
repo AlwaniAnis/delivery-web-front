@@ -85,7 +85,7 @@ function AddEdit({
           <label style={{ fontWeight: 600, fontSize: "0.85rem", color: "#334155" }}>Email :</label>
           <Input
             value={model.email || ""}
-            placeholder="agent.depot@tawsil.tn"
+            placeholder="agent.depot@squaddelivery.tn"
             onChange={(email) => {
               _setmodel((prev) => ({ ...prev, email }));
             }}

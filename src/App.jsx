@@ -2,15 +2,20 @@ import { useEffect, useState } from "react";
 import { Link, Route, Switch, useHistory, useLocation } from "react-router-dom";
 import { useRecoilState, useSetRecoilState } from "recoil";
 import { Container, Content, Dropdown, Header, Sidebar } from "rsuite";
+import Swal from "sweetalert2";
 import {
   startDriverNotifications,
   stopDriverNotifications,
+  getStoredDriverNotifications,
+  markDriverNotificationsRead,
+  clearDriverNotifications,
 } from "./Notifications/signalR";
 // Icons
 import { BiTrip } from "react-icons/bi";
 import {
   FaAddressBook,
   FaBars,
+  FaBell,
   FaBox,
   FaCalendarDay,
   FaChartPie,
@@ -51,6 +56,7 @@ import { MyStore } from "./Atoms/store.atom";
 import { StoresList } from "./Atoms/stores.atom";
 import { tarifsState } from "./Atoms/tarifs.atom";
 import useB2B from "./hooks/useB2B";
+import SquadLogo from "./Components/Common/SquadLogo";
 
 // Screens
 import Login from "./Screens/Auth/login";
@@ -96,6 +102,9 @@ const App = () => {
   const location = useLocation();
   const history = useHistory();
   const isDepotAgent = normalizeRole(activeRole) === "depotAgent";
+  const [driverNotifs, setDriverNotifs] = useState(() =>
+    getStoredDriverNotifications(currentDriverId)
+  );
   const depotFilter = isDepotAgent
     ? {
         preparationPlaceId: Number(currentDepotId) || 1,
@@ -103,22 +112,44 @@ const App = () => {
       }
     : {};
 
-  // Load initial stores, drivers, depots, depot agents, global contacts, and tariffs from API
+  // Sync and listen for Driver Assignment Notifications (SignalR + Local Events)
   useEffect(() => {
-    const auth = JSON.parse(localStorage.getItem("auth") || "{}");
+    const refreshNotifs = () => {
+      setDriverNotifs(getStoredDriverNotifications(currentDriverId));
+    };
+    refreshNotifs();
 
-    if (auth.role !== "driver" || !auth.driverId) return;
-
-    const handleNotification = (message) => {
-      console.log("New driver notification:", message);
+    const onNewNotif = (ev) => {
+      refreshNotifs();
+      const item = ev?.detail;
+      if (normalizeRole(activeRole) === "driver" && item) {
+        Swal.fire({
+          toast: true,
+          position: "top-end",
+          icon: "info",
+          title: item.title || "🔔 Nouvelle Affectation",
+          text: item.message || "Des colis vous ont été affectés.",
+          showConfirmButton: false,
+          timer: 4000,
+        });
+      }
     };
 
-    startDriverNotifications(handleNotification).catch(console.error);
+    window.addEventListener("tawsil-driver-notification", onNewNotif);
+    window.addEventListener("tawsil-driver-notification-updated", refreshNotifs);
+
+    const handleNotification = () => {
+      refreshNotifs();
+    };
+
+    startDriverNotifications(handleNotification).catch(() => {});
 
     return () => {
-      stopDriverNotifications(handleNotification).catch(console.error);
+      window.removeEventListener("tawsil-driver-notification", onNewNotif);
+      window.removeEventListener("tawsil-driver-notification-updated", refreshNotifs);
+      stopDriverNotifications(handleNotification).catch(() => {});
     };
-  }, []);
+  }, [activeRole, currentDriverId]);
   useEffect(() => {
     APi.createAPIEndpoint(APi.ENDPOINTS.Driver, {
       page: 1,
@@ -344,7 +375,7 @@ const App = () => {
     if (path === "/contacts") {
       return !isB2B && isAdmin ? "Gestion des Contacts Globaux" : "Contacts Utiles & Support";
     }
-    return "Tawsil Logistics";
+    return "Squad Delivery";
   };
 
   return (
@@ -361,13 +392,7 @@ const App = () => {
         {/* Modern Sidebar */}
         <Sidebar className={`tawsil-sidebar ${expand ? "mobile-show" : ""}`}>
           <div className="sidebar-brand-zone">
-            <div className="brand-logo-icon">
-              <FaBox />
-            </div>
-            <div className="brand-text-block">
-              <span className="brand-title">TAWSIL</span>
-              <span className="brand-badge">Express Logistics</span>
-            </div>
+            <SquadLogo variant="dark" size="sm" />
             <button className="mobile-close-btn" onClick={() => setExpand(false)}>
               <FaTimes />
             </button>
@@ -850,7 +875,7 @@ const App = () => {
               <div className="header-title-block">
                 <h1 className="header-page-title">{getPageTitle()}</h1>
                 <div className="header-breadcrumb">
-                  <span>Tawsil</span>
+                  <span>Squad Delivery</span>
                   <span className="separator">/</span>
                   <span className="current">{getPageTitle()}</span>
                 </div>
@@ -1004,20 +1029,154 @@ const App = () => {
                 </div>
               )}
 
+              {/* Driver Notifications Bell Dropdown */}
+              {isDriver && (() => {
+                const unreadCount = driverNotifs.filter((n) => !n.read).length;
+                return (
+                  <Dropdown
+                    placement="bottomEnd"
+                    onOpen={() => markDriverNotificationsRead(currentDriverId)}
+                    renderToggle={(props, ref) => (
+                      <button
+                        {...props}
+                        ref={ref}
+                        style={{
+                          position: "relative",
+                          background: unreadCount > 0 ? "#eff6ff" : "#f8fafc",
+                          border: unreadCount > 0 ? "1.5px solid #93c5fd" : "1px solid #cbd5e1",
+                          color: unreadCount > 0 ? "#2563eb" : "#475569",
+                          width: "38px",
+                          height: "38px",
+                          borderRadius: "10px",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          cursor: "pointer",
+                        }}
+                        title="Notifications d'affectation de colis"
+                      >
+                        <FaBell size={16} />
+                        {unreadCount > 0 && (
+                          <span
+                            style={{
+                              position: "absolute",
+                              top: "-5px",
+                              right: "-5px",
+                              background: "#ef4444",
+                              color: "#ffffff",
+                              fontSize: "0.68rem",
+                              fontWeight: 900,
+                              minWidth: "18px",
+                              height: "18px",
+                              borderRadius: "999px",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              padding: "0 4px",
+                              border: "2px solid #ffffff",
+                            }}
+                          >
+                            {unreadCount}
+                          </span>
+                        )}
+                      </button>
+                    )}
+                  >
+                    <div
+                      style={{
+                        width: "320px",
+                        maxHeight: "360px",
+                        overflowY: "auto",
+                        padding: "10px 12px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          paddingBottom: "8px",
+                          borderBottom: "1px solid #e2e8f0",
+                          marginBottom: "8px",
+                        }}
+                      >
+                        <strong style={{ fontSize: "0.84rem", color: "#0f172a" }}>
+                          🔔 Notifications d'Affectation ({driverNotifs.length})
+                        </strong>
+                        {driverNotifs.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => clearDriverNotifications(currentDriverId)}
+                            style={{
+                              background: "transparent",
+                              border: "none",
+                              color: "#64748b",
+                              fontSize: "0.72rem",
+                              cursor: "pointer",
+                              fontWeight: 700,
+                            }}
+                          >
+                            Effacer
+                          </button>
+                        )}
+                      </div>
+                      {driverNotifs.length === 0 ? (
+                        <div
+                          style={{
+                            padding: "16px 8px",
+                            textAlign: "center",
+                            fontSize: "0.78rem",
+                            color: "#64748b",
+                          }}
+                        >
+                          Aucune notification d'affectation pour le moment.
+                        </div>
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                          {driverNotifs.slice(0, 12).map((n) => (
+                            <div
+                              key={n.id}
+                              onClick={() => history.push("/scan_qrcode")}
+                              style={{
+                                background: n.read ? "#f8fafc" : "#eff6ff",
+                                border: n.read ? "1px solid #e2e8f0" : "1px solid #bfdbfe",
+                                borderRadius: "8px",
+                                padding: "8px 10px",
+                                cursor: "pointer",
+                              }}
+                            >
+                              <div style={{ fontWeight: 800, fontSize: "0.78rem", color: "#1e3a8a" }}>
+                                {n.title}
+                              </div>
+                              <div style={{ fontSize: "0.75rem", color: "#334155", marginTop: "2px" }}>
+                                {n.message}
+                              </div>
+                              <div style={{ fontSize: "0.68rem", color: "#2563eb", fontWeight: 700, marginTop: "4px" }}>
+                                📷 Cliquer pour scanner les colis ➔
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </Dropdown>
+                );
+              })()}
+
               {/* User Dropdown */}
               <Dropdown
                 placement="bottomEnd"
                 renderToggle={(props, ref) => (
                   <button {...props} ref={ref} className="user-profile-button">
                     <div className="user-avatar-circle">
-                      {currentUser.userName ? currentUser.userName.substring(0, 2).toUpperCase() : "TW"}
+                      {currentUser.userName ? currentUser.userName.substring(0, 2).toUpperCase() : "SD"}
                     </div>
                   </button>
                 )}
               >
                 <div className="dropdown-user-header">
                   <strong>{currentUser.fullName || currentUser.userName}</strong>
-                  <span>{currentUser.email || (currentUser.userName ? `${currentUser.userName}@tawsil.tn` : "tawsil.tn")}</span>
+                  <span>{currentUser.email || (currentUser.userName ? `${currentUser.userName}@squaddelivery.tn` : "squaddelivery.tn")}</span>
                   <div
                     style={{
                       marginTop: "6px",

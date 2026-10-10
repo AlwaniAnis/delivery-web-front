@@ -109,7 +109,7 @@ function AddEdit({ _setmodel, error, model, drivers = [], stores = [], depotAgen
         <Input
           type="email"
           value={model.email || ""}
-          placeholder="contact@tawsil.tn"
+          placeholder="contact@squaddelivery.tn"
           onChange={(email) => {
             _setmodel((prev) => ({ ...prev, email }));
           }}

@@ -12,6 +12,7 @@ import {
 import { useSetRecoilState } from "recoil";
 import { Button, Input, Message } from "rsuite";
 import { AuthService } from "../../Api/auth.service";
+import SquadLogo from "../../Components/Common/SquadLogo";
 import {
   activeRoleState,
   currentDepotIdState,
@@ -166,42 +167,18 @@ export default function Login() {
       >
         {/* Brand Header */}
         <div style={{ textAlign: "center", marginBottom: "26px" }}>
-          <div
-            style={{
-              width: "56px",
-              height: "56px",
-              background: "linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%)",
-              borderRadius: "16px",
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: "#fff",
-              fontSize: "26px",
-              boxShadow: "0 10px 25px -5px rgba(79, 70, 229, 0.45)",
-              marginBottom: "12px",
-            }}
-          >
-            <FaBox />
+          <div style={{ display: "inline-flex", justifyContent: "center", marginBottom: "10px" }}>
+            <SquadLogo variant="light" size="lg" />
           </div>
-          <h2
-            style={{
-              margin: 0,
-              fontSize: "1.85rem",
-              fontWeight: 800,
-              letterSpacing: "-0.03em",
-              color: "#0f172a",
-            }}
-          >
-            TAWSIL LOGISTICS
-          </h2>
           <p
             style={{
               margin: "6px 0 0",
               fontSize: "0.88rem",
               color: "#64748b",
+              fontWeight: 600,
             }}
           >
-            Plateforme Unifiée de Livraison Express
+            Plateforme Unifiée de Livraison Express — Vitesse & Précision
           </p>
         </div>
 

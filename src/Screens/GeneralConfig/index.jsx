@@ -41,13 +41,23 @@ export default function GeneralConfigPage() {
       const res = await createAPIEndpoint(ENDPOINTS.GeneralConfig).customGet();
 
       if (res?.data) {
-        setModel({
+        const nextCfg = {
           ...defaultConfig,
           ...res.data,
           id: res.data.id ?? 1,
-        });
+        };
+        setModel(nextCfg);
+        try {
+          localStorage.setItem("tawsil_general_config", JSON.stringify(nextCfg));
+        } catch (e) {}
       }
     } catch (err) {
+      try {
+        const cached = localStorage.getItem("tawsil_general_config");
+        if (cached) {
+          setModel({ ...defaultConfig, ...JSON.parse(cached) });
+        }
+      } catch (e) {}
       setLoadError(
         err.response?.data?.message ||
           err.response?.data ||
@@ -83,6 +93,9 @@ export default function GeneralConfigPage() {
     setSaving(true);
 
     try {
+      try {
+        localStorage.setItem("tawsil_general_config", JSON.stringify(model));
+      } catch (e) {}
       // The backend PUT endpoint accepts the model at /api/GeneralConfig.
       // Use the API helper method that sends PUT to the endpoint root.
       await createAPIEndpoint(ENDPOINTS.GeneralConfig).customPut(model);
@@ -265,27 +278,45 @@ export default function GeneralConfigPage() {
         <div style={cardStyle}>
           <h3 style={sectionTitleStyle}>
             <FaTruck style={{ color: "#2563eb" }} />
-            Gestion des livraisons
+            Gestion des tentatives & Retour au dépôt
           </h3>
 
           <div>
-            <label style={labelStyle}>Nombre maximum de tentatives</label>
+            <label style={labelStyle}>
+              Nombre maximum de tentatives avant retour au dépôt (maxDeliveryAttempts)
+            </label>
             {numberInput("maxDeliveryAttempts")}
-            <small style={{ color: "#64748b" }}>
-              Nombre maximal de tentatives avant l'application des règles de suivi.
+            <small style={{ color: "#475569", display: "block", marginTop: "6px", lineHeight: 1.5 }}>
+              • Chaque fois que le livreur part en livraison avec un colis (<strong>StartDelivery</strong>), le compteur de tentatives augmente de <strong>+1</strong>.<br />
+              • Lorsque le colis atteint <strong>{model.maxDeliveryAttempts || 3} tentative(s)</strong> sans être livré, il est automatiquement signalé comme <strong>Prêt pour retour au dépôt / boutique</strong>.
             </small>
           </div>
-{/* 
-          <div>
-            <label style={labelStyle}>
-              <FaClock style={{ marginRight: "6px", color: "#64748b" }} />
-              Intervalle entre les tentatives (heures)
-            </label>
-            {numberInput("deliveryAttemptIntervalHours")}
-            <small style={{ color: "#64748b" }}>
-              Délai minimal prévu entre deux tentatives de livraison.
-            </small>
-          </div> */}
+
+          <div
+            style={{
+              background: "#eff6ff",
+              border: "1px solid #bfdbfe",
+              borderRadius: "10px",
+              padding: "12px 14px",
+              fontSize: "0.82rem",
+              color: "#1e3a8a",
+            }}
+          >
+            <div style={{ fontWeight: 800, marginBottom: "4px" }}>
+              📷 Sécurité Opérationnelle : Scan QR / Code-barres Obligatoire
+            </div>
+            <div style={{ color: "#334155", lineHeight: 1.45 }}>
+              Pour éviter toute erreur ou confusion :
+              <ul style={{ margin: "6px 0 0", paddingLeft: "18px" }}>
+                <li>
+                  <strong>Ramassage par le livreur (Pickup)</strong> : validé uniquement par scan du code-barres / QR code du colis.
+                </li>
+                <li>
+                  <strong>Réception par le dépôt (Arrivée / Retour au dépôt)</strong> : validée uniquement par scan du code-barres / QR code du colis.
+                </li>
+              </ul>
+            </div>
+          </div>
         </div>
 
         {/* Notifications */}

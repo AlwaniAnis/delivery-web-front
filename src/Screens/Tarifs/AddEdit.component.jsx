@@ -127,7 +127,7 @@ function AddEdit({ _setmodel, error, model = {} }) {
           <FaPercentage style={{ color: netMargin >= 0 ? "#166534" : "#991b1b" }} />
           <div>
             <div style={{ fontSize: "0.78rem", fontWeight: 700, color: netMargin >= 0 ? "#166534" : "#991b1b" }}>
-              Marge Nette Plateforme (Tawsil)
+              Marge Nette Plateforme (Squad Delivery)
             </div>
             <div style={{ fontSize: "0.72rem", color: "#64748b" }}>
               Tarif Boutique - (Pickup Livreur + Livraison Livreur)

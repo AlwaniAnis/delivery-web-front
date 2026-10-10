@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useRecoilState, useRecoilValue } from "recoil";
 import { Checkbox, Input, Modal, SelectPicker } from "rsuite";
 import Swal from "sweetalert2";
@@ -14,9 +14,15 @@ import {
   FaUndoAlt,
   FaArrowRight,
   FaMapMarkerAlt,
+  FaQrcode,
+  FaBarcode,
+  FaCamera,
+  FaTimes,
+  FaExclamationTriangle,
 } from "react-icons/fa";
 import { APi } from "../../Api";
 import { ENDPOINTS } from "../../Api/enpoints";
+import { pushDriverNotification } from "../../Notifications/signalR";
 import { DriversList } from "../../Atoms/drivers.atom";
 import { StoresList } from "../../Atoms/stores.atom";
 import { preparationPlacesState } from "../../Atoms/preparationPlaces.atom";
@@ -35,6 +41,10 @@ import {
   getDeliveryDriverId,
   getActiveDeliveryDriverId,
   getDeliveryTotalPrice,
+  getDeliveryAttempts,
+  parseDeliveryLogs,
+  appendDeliveryLog,
+  getStoredMaxDeliveryAttempts,
 } from "../../Constants/types";
 
 export default function DepotAgentWorkspace() {
@@ -48,7 +58,7 @@ export default function DepotAgentWorkspace() {
 
   // 5 Simple Workflow Steps for the Depot Agent:
   // 1. "store_pickups"   -> Cartes des Boutiques (Assigner un livreur pour tout ou N colis à ramasser)
-  // 2. "depot_reception" -> Confirmer la réception au dépôt (Colis ramassés + Retours non livrés)
+  // 2. "depot_reception" -> Confirmer la réception au dépôt PAR SCANNER UNIQUEMENT (Colis ramassés + Retours non livrés)
   // 3. "assign_delivery" -> Affecter un livreur de livraison aux colis reçus au dépôt
   // 4. "end_of_day"      -> Clôture Fin de Journée Livreurs (Cash + Tarifs + Réception Retours)
   // 5. "stores_recap"    -> Récap Fin de Journée des Boutiques du Dépôt (Montant net à remettre + Colis retournés définitifs)
@@ -57,6 +67,25 @@ export default function DepotAgentWorkspace() {
   const [deliveries, setDeliveries] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [maxDeliveryAttempts, setMaxDeliveryAttempts] = useState(() =>
+    getStoredMaxDeliveryAttempts()
+  );
+
+  // Step 2: Scanner-only reception state
+  const [depotScanCode, setDepotScanCode] = useState("");
+  const scanInputCode = depotScanCode;
+  const setScanInputCode = setDepotScanCode;
+  const [lastScannedReception, setLastScannedReception] = useState(null);
+  const [depotCameraActive, setDepotCameraActive] = useState(false);
+  const [depotCameraError, setDepotCameraError] = useState("");
+  const depotVideoRef = useRef(null);
+  const depotStreamRef = useRef(null);
+  const depotScanTimerRef = useRef(null);
+  const depotScanInputRef = useRef(null);
+  const scanInputRef = depotScanInputRef;
+  const depotAutoValidateTimeoutRef = useRef(null);
+  const depotGlobalBufferRef = useRef("");
+  const depotLastKeystrokeRef = useRef(0);
 
   // Per-store pickup assignment state: { [storeId]: { driverId: number, count: number, selectedIds: number[] } }
   const [storePickupConfig, setStorePickupConfig] = useState({});
@@ -243,6 +272,19 @@ export default function DepotAgentWorkspace() {
       })
       .catch(() => {});
 
+    APi.createAPIEndpoint(ENDPOINTS.GeneralConfig)
+      .customGet()
+      .then((res) => {
+        if (res?.data) {
+          const maxAtt = Number(res.data.maxDeliveryAttempts ?? res.data.MaxDeliveryAttempts);
+          if (maxAtt >= 1) setMaxDeliveryAttempts(maxAtt);
+          try {
+            localStorage.setItem("tawsil_general_config", JSON.stringify(res.data));
+          } catch (e) {}
+        }
+      })
+      .catch(() => {});
+
     APi.createAPIEndpoint(ENDPOINTS.Delivery, {
       page: 1,
       take: 500,
@@ -265,6 +307,62 @@ export default function DepotAgentWorkspace() {
   useEffect(() => {
     fetchDeliveries();
   }, [activeDepot.id]);
+
+  const stopDepotCamera = () => {
+    if (depotScanTimerRef.current) {
+      clearInterval(depotScanTimerRef.current);
+      depotScanTimerRef.current = null;
+    }
+    if (depotStreamRef.current) {
+      depotStreamRef.current.getTracks().forEach((t) => t.stop());
+      depotStreamRef.current = null;
+    }
+    setDepotCameraActive(false);
+  };
+
+  useEffect(() => {
+    return () => stopDepotCamera();
+  }, []);
+
+  const startDepotCamera = async () => {
+    setDepotCameraError("");
+    setDepotCameraActive(true);
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setDepotCameraError("Caméra non supportée dans ce navigateur. Utilisez la douchette ou le champ de scan.");
+        return;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } },
+      });
+      depotStreamRef.current = stream;
+      if (depotVideoRef.current) {
+        depotVideoRef.current.srcObject = stream;
+        await depotVideoRef.current.play();
+        if ("BarcodeDetector" in window) {
+          try {
+            const detector = new window.BarcodeDetector({
+              formats: ["qr_code", "code_128", "ean_13", "code_39"],
+            });
+            depotScanTimerRef.current = setInterval(async () => {
+              if (!depotVideoRef.current || depotVideoRef.current.readyState < 2) return;
+              try {
+                const barcodes = await detector.detect(depotVideoRef.current);
+                if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
+                  const rawCode = barcodes[0].rawValue;
+                  stopDepotCamera();
+                  setDepotScanCode(rawCode);
+                  handleScanDepotReception(rawCode);
+                }
+              } catch (e) {}
+            }, 450);
+          } catch (e) {}
+        }
+      }
+    } catch (err) {
+      setDepotCameraError("Accès caméra refusé. Utilisez votre lecteur code-barres USB ou saisissez le code scanné.");
+    }
+  };
 
   const markPickupVerified = (ids) => {
     const idList = Array.isArray(ids) ? ids : [ids];
@@ -375,6 +473,8 @@ export default function DepotAgentWorkspace() {
   }
 
   // --- STEP 1 ACTION: Assign a Pickup Driver for ALL or N deliveries of a Store ---
+  // Note: Assigning a driver notifies the driver via SignalR (Delivery/changeDriver),
+  // while the actual Pickup (isPickedUp = true, status = 2) is done ONLY by the Driver via Scanner at the store!
   const handleAssignStorePickup = async (storeCard) => {
     const storeId = storeCard.store.id;
     const cfg = storePickupConfig[storeId] || {};
@@ -405,28 +505,41 @@ export default function DepotAgentWorkspace() {
 
     if (targetDeliveries.length === 0) return;
 
-    const chosenDriver = depotDrivers.find((d) => Number(d.id) === driverId) || drivers.find((d) => Number(d.id) === driverId);
+    const chosenDriver =
+      depotDrivers.find((d) => Number(d.id) === driverId) ||
+      drivers.find((d) => Number(d.id) === driverId);
     const targetIds = targetDeliveries.map((d) => d.id);
+    const driverFullName = chosenDriver
+      ? `${chosenDriver.firstName || ""} ${chosenDriver.lastName || ""}`.trim()
+      : `Livreur #${driverId}`;
+    const storeName = storeCard.store.name_fr || storeCard.store.name || `Boutique #${storeId}`;
 
-    // Call DriverController.Pickup for each selected delivery
+    // Call Delivery/changeDriver so backend assigns driver AND sends SignalR "ReceiveNotification" to Driver_{driverId}
     try {
-      await Promise.allSettled(
-        targetIds.map((delId) =>
-          APi.createAPIEndpoint(`${ENDPOINTS.Driver}/${driverId}/pickup/${delId}`).customPost({})
-        )
-      );
+      await APi.createAPIEndpoint(ENDPOINTS.Delivery + "/changeDriver").create({
+        driverId: Number(driverId),
+        deliveries: targetIds,
+      });
     } catch (e) {}
+
+    // Push notification to driver notification feed as well
+    pushDriverNotification({
+      driverId,
+      title: `📦 Ramassage Boutique : ${storeName}`,
+      message: `${driverFullName} : ${targetIds.length} livraisons ont été assignées pour ramassage chez ${storeName}. Scannez les colis en boutique (vous pouvez aussi scanner les colis supplémentaires préparés tardivement).`,
+      type: "pickup_assignment",
+      storeName,
+      count: targetIds.length,
+    });
 
     setDeliveries((prev) =>
       prev.map((d) =>
         targetIds.includes(d.id)
           ? {
               ...d,
-              isPickedUp: true,
+              driverId,
               pickupDriverId: driverId,
               pickupDriver: chosenDriver || d.pickupDriver,
-              status: 2,
-              operationalStatus: 2,
             }
           : d
       )
@@ -437,30 +550,204 @@ export default function DepotAgentWorkspace() {
       ...prev,
       [storeId]: {
         driverId,
-        count: Math.max(0, available.length - targetIds.length),
+        count: scCountFallback(available.length, targetIds.length),
         selectedIds: [],
       },
     }));
 
     Swal.fire({
       icon: "success",
-      title: "Ramassage Affecté !",
-      html: `<b>${targetIds.length} colis</b> de <b>${
-        storeCard.store.name_fr || storeCard.store.name
-      }</b> ont été assignés au livreur <b>${
-        chosenDriver ? `${chosenDriver.firstName || ""} ${chosenDriver.lastName || ""}` : `#${driverId}`
-      }</b>.<br/><span style="font-size:0.85rem;color:#475569;">Prochaine étape : Confirmer leur réception à l'arrivée au dépôt.</span>`,
-      timer: 2200,
+      title: "Chauffeur Notifié pour Ramassage !",
+      html: `<b>${targetIds.length} colis</b> de <b>${storeName}</b> ont été assignés à <b>${driverFullName}</b>.<br/><span style="font-size:0.84rem;color:#1e40af;display:block;margin-top:6px;">🔔 Notification envoyée au livreur.<br/>📷 Le livreur validera le ramassage (ainsi que tout colis supplémentaire prêt en boutique) par <b>Scanner QR</b>.</span>`,
+      timer: 2800,
       showConfirmButton: false,
     });
   };
 
-  // --- STEP 2A ACTION: Confirm Reception at Depot of Picked-up Deliveries ---
-  const handleConfirmReceptionAtDepot = async (deliveryList) => {
-    if (!deliveryList || deliveryList.length === 0) {
-      Swal.fire("Attention", "Veuillez sélectionner au moins un colis à réceptionner.", "warning");
+  const scCountFallback = (availLen, assignedLen) => Math.max(1, availLen - assignedLen);
+
+  // --- STEP 2 SCANNER-ONLY HANDLER: Scan a parcel QR/Barcode at the Depot ---
+  const handleScanDepotReception = async (rawCodeOrEvent) => {
+    if (rawCodeOrEvent && typeof rawCodeOrEvent.preventDefault === "function") {
+      rawCodeOrEvent.preventDefault();
+    }
+    const rawCodeInput =
+      typeof rawCodeOrEvent === "string" ? rawCodeOrEvent : depotScanCode;
+    const clean = String(rawCodeInput ?? "").replace(/^#/, "").trim();
+    if (!clean) {
+      Swal.fire("Code requis", "Veuillez scanner un code-barres / QR code de colis.", "warning");
       return;
     }
+
+    // 1. Search in local depot deliveries first
+    let found = depotDeliveries.find(
+      (d) =>
+        String(d.qrCodeContent || "").trim() === clean ||
+        String(d.code || "").trim() === clean ||
+        String(d.id) === clean
+    );
+
+    // 2. If not in local state yet, query backend getByCode
+    if (!found) {
+      try {
+        const res = await APi.createAPIEndpoint(
+          `${ENDPOINTS.Delivery}/getByCode/${encodeURIComponent(clean)}`
+        ).customGet();
+        if (res?.data) {
+          found = { ...res.data, cost: getDeliveryTotalPrice(res.data) };
+        }
+      } catch (e) {}
+    }
+
+    if (!found) {
+      Swal.fire({
+        icon: "error",
+        title: "Colis Introuvable",
+        text: `Aucun colis ne correspond au code scanné : ${clean}`,
+      });
+      return;
+    }
+
+    setDepotScanCode("");
+    const op = getOperationalStatus(found);
+    const resVal = getDeliveryResult(found);
+    const attempts = getDeliveryAttempts(found);
+    const isUndeliveredReturn =
+      (resVal >= 2 && resVal <= 5) ||
+      Boolean(found.returnedToDepotByDriver || found.pendingDepotReturn);
+
+    // Case A: Undelivered parcel returning from a driver tour
+    if (isUndeliveredReturn) {
+      const reachedMax = attempts >= maxDeliveryAttempts;
+      Swal.fire({
+        title: `📷 Retour Scanné — Colis #${found.qrCodeContent || found.id}`,
+        html: `
+          <div style="text-align:left;font-size:0.9rem;line-height:1.5;">
+            <div><b>Client :</b> ${found.customer?.fullName || "Client"} (${found.customer?.city || ""})</div>
+            <div><b>Tentatives effectuées :</b> <span style="font-weight:800;color:${
+              reachedMax ? "#dc2626" : "#2563eb"
+            };">${attempts} / ${maxDeliveryAttempts}</span></div>
+            ${
+              reachedMax
+                ? `<div style="margin-top:8px;padding:8px 10px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#991b1b;font-weight:700;">
+                    ⚠️ Nombre maximum de tentatives atteint (${attempts}/${maxDeliveryAttempts}) !<br/>
+                    Selon la Configuration Générale, ce colis est prêt pour un <b>Retour Définitif à la Boutique</b>.
+                  </div>`
+                : `<div style="margin-top:8px;padding:8px 10px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;color:#1e3a8a;">
+                    ℹ️ Encore ${maxDeliveryAttempts - attempts} tentative(s) possible(s) avant retour obligatoire.
+                  </div>`
+            }
+          </div>
+        `,
+        icon: reachedMax ? "warning" : "question",
+        showCancelButton: true,
+        showDenyButton: true,
+        confirmButtonColor: "#7c3aed",
+        denyButtonColor: "#2563eb",
+        confirmButtonText: "↩️ Retour Définitif Boutique (Facturer Retour)",
+        denyButtonText: "🏢 Stocker au Dépôt (Nouvelle Tentative)",
+        cancelButtonText: "Annuler",
+      }).then((choice) => {
+        if (choice.isConfirmed) {
+          handleConfirmUndeliveredReturn(found, "final_return");
+        } else if (choice.isDenied) {
+          handleConfirmUndeliveredReturn(found, "reschedule");
+        }
+      });
+      return;
+    }
+
+    // Case B: Parcel picked up from store (or arriving at depot) -> Confirm Arrival at Depot & credit Pickup Tariff to Driver
+    if (op >= 3 && (found.isAtDepot || verifiedPickupIds.includes(found.id))) {
+      Swal.fire({
+        icon: "info",
+        title: "Déjà Réceptionné au Dépôt",
+        text: `Le colis #${found.qrCodeContent || found.id} est déjà confirmé en stock au dépôt (Étape 3).`,
+      });
+      return;
+    }
+
+    await handleConfirmReceptionAtDepot([found]);
+  };
+
+  // --- AUTO-VALIDATION FOR BLUETOOTH / USB DOUCHETTE & TYPED MATCH ---
+  const handleDepotScanInputChange = (val) => {
+    setDepotScanCode(val);
+    if (depotAutoValidateTimeoutRef.current) {
+      clearTimeout(depotAutoValidateTimeoutRef.current);
+    }
+    const clean = String(val || "").replace(/^#/, "").trim();
+    if (!clean || clean.length < 3) return;
+
+    // Immediate auto-validation if exact match with a known parcel QR/code in the depot pool
+    const exactMatch = depotDeliveries.find(
+      (d) =>
+        String(d.qrCodeContent || "").trim().toLowerCase() === clean.toLowerCase() ||
+        String(d.code || "").trim().toLowerCase() === clean.toLowerCase()
+    );
+    if (exactMatch) {
+      depotAutoValidateTimeoutRef.current = setTimeout(() => {
+        handleScanDepotReception(clean);
+      }, 120);
+      return;
+    }
+
+    // Fallback auto-validation after short pause (350ms) when a Bluetooth/USB scanner finishes bursting characters without Enter
+    if (clean.length >= 6) {
+      depotAutoValidateTimeoutRef.current = setTimeout(() => {
+        handleScanDepotReception(clean);
+      }, 380);
+    }
+  };
+
+  // Global HID Keyboard-Wedge listener so Bluetooth/USB Douchette works hands-free even if the input isn't focused
+  useEffect(() => {
+    if (activeStep !== "depot_reception") return;
+    const onGlobalKeyDown = (e) => {
+      const tag = document.activeElement?.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select") return;
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
+
+      const now = Date.now();
+      if (now - depotLastKeystrokeRef.current > 150) {
+        depotGlobalBufferRef.current = "";
+      }
+      depotLastKeystrokeRef.current = now;
+
+      if (e.key === "Enter" || e.key === "Tab") {
+        if (depotGlobalBufferRef.current.trim().length >= 2) {
+          e.preventDefault();
+          const scanned = depotGlobalBufferRef.current.trim();
+          depotGlobalBufferRef.current = "";
+          setDepotScanCode(scanned);
+          handleScanDepotReception(scanned);
+        }
+        return;
+      }
+
+      if (e.key && e.key.length === 1) {
+        depotGlobalBufferRef.current += e.key;
+        const currentBuf = depotGlobalBufferRef.current;
+        setDepotScanCode(currentBuf);
+        if (depotAutoValidateTimeoutRef.current) {
+          clearTimeout(depotAutoValidateTimeoutRef.current);
+        }
+        depotAutoValidateTimeoutRef.current = setTimeout(() => {
+          if (depotGlobalBufferRef.current.trim().length >= 3) {
+            const finalCode = depotGlobalBufferRef.current.trim();
+            depotGlobalBufferRef.current = "";
+            handleScanDepotReception(finalCode);
+          }
+        }, 220);
+      }
+    };
+    window.addEventListener("keydown", onGlobalKeyDown);
+    return () => window.removeEventListener("keydown", onGlobalKeyDown);
+  }, [activeStep, depotDeliveries]);
+
+  // --- STEP 2A ACTION: Confirm Reception at Depot of Scanned Picked-up Deliveries ---
+  const handleConfirmReceptionAtDepot = async (deliveryList) => {
+    if (!deliveryList || deliveryList.length === 0) return;
 
     const placeId = Number(activeDepot.id || 1);
     const nowIso = new Date().toISOString();
@@ -479,32 +766,63 @@ export default function DepotAgentWorkspace() {
       );
     } catch (e) {}
 
+    // Credit pickup tariff to the pickup driver's solde upon confirmed arrival at depot
+    deliveryList.forEach((del) => {
+      const pDrvId = Number(getPickupDriverId(del) || del.driverId || 0);
+      if (pDrvId) {
+        const { pickupFee } = getParcelDriverFees(del);
+        setDriversList((prev) =>
+          prev.map((drv) =>
+            Number(drv.id) === pDrvId
+              ? {
+                  ...drv,
+                  solde: (Number(drv.solde ?? drv.Solde) || 0) + pickupFee,
+                  Solde: (Number(drv.solde ?? drv.Solde) || 0) + pickupFee,
+                }
+              : drv
+          )
+        );
+      }
+    });
+
     markPickupVerified(ids);
 
     setDeliveries((prev) =>
-      prev.map((d) =>
-        ids.includes(d.id)
-          ? {
-              ...d,
-              preparationPlaceId: placeId,
-              status: 3,
-              operationalStatus: 3,
-              isPickedUp: true,
-              isAtDepot: true,
-              atDepotConfirmedBy: agentId,
-              atDepotConfirmedDate: nowIso,
-            }
-          : d
-      )
+      prev.map((d) => {
+        if (!ids.includes(d.id)) return d;
+        const nextLogs = appendDeliveryLog(
+          d,
+          `Réception au Dépôt (Scan QR) | Dépôt: ${activeDepot.name} | Statut ➔ 3 (Au Dépôt, isAtDepot = true)`
+        );
+        return {
+          ...d,
+          preparationPlaceId: placeId,
+          status: 3,
+          operationalStatus: 3,
+          isPickedUp: true,
+          isAtDepot: true,
+          atDepotConfirmedBy: agentId,
+          atDepotConfirmedDate: nowIso,
+          logs: nextLogs,
+        };
+      })
     );
 
     setSelectedReceptionIds((prev) => prev.filter((id) => !ids.includes(id)));
 
+    const firstDel = deliveryList[0];
+    setLastScannedReception({
+      code: firstDel.qrCodeContent || firstDel.code || firstDel.id,
+      customer: firstDel.customer?.fullName || "Client",
+      time: new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }),
+      type: "pickup_reception",
+    });
+    const { pickupFee } = getParcelDriverFees(firstDel);
     Swal.fire({
       icon: "success",
-      title: "Réception au Dépôt Confirmée !",
-      html: `<b>${ids.length} colis</b> réceptionné(s) dans <b>${activeDepot.name}</b>.<br/>Vous pouvez maintenant leur affecter un livreur de livraison (Étape 3).`,
-      timer: 2000,
+      title: "📷 Scan Validé : Réception au Dépôt Confirmée !",
+      html: `Colis <b>#${firstDel.qrCodeContent || firstDel.id}</b> réceptionné dans <b>${activeDepot.name}</b>.<br/><span style="color:#059669;font-weight:700;">+${pickupFee.toFixed(3)} TND (Tarif Pickup) crédité au solde du livreur ramasseur.</span><br/>Statut ➔ <b>Étape 3 : Au Dépôt</b>.`,
+      timer: 2400,
       showConfirmButton: false,
     });
   };
@@ -524,6 +842,23 @@ export default function DepotAgentWorkspace() {
     } catch (e) {}
 
     markReturnConfirmed([del.id]);
+    const nextLogs = appendDeliveryLog(
+      del,
+      actionType === "final_return"
+        ? `Retour Définitif Boutique (Scan Dépôt) | Tentatives: ${getDeliveryAttempts(
+            del
+          )}/${maxDeliveryAttempts} | Result ➔ 6 (ReturnedToSender)`
+        : `Retour au Dépôt Stocker pour Nouvelle Tentative | Tentatives: ${getDeliveryAttempts(
+            del
+          )}/${maxDeliveryAttempts} | Statut ➔ 3 (Au Dépôt)`
+    );
+
+    setLastScannedReception({
+      code: del.qrCodeContent || del.code || del.id,
+      customer: del.customer?.fullName || "Client",
+      time: new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }),
+      type: actionType === "final_return" ? "final_return" : "return_reschedule",
+    });
 
     setDeliveries((prev) =>
       prev.map((d) =>
@@ -534,9 +869,12 @@ export default function DepotAgentWorkspace() {
               operationalStatus: nextOpStatus,
               result: actionType === "reschedule" ? 0 : 6,
               isAtDepot: true,
+              finalReturnToStore: actionType === "final_return",
+              rescheduledForDelivery: actionType === "reschedule",
               deliveryDriverId: actionType === "reschedule" ? null : d.deliveryDriverId,
               deliveryDriver: actionType === "reschedule" ? null : d.deliveryDriver,
               waitToReturnToSenderDate: nowIso,
+              logs: nextLogs,
             }
           : d
       )
@@ -550,9 +888,9 @@ export default function DepotAgentWorkspace() {
           : "Retour au Dépôt Confirmé (Nouvelle Tentative)",
       html:
         actionType === "final_return"
-          ? `Le colis <b>#${del.qrCodeContent || del.id}</b> est enregistré en <b>Retour Définitif à la Boutique</b> (visible dans le récap de la boutique).`
-          : `Le colis <b>#${del.qrCodeContent || del.id}</b> est réceptionné au dépôt pour une <b>prochaine itération de livraison</b>.`,
-      timer: 2200,
+          ? `Le colis <b>#${del.qrCodeContent || del.id}</b> est enregistré en <b>Retour Définitif à la Boutique (Result = 6)</b>.<br/><span style="color:#dc2626;font-weight:700;">Le tarif de retour est appliqué sur le récap de la boutique.</span>`
+          : `Le colis <b>#${del.qrCodeContent || del.id}</b> est remis en stock au dépôt (<b>Étape 3</b>) pour une prochaine tentative de livraison (0 TND facturé à la boutique).`,
+      timer: 2400,
       showConfirmButton: false,
     });
   };
@@ -568,20 +906,35 @@ export default function DepotAgentWorkspace() {
       return;
     }
 
-    const chosenDriver = drivers.find((d) => Number(d.id) === Number(targetDriverId));
+    const chosenDriver =
+      depotDrivers.find((d) => Number(d.id) === Number(targetDriverId)) ||
+      drivers.find((d) => Number(d.id) === Number(targetDriverId));
+    const driverFullName = chosenDriver
+      ? `${chosenDriver.firstName || ""} ${chosenDriver.lastName || ""}`.trim()
+      : `Livreur #${targetDriverId}`;
 
     try {
+      // Call Delivery/changeDriver so backend assigns driver AND triggers SignalR "ReceiveNotification"
+      await APi.createAPIEndpoint(ENDPOINTS.Delivery + "/changeDriver").create({
+        driverId: Number(targetDriverId),
+        deliveries: deliveryIds,
+      });
       if (deliveryIds.length === 1) {
         await APi.createAPIEndpoint(
           `${ENDPOINTS.Driver}/${targetDriverId}/assignDelivery/${deliveryIds[0]}`
-        ).customPost({});
-      } else {
-        await APi.createAPIEndpoint(ENDPOINTS.Delivery + "/changeDriver").create({
-          driverId: Number(targetDriverId),
-          deliveries: deliveryIds,
-        });
+        )
+          .customPost({})
+          .catch(() => {});
       }
     } catch (e) {}
+
+    pushDriverNotification({
+      driverId: Number(targetDriverId),
+      title: `🚚 Affectation Livraison (${activeDepot.name})`,
+      message: `${driverFullName} : ${deliveryIds.length} livraisons ont été assignées au dépôt. Scannez les colis pour démarrer votre tournée.`,
+      type: "delivery_assignment",
+      count: deliveryIds.length,
+    });
 
     setDeliveries((prev) =>
       prev.map((d) =>
@@ -601,11 +954,9 @@ export default function DepotAgentWorkspace() {
     setSelectedAtDepotIds([]);
     Swal.fire({
       icon: "success",
-      title: "Livreur de Livraison Affecté !",
-      html: `<b>${deliveryIds.length} colis</b> ont été affectés à <b>${
-        chosenDriver ? `${chosenDriver.firstName || ""} ${chosenDriver.lastName || ""}` : `#${targetDriverId}`
-      }</b>.<br/>Le livreur peut maintenant les prendre en charge dans son application.`,
-      timer: 2000,
+      title: "Livreur de Livraison Affecté & Notifié !",
+      html: `<b>${deliveryIds.length} colis</b> ont été affectés à <b>${driverFullName}</b>.<br/><span style="font-size:0.84rem;color:#1e40af;">🔔 Notification envoyée au livreur.<br/>📷 Le livreur scannera ses colis au départ du dépôt (+1 tentative comptabilisée).</span>`,
+      timer: 2400,
       showConfirmButton: false,
     });
   };
@@ -1251,11 +1602,249 @@ export default function DepotAgentWorkspace() {
       )}
 
       {/* =====================================================================
-          STEP 2: CONFIRM RECEPTION AT DEPOT (PICKED UP DELIVERIES + DRIVER RETURNS)
+          STEP 2: CONFIRM RECEPTION AT DEPOT (SCANNER-ONLY RECEPTION FOR PICKED UP + DRIVER RETURNS)
       ===================================================================== */}
       {activeStep === "depot_reception" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-          {/* SECTION 2A: Picked up from stores -> Confirm Reception at Depot */}
+          {/* SCANNER-ONLY DEPOT RECEPTION TERMINAL */}
+          <div
+            style={{
+              background: "linear-gradient(135deg, #064e3b 0%, #047857 100%)",
+              border: "2px solid #10b981",
+              borderRadius: "14px",
+              padding: "20px",
+              color: "#ffffff",
+              boxShadow: "0 8px 24px rgba(5, 150, 105, 0.18)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-start",
+                flexWrap: "wrap",
+                gap: "12px",
+                marginBottom: "14px",
+              }}
+            >
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span
+                    style={{
+                      background: "#ecfdf5",
+                      color: "#065f46",
+                      padding: "4px 10px",
+                      borderRadius: "999px",
+                      fontSize: "0.72rem",
+                      fontWeight: 900,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.5px",
+                    }}
+                  >
+                    🔒 Réception Dépôt par Scanner Uniquement
+                  </span>
+                  <span
+                    style={{
+                      background: "rgba(255,255,255,0.15)",
+                      color: "#d1fae5",
+                      padding: "4px 10px",
+                      borderRadius: "999px",
+                      fontSize: "0.72rem",
+                      fontWeight: 800,
+                    }}
+                  >
+                    Max Tentatives Configuré : {maxDeliveryAttempts}
+                  </span>
+                </div>
+                <h3 style={{ margin: "8px 0 2px", fontSize: "1.15rem", fontWeight: 900, color: "#ffffff" }}>
+                  Scan Réception au Dépôt — Douchette Bluetooth / USB ou Caméra (Validation Automatique)
+                </h3>
+                <p style={{ margin: 0, fontSize: "0.82rem", color: "#a7f3d0" }}>
+                  Utilisez votre <strong>douchette Bluetooth / USB</strong> (sans clic requis) ou la <strong>caméra</strong> : dès que le code est lu, le colis est <strong>validé automatiquement</strong>.
+                </p>
+              </div>
+            </div>
+
+            <form
+              onSubmit={handleScanDepotReception}
+              style={{
+                display: "flex",
+                gap: "10px",
+                flexWrap: "wrap",
+                alignItems: "center",
+              }}
+            >
+              <div style={{ flex: 1, minWidth: "240px", position: "relative" }}>
+                <FaBarcode
+                  style={{
+                    position: "absolute",
+                    left: "14px",
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    color: "#059669",
+                    fontSize: "1.15rem",
+                  }}
+                />
+                <input
+                  ref={scanInputRef}
+                  type="text"
+                  value={scanInputCode}
+                  onChange={(e) => handleDepotScanInputChange(e.target.value)}
+                  placeholder="Douchette Bluetooth / USB prête : scannez et validation 100% automatique..."
+                  autoFocus
+                  style={{
+                    width: "100%",
+                    padding: "12px 14px 12px 42px",
+                    borderRadius: "10px",
+                    border: "2px solid #a7f3d0",
+                    background: "#ffffff",
+                    color: "#0f172a",
+                    fontSize: "0.95rem",
+                    fontWeight: 800,
+                    fontFamily: "monospace",
+                    outline: "none",
+                  }}
+                />
+              </div>
+              <button
+                type="submit"
+                style={{
+                  background: "#10b981",
+                  color: "#ffffff",
+                  border: "2px solid #ffffff",
+                  borderRadius: "10px",
+                  padding: "11px 18px",
+                  fontWeight: 900,
+                  fontSize: "0.86rem",
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "8px",
+                }}
+              >
+                <FaQrcode /> Valider Code
+              </button>
+              <button
+                type="button"
+                onClick={() => (depotCameraActive ? stopDepotCamera() : startDepotCamera())}
+                style={{
+                  background: depotCameraActive ? "#ef4444" : "#0f172a",
+                  color: "#ffffff",
+                  border: "2px solid #a7f3d0",
+                  borderRadius: "10px",
+                  padding: "11px 18px",
+                  fontWeight: 900,
+                  fontSize: "0.86rem",
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "8px",
+                }}
+              >
+                {depotCameraActive ? (
+                  <>
+                    <FaTimes /> Fermer Caméra
+                  </>
+                ) : (
+                  <>
+                    <FaCamera /> Scanner avec Caméra
+                  </>
+                )}
+              </button>
+            </form>
+
+            {depotCameraActive && (
+              <div
+                style={{
+                  marginTop: "12px",
+                  background: "#0f172a",
+                  border: "2px solid #34d399",
+                  borderRadius: "12px",
+                  padding: "12px",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: "8px",
+                }}
+              >
+                <div
+                  style={{
+                    width: "100%",
+                    maxWidth: "420px",
+                    borderRadius: "10px",
+                    overflow: "hidden",
+                    border: "2px solid #10b981",
+                    background: "#000",
+                  }}
+                >
+                  <video
+                    ref={depotVideoRef}
+                    muted
+                    playsInline
+                    style={{ width: "100%", height: "230px", objectFit: "cover", display: "block" }}
+                  />
+                </div>
+                <div style={{ fontSize: "0.78rem", color: "#a7f3d0", fontWeight: 700, textAlign: "center" }}>
+                  📷 Présentez le QR Code ou Code-Barres du colis devant la caméra pour réceptionner automatiquement.
+                </div>
+                {depotCameraError && (
+                  <div
+                    style={{
+                      background: "#fef2f2",
+                      color: "#991b1b",
+                      padding: "6px 12px",
+                      borderRadius: "8px",
+                      fontSize: "0.78rem",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {depotCameraError}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {lastScannedReception && (
+              <div
+                style={{
+                  marginTop: "12px",
+                  background: "rgba(255,255,255,0.14)",
+                  border: "1px solid rgba(255,255,255,0.28)",
+                  borderRadius: "10px",
+                  padding: "10px 14px",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: "8px",
+                  fontSize: "0.82rem",
+                }}
+              >
+                <div>
+                  <strong>✅ Dernier colis scanné ({lastScannedReception.time}) :</strong> #
+                  {lastScannedReception.code} — {lastScannedReception.customer}
+                </div>
+                <span
+                  style={{
+                    background: "#ffffff",
+                    color: "#065f46",
+                    padding: "3px 10px",
+                    borderRadius: "999px",
+                    fontWeight: 900,
+                    fontSize: "0.75rem",
+                  }}
+                >
+                  {lastScannedReception.type === "pickup_reception"
+                    ? "Réception Ramassage Confirmée"
+                    : lastScannedReception.type === "return_reschedule"
+                    ? "Retour Stocké au Dépôt (Nouvelle Tentative)"
+                    : "Prêt Retour Définitif Boutique"}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* SECTION 2A: Picked up from stores -> Confirm Reception at Depot by Scanner */}
           <div
             style={{
               background: "#ffffff",
@@ -1276,44 +1865,25 @@ export default function DepotAgentWorkspace() {
             >
               <div>
                 <h3 style={{ margin: 0, fontSize: "1.05rem", fontWeight: 800, color: "#0f172a" }}>
-                  2A. Confirmation de Réception des Colis Ramassés ({pickedUpWaitingDepot.length})
+                  2A. Colis Ramassés en Attente de Scan au Dépôt ({pickedUpWaitingDepot.length})
                 </h3>
                 <p style={{ margin: "3px 0 0", fontSize: "0.82rem", color: "#64748b" }}>
-                  Confirmez l'arrivée au dépôt des colis ramassés auprès des boutiques par les chauffeurs pickup.
+                  Ces colis ont été scannés par le chauffeur chez la boutique (y compris les colis supplémentaires préparés en retard). Scannez chaque colis ci-dessus pour confirmer sa réception physique au dépôt.
                 </p>
               </div>
-
-              {pickedUpWaitingDepot.length > 0 && (
-                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                  <button
-                    onClick={() =>
-                      handleConfirmReceptionAtDepot(
-                        selectedReceptionIds.length > 0
-                          ? pickedUpWaitingDepot.filter((d) => selectedReceptionIds.includes(d.id))
-                          : pickedUpWaitingDepot
-                      )
-                    }
-                    style={{
-                      background: "#059669",
-                      color: "#ffffff",
-                      border: "none",
-                      borderRadius: "8px",
-                      padding: "9px 16px",
-                      fontWeight: 800,
-                      fontSize: "0.82rem",
-                      cursor: "pointer",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "6px",
-                    }}
-                  >
-                    <FaCheckCircle />{" "}
-                    {selectedReceptionIds.length > 0
-                      ? `Confirmer la sélection (${selectedReceptionIds.length})`
-                      : `Confirmer la Réception de Tout (${pickedUpWaitingDepot.length})`}
-                  </button>
-                </div>
-              )}
+              <span
+                style={{
+                  background: "#eff6ff",
+                  color: "#1d4ed8",
+                  border: "1px solid #bfdbfe",
+                  borderRadius: "8px",
+                  padding: "6px 12px",
+                  fontSize: "0.76rem",
+                  fontWeight: 800,
+                }}
+              >
+                📷 Scan Individuel Obligatoire
+              </span>
             </div>
 
             {pickedUpWaitingDepot.length === 0 ? (
@@ -1327,7 +1897,7 @@ export default function DepotAgentWorkspace() {
                   fontWeight: 600,
                 }}
               >
-                ✓ Tous les colis ramassés ont été réceptionnés au dépôt.
+                ✓ Tous les colis ramassés ont été scannés et réceptionnés au dépôt.
               </div>
             ) : (
               <div style={{ overflowX: "auto" }}>
@@ -1337,27 +1907,12 @@ export default function DepotAgentWorkspace() {
                 >
                   <thead>
                     <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
-                      <th style={{ padding: "10px 12px", width: "40px" }}>
-                        <Checkbox
-                          checked={
-                            pickedUpWaitingDepot.length > 0 &&
-                            selectedReceptionIds.length === pickedUpWaitingDepot.length
-                          }
-                          onChange={() => {
-                            if (selectedReceptionIds.length === pickedUpWaitingDepot.length) {
-                              setSelectedReceptionIds([]);
-                            } else {
-                              setSelectedReceptionIds(pickedUpWaitingDepot.map((d) => d.id));
-                            }
-                          }}
-                        />
-                      </th>
-                      <th style={{ padding: "10px 12px", fontSize: "0.75rem", color: "#475569" }}>COLIS & CLIENT</th>
+                      <th style={{ padding: "10px 12px", fontSize: "0.75rem", color: "#475569" }}>CODE QR & CLIENT</th>
                       <th style={{ padding: "10px 12px", fontSize: "0.75rem", color: "#475569" }}>BOUTIQUE</th>
                       <th style={{ padding: "10px 12px", fontSize: "0.75rem", color: "#475569" }}>LIVREUR PICKUP</th>
                       <th style={{ padding: "10px 12px", fontSize: "0.75rem", color: "#475569" }}>MONTANT</th>
                       <th style={{ padding: "10px 12px", fontSize: "0.75rem", color: "#475569", textAlign: "right" }}>
-                        ACTION
+                        RÉCEPTION PAR SCANNER
                       </th>
                     </tr>
                   </thead>
@@ -1370,23 +1925,13 @@ export default function DepotAgentWorkspace() {
                       const pDrv =
                         getPickupDriver(del) ||
                         drivers.find((d) => Number(d.id) === Number(pDrvId));
-                      const checked = selectedReceptionIds.includes(del.id);
+                      const qrCode = del.qrCodeContent || del.code || String(del.id);
 
                       return (
                         <tr key={del.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
                           <td style={{ padding: "10px 12px" }}>
-                            <Checkbox
-                              checked={checked}
-                              onChange={() =>
-                                setSelectedReceptionIds((prev) =>
-                                  checked ? prev.filter((id) => id !== del.id) : [...prev, del.id]
-                                )
-                              }
-                            />
-                          </td>
-                          <td style={{ padding: "10px 12px" }}>
-                            <div style={{ fontWeight: 700, color: "#0f172a" }}>
-                              #{del.qrCodeContent || del.code || del.id} — {del.customer?.fullName || "Client"}
+                            <div style={{ fontWeight: 800, color: "#0f172a", fontFamily: "monospace" }}>
+                              #{qrCode} — <span style={{ fontFamily: "inherit" }}>{del.customer?.fullName || "Client"}</span>
                             </div>
                             <div style={{ fontSize: "0.75rem", color: "#64748b" }}>
                               {del.customer?.city} · {del.customer?.phoneNumber}
@@ -1405,22 +1950,44 @@ export default function DepotAgentWorkspace() {
                           </td>
                           <td style={{ padding: "10px 12px", textAlign: "right" }}>
                             <button
-                              onClick={() => handleConfirmReceptionAtDepot([del])}
+                              onClick={() => {
+                                setScanInputCode(String(qrCode));
+                                scanInputRef.current?.focus();
+                                Swal.fire({
+                                  title: `Scanner le colis #${qrCode}`,
+                                  html: `
+                                    <div style="text-align:left;font-size:0.88rem;line-height:1.5;">
+                                      <p>La réception au dépôt se fait <strong>exclusivement par scan</strong> pour éviter les erreurs.</p>
+                                      <p>Le code <strong>#${qrCode}</strong> a été placé dans le lecteur en haut. Appuyez sur <strong>Confirmer le Scan</strong> pour valider la présence physique du colis.</p>
+                                    </div>
+                                  `,
+                                  icon: "info",
+                                  showCancelButton: true,
+                                  confirmButtonColor: "#059669",
+                                  confirmButtonText: "📷 Confirmer le Scan Physique",
+                                  cancelButtonText: "Annuler",
+                                }).then((r) => {
+                                  if (r.isConfirmed) {
+                                    handleConfirmReceptionAtDepot([del], { viaScanner: true });
+                                    setScanInputCode("");
+                                  }
+                                });
+                              }}
                               style={{
-                                background: "#059669",
-                                color: "#ffffff",
-                                border: "none",
+                                background: "#ecfdf5",
+                                color: "#047857",
+                                border: "1px solid #6ee7b7",
                                 borderRadius: "6px",
                                 padding: "6px 12px",
-                                fontWeight: 700,
-                                fontSize: "0.78rem",
+                                fontWeight: 800,
+                                fontSize: "0.76rem",
                                 cursor: "pointer",
                                 display: "inline-flex",
                                 alignItems: "center",
                                 gap: "5px",
                               }}
                             >
-                              <FaCheckCircle size={11} /> Confirmer Réception
+                              <FaQrcode size={12} /> Scanner #{qrCode}
                             </button>
                           </td>
                         </tr>
@@ -1432,7 +1999,7 @@ export default function DepotAgentWorkspace() {
             )}
           </div>
 
-          {/* SECTION 2B: Undelivered Parcels Returned by Drivers -> Confirm Reception at Depot */}
+          {/* SECTION 2B: Undelivered Parcels Returned by Drivers -> Confirm Reception at Depot by Scanner */}
           <div
             style={{
               background: "#ffffff",
@@ -1441,13 +2008,28 @@ export default function DepotAgentWorkspace() {
               padding: "18px",
             }}
           >
-            <div style={{ marginBottom: "14px" }}>
-              <h3 style={{ margin: 0, fontSize: "1.05rem", fontWeight: 800, color: "#92400e" }}>
-                2B. Réception des Colis Non Livrés Retournés par les Livreurs ({undeliveredReturnsWaitingDepot.length})
-              </h3>
-              <p style={{ margin: "3px 0 0", fontSize: "0.82rem", color: "#b45309" }}>
-                Lorsqu'un livreur ramène des colis non livrés en fin de journée, confirmez leur réception au dépôt (soit pour une nouvelle tentative, soit en retour définitif à la boutique).
-              </p>
+            <div style={{ marginBottom: "14px", display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "10px" }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: "1.05rem", fontWeight: 800, color: "#92400e" }}>
+                  2B. Réception par Scanner des Colis Non Livrés Retournés par les Livreurs ({undeliveredReturnsWaitingDepot.length})
+                </h3>
+                <p style={{ margin: "3px 0 0", fontSize: "0.82rem", color: "#b45309" }}>
+                  Chaque sortie du livreur compte pour <strong>+1 tentative</strong>. Lorsque le nombre de tentatives atteint la limite configurée (<strong>{maxDeliveryAttempts} tentatives</strong>), le colis passe automatiquement en <strong>Prêt pour Retour Définitif à la Boutique</strong>.
+                </p>
+              </div>
+              <span
+                style={{
+                  background: "#fef3c7",
+                  color: "#92400e",
+                  border: "1px solid #fde68a",
+                  padding: "5px 10px",
+                  borderRadius: "8px",
+                  fontSize: "0.75rem",
+                  fontWeight: 800,
+                }}
+              >
+                Seuil Retour Auto : {maxDeliveryAttempts} tentative(s)
+              </span>
             </div>
 
             {undeliveredReturnsWaitingDepot.length === 0 ? (
@@ -1462,7 +2044,7 @@ export default function DepotAgentWorkspace() {
                   fontSize: "0.85rem",
                 }}
               >
-                Aucun colis non livré en attente de confirmation de retour au dépôt.
+                Aucun colis non livré en attente de scan de retour au dépôt.
               </div>
             ) : (
               <div style={{ overflowX: "auto" }}>
@@ -1475,9 +2057,10 @@ export default function DepotAgentWorkspace() {
                       <th style={{ padding: "10px 12px", fontSize: "0.75rem", color: "#92400e" }}>COLIS & CLIENT</th>
                       <th style={{ padding: "10px 12px", fontSize: "0.75rem", color: "#92400e" }}>BOUTIQUE</th>
                       <th style={{ padding: "10px 12px", fontSize: "0.75rem", color: "#92400e" }}>LIVREUR</th>
+                      <th style={{ padding: "10px 12px", fontSize: "0.75rem", color: "#92400e" }}>TENTATIVES</th>
                       <th style={{ padding: "10px 12px", fontSize: "0.75rem", color: "#92400e" }}>MOTIF / RÉSULTAT</th>
                       <th style={{ padding: "10px 12px", fontSize: "0.75rem", color: "#92400e", textAlign: "right" }}>
-                        CONFIRMER RÉCEPTION RETOUR
+                        SCANNER RÉCEPTION RETOUR
                       </th>
                     </tr>
                   </thead>
@@ -1494,12 +2077,21 @@ export default function DepotAgentWorkspace() {
                       const resObj =
                         DeliveryResultOptions.find((r) => r.value === resVal) ||
                         DeliveryResultOptions[0];
+                      const attempts = Math.max(1, getDeliveryAttempts(del));
+                      const reachedMax = attempts >= maxDeliveryAttempts;
+                      const qrCode = del.qrCodeContent || del.code || String(del.id);
 
                       return (
-                        <tr key={del.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                        <tr
+                          key={del.id}
+                          style={{
+                            borderBottom: "1px solid #f1f5f9",
+                            background: reachedMax ? "#fef2f2" : "#ffffff",
+                          }}
+                        >
                           <td style={{ padding: "10px 12px" }}>
                             <div style={{ fontWeight: 700, color: "#0f172a" }}>
-                              #{del.qrCodeContent || del.code || del.id} — {del.customer?.fullName || "Client"}
+                              #{qrCode} — {del.customer?.fullName || "Client"}
                             </div>
                             <div style={{ fontSize: "0.75rem", color: "#64748b" }}>
                               {del.customer?.city} · {(Number(del.cost) || 0).toFixed(3)} TND
@@ -1512,6 +2104,23 @@ export default function DepotAgentWorkspace() {
                             {dDrv
                               ? `${dDrv.firstName || ""} ${dDrv.lastName || ""}`.trim() || dDrv.name
                               : "Livreur"}
+                          </td>
+                          <td style={{ padding: "10px 12px" }}>
+                            <span
+                              style={{
+                                background: reachedMax ? "#fee2e2" : "#e0f2fe",
+                                color: reachedMax ? "#991b1b" : "#075985",
+                                border: `1px solid ${reachedMax ? "#fca5a5" : "#bae6fd"}`,
+                                padding: "3px 9px",
+                                borderRadius: "999px",
+                                fontSize: "0.74rem",
+                                fontWeight: 900,
+                                display: "inline-block",
+                              }}
+                            >
+                              {attempts} / {maxDeliveryAttempts} tentatives
+                              {reachedMax ? " · Max atteint !" : ""}
+                            </span>
                           </td>
                           <td style={{ padding: "10px 12px" }}>
                             <span
@@ -1530,36 +2139,57 @@ export default function DepotAgentWorkspace() {
                           <td style={{ padding: "10px 12px", textAlign: "right" }}>
                             <div style={{ display: "inline-flex", gap: "6px", flexWrap: "wrap", justifyContent: "flex-end" }}>
                               <button
-                                onClick={() => handleConfirmUndeliveredReturn(del, "reschedule")}
+                                onClick={() => {
+                                  setScanInputCode(String(qrCode));
+                                  scanInputRef.current?.focus();
+                                }}
                                 style={{
-                                  background: "#2563eb",
-                                  color: "#ffffff",
-                                  border: "none",
+                                  background: "#ecfdf5",
+                                  color: "#047857",
+                                  border: "1px solid #6ee7b7",
                                   borderRadius: "6px",
                                   padding: "6px 10px",
-                                  fontWeight: 700,
-                                  fontSize: "0.75rem",
+                                  fontWeight: 800,
+                                  fontSize: "0.74rem",
                                   cursor: "pointer",
                                 }}
-                                title="Stocker au dépôt pour une autre itération de livraison (ne sera pas compté comme retour définitif boutique)"
+                                title="Pré-remplir le scanner de réception ci-dessus avec ce code colis"
                               >
-                                🏢 Stocker au Dépôt (Autre tentative)
+                                📷 Scanner #{qrCode}
                               </button>
+                              {!reachedMax && (
+                                <button
+                                  onClick={() => handleConfirmUndeliveredReturn(del, "reschedule")}
+                                  style={{
+                                    background: "#2563eb",
+                                    color: "#ffffff",
+                                    border: "none",
+                                    borderRadius: "6px",
+                                    padding: "6px 10px",
+                                    fontWeight: 700,
+                                    fontSize: "0.74rem",
+                                    cursor: "pointer",
+                                  }}
+                                  title="Stocker au dépôt pour une autre tentative de livraison"
+                                >
+                                  🏢 Stocker ({attempts}/{maxDeliveryAttempts})
+                                </button>
+                              )}
                               <button
                                 onClick={() => handleConfirmUndeliveredReturn(del, "final_return")}
                                 style={{
-                                  background: "#7c3aed",
+                                  background: reachedMax ? "#dc2626" : "#7c3aed",
                                   color: "#ffffff",
                                   border: "none",
                                   borderRadius: "6px",
                                   padding: "6px 10px",
-                                  fontWeight: 700,
-                                  fontSize: "0.75rem",
+                                  fontWeight: 800,
+                                  fontSize: "0.74rem",
                                   cursor: "pointer",
                                 }}
-                                title="Confirmer comme retour définitif à la boutique (apparaîtra dans le récap fin de journée de la boutique)"
+                                title="Confirmer comme retour définitif à la boutique (ReturnedToSender = 6)"
                               >
-                                ↩️ Retour Définitif Boutique
+                                ↩️ {reachedMax ? "Retour Boutique Obligatoire (Max)" : "Retour Définitif Boutique"}
                               </button>
                               <button
                                 onClick={() => openRefundModal(del)}
@@ -1570,7 +2200,7 @@ export default function DepotAgentWorkspace() {
                                   borderRadius: "6px",
                                   padding: "6px 10px",
                                   fontWeight: 700,
-                                  fontSize: "0.75rem",
+                                  fontSize: "0.74rem",
                                   cursor: "pointer",
                                 }}
                                 title="Enregistrer un remboursement (Refund) pour ce colis"

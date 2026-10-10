@@ -47,6 +47,9 @@ export default function QRScanner() {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const scanIntervalRef = useRef(null);
+  const qrAutoValidateTimeoutRef = useRef(null);
+  const qrGlobalBufferRef = useRef("");
+  const qrLastKeystrokeRef = useRef(0);
 
   useEffect(() => {
     if (isDepotAgent) {
@@ -456,6 +459,61 @@ export default function QRScanner() {
       });
   };
 
+  const handleManualOrDouchetteInput = (val) => {
+    setManualCode(val);
+    if (qrAutoValidateTimeoutRef.current) {
+      clearTimeout(qrAutoValidateTimeoutRef.current);
+    }
+    const clean = String(val || "").replace(/^#/, "").trim();
+    if (!clean || clean.length < 6) return;
+    qrAutoValidateTimeoutRef.current = setTimeout(() => {
+      lookupCode(clean);
+    }, 350);
+  };
+
+  useEffect(() => {
+    const onGlobalKeyDown = (e) => {
+      const tag = document.activeElement?.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select") return;
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
+
+      const now = Date.now();
+      if (now - qrLastKeystrokeRef.current > 150) {
+        qrGlobalBufferRef.current = "";
+      }
+      qrLastKeystrokeRef.current = now;
+
+      if (e.key === "Enter" || e.key === "Tab") {
+        if (qrGlobalBufferRef.current.trim().length >= 2) {
+          e.preventDefault();
+          const scanned = qrGlobalBufferRef.current.trim();
+          qrGlobalBufferRef.current = "";
+          setManualCode(scanned);
+          lookupCode(scanned);
+        }
+        return;
+      }
+
+      if (e.key && e.key.length === 1) {
+        qrGlobalBufferRef.current += e.key;
+        const currentBuf = qrGlobalBufferRef.current;
+        setManualCode(currentBuf);
+        if (qrAutoValidateTimeoutRef.current) {
+          clearTimeout(qrAutoValidateTimeoutRef.current);
+        }
+        qrAutoValidateTimeoutRef.current = setTimeout(() => {
+          if (qrGlobalBufferRef.current.trim().length >= 3) {
+            const finalCode = qrGlobalBufferRef.current.trim();
+            qrGlobalBufferRef.current = "";
+            lookupCode(finalCode);
+          }
+        }, 220);
+      }
+    };
+    window.addEventListener("keydown", onGlobalKeyDown);
+    return () => window.removeEventListener("keydown", onGlobalKeyDown);
+  }, [scanMode, selectedDepotForScan]);
+
   const saveStatusChange = () => {
     if (!delivery) return;
     setLoadingChange(true);
@@ -764,16 +822,16 @@ export default function QRScanner() {
           </div>
         )}
 
-        {/* Manual Code Input Bar */}
+        {/* Manual / Douchette Bluetooth & USB Input Bar */}
         <div style={{ marginTop: "16px" }}>
           <label style={{ fontSize: "0.875rem", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
-            Recherche par code-barres / QR Code :
+            Douchette Bluetooth / USB ou Saisie Code-Barres / QR Code (Validation Automatique) :
           </label>
           <div style={{ display: "flex", gap: "10px" }}>
             <Input
-              placeholder="Ex: 1707242036777 ou ID Colis..."
+              placeholder="Scannez avec votre douchette Bluetooth / USB (validation automatique)..."
               value={manualCode}
-              onChange={(val) => setManualCode(val)}
+              onChange={(val) => handleManualOrDouchetteInput(val)}
               onPressEnter={() => lookupCode(manualCode)}
               style={{ borderRadius: "8px" }}
             />

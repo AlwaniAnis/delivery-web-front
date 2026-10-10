@@ -48,7 +48,7 @@ function AddEdit({
             Nom de la Boutique (FR) * :
           </label>
           <Input
-            placeholder="Ex: Tawsil Store Tunis"
+            placeholder="Ex: Squad Store Tunis"
             onChange={(name_fr) => {
               setmodel((prev) => ({ ...prev, name_fr }));
             }}

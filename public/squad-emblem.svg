@@ -14,26 +14,19 @@
       <stop offset="100%" stopColor="#0c3b78" />
     </linearGradient>
   </defs>
-  <!-- Rounded Square Navy Background -->
   <rect width="120" height="120" rx="26" fill="url(#bgGrad)" />
-  
-  <!-- Top S Ribbon + Arrow Head (Cyan/Blue in motion) -->
   <path
     d="M 88 18 L 105 26 L 94 43 L 90 35 L 54 35 C 46 35 42 40 44 46 L 80 54 C 86 56 89 61 87 67 L 42 57 C 28 53 24 41 30 30 C 35 22 45 20 58 20 L 84 20 Z"
     fill="url(#topCyan)"
   />
-  <!-- Fold shadow under top ribbon -->
   <path
     d="M 44 46 L 80 54 L 74 63 L 38 54 Z"
     fill="url(#midShade)"
   />
-
-  <!-- Bottom S Ribbon (White with speed lines on left) -->
   <path
     d="M 44 56 L 80 64 C 94 67 97 80 90 91 C 84 99 73 102 58 102 L 16 102 L 22 88 L 60 88 C 69 88 74 84 72 78 C 71 74 66 72 58 70 L 38 65 Z"
     fill="#ffffff"
   />
-  <!-- Speed motion lines on left of bottom S -->
   <rect x="14" y="61" width="26" height="4.5" rx="2.2" fill="#ffffff" />
   <rect x="20" y="69" width="24" height="4.5" rx="2.2" fill="#ffffff" />
   <rect x="26" y="77" width="20" height="4.5" rx="2.2" fill="#ffffff" />

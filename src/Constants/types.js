@@ -282,3 +282,92 @@ export const getDeliveryTotalPrice = (row) => {
   return Number(row.totalPrice ?? row.TotalPrice ?? row.cost ?? 0);
 };
 
+export const getDeliveryAttempts = (row) => {
+  if (!row) return 0;
+  const raw =
+    row.deliveryAttemptCount ??
+    row.DeliveryAttemptCount ??
+    row.deliveryAttempts ??
+    row.DeliveryAttempts ??
+    row.attempts ??
+    row.Attempts ??
+    row.attemptCount ??
+    row.AttemptCount ??
+    row.numberOfAttempts ??
+    row.NumberOfAttempts;
+  if (raw !== undefined && raw !== null && !Number.isNaN(Number(raw))) {
+    return Math.max(0, Number(raw));
+  }
+  const op = getOperationalStatus(row);
+  if (op >= 4) return 1;
+  return 0;
+};
+
+export const parseDeliveryLogs = (row) => {
+  if (!row) return [];
+  const rawLogs = row.logs ?? row.Logs ?? "";
+  let localLogs = "";
+  try {
+    const map = JSON.parse(localStorage.getItem("tawsil_delivery_logs") || "{}");
+    if (map[row.id]) localLogs = map[row.id];
+  } catch {}
+
+  const combined = [String(rawLogs || ""), String(localLogs || "")]
+    .filter(Boolean)
+    .join("\n");
+
+  const lines = combined
+    .split(/\r?\n|\|\|/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  // Deduplicate while preserving chronological order
+  return Array.from(new Set(lines));
+};
+
+export const appendDeliveryLog = (row, actionText) => {
+  const nowStr = new Date().toLocaleString("fr-FR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const entry = `[${nowStr}] ${actionText}`;
+  const existingLines = parseDeliveryLogs(row);
+  const nextLogs = [...existingLines, entry].join("\n");
+  if (row?.id) {
+    try {
+      const map = JSON.parse(localStorage.getItem("tawsil_delivery_logs") || "{}");
+      map[row.id] = nextLogs;
+      localStorage.setItem("tawsil_delivery_logs", JSON.stringify(map));
+    } catch {}
+  }
+  return nextLogs;
+};
+
+export const getStoredMaxDeliveryAttempts = () => {
+  try {
+    const raw = localStorage.getItem("tawsil_general_config");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      const val = Number(parsed?.maxDeliveryAttempts ?? parsed?.MaxDeliveryAttempts);
+      if (val >= 1) return val;
+    }
+  } catch (e) {}
+  return 3;
+};
+
+export const parseDriverDocuments = (driverOrStr) => {
+  const raw =
+    typeof driverOrStr === "string"
+      ? driverOrStr
+      : driverOrStr?.documents ?? driverOrStr?.Documents ?? "";
+  if (!raw || typeof raw !== "string") return [];
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+};
+
+
